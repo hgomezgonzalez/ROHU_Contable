@@ -1,0 +1,757 @@
+{% extends "base.html" %}
+{% set active_page = 'pos' %}
+{% block title %}Punto de Venta — ROHU Contable{% endblock %}
+{% block header_title %}Punto de Venta{% endblock %}
+
+{% block head %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  /* Receipt print styles */
+  @media print {
+    body * { visibility: hidden; }
+    #receipt-modal, #receipt-modal * { visibility: visible; }
+    #receipt-modal { position: fixed; top: 0; left: 0; width: 100%; background: white; }
+    #receipt-modal .btn, #receipt-modal button:not(.no-print) { display: none !important; }
+    .receipt-ticket { box-shadow: none !important; max-width: 80mm !important; margin: 0 auto; }
+  }
+  .receipt-ticket {
+    background: white; max-width: 320px; margin: 0 auto; padding: 20px;
+    font-family: 'Courier New', monospace; font-size: 12px;
+    border-top: 3px dashed var(--border); border-bottom: 3px dashed var(--border);
+  }
+  .receipt-ticket .r-header { text-align: center; margin-bottom: 12px; border-bottom: 1px dashed #999; padding-bottom: 8px; }
+  .receipt-ticket .r-header h3 { font-size: 16px; margin-bottom: 2px; }
+  .receipt-ticket .r-items td { padding: 2px 0; }
+  .receipt-ticket .r-total { font-size: 18px; font-weight: 700; text-align: right; border-top: 2px solid #333; padding-top: 6px; margin-top: 6px; }
+  .receipt-ticket .r-change { background: #DCFCE7; padding: 8px; border-radius: 6px; text-align: center; font-size: 16px; font-weight: 700; margin: 8px 0; color: #065F46; }
+  .receipt-ticket .r-footer { text-align: center; margin-top: 12px; font-size: 12px; color: #666; border-top: 1px dashed #999; padding-top: 8px; }
+  .quick-amount { padding: 10px 16px; border: 2px solid var(--border); border-radius: 8px; background: white; cursor: pointer; font-size: 16px; font-weight: 600; transition: all 0.2s; }
+  .quick-amount:hover, .quick-amount.selected { border-color: var(--primary); background: #EFF6FF; color: var(--primary); }
+  .change-display { font-size: 32px; font-weight: 700; text-align: center; padding: 12px; border-radius: 8px; }
+  .change-ok { background: #DCFCE7; color: #065F46; }
+  .change-pending { background: #FEF3C7; color: #92400E; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- QR Scanner Modal -->
+<div id="qr-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:300; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:450px; text-align:center;">
+    <h3 style="margin-bottom:12px;">Escanear Código QR</h3>
+    <div id="qr-reader" style="width:100%;"></div>
+    <p style="margin:12px 0; font-size:13px; color:var(--text-light);">Apunte la cámara al código QR del producto</p>
+    <button class="btn btn-outline" onclick="stopQRScanner()" style="width:100%;">Cancelar</button>
+  </div>
+</div>
+
+<!-- Payment Modal -->
+<div id="payment-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:250; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:480px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:16px; text-align:center;">Cobrar Venta</h3>
+    <div style="text-align:center; margin-bottom:16px;">
+      <div style="font-size:14px; color:var(--text-light);">Total a cobrar</div>
+      <div id="pay-total" style="font-size:36px; font-weight:700; color:var(--primary);">$0</div>
+    </div>
+    <!-- Sale Type Toggle -->
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button type="button" id="btn-sale-cash" class="btn btn-primary" style="flex:1;" onclick="setSaleType('cash')">Contado</button>
+      <button type="button" id="btn-sale-credit" class="btn btn-outline" style="flex:1;" onclick="setSaleType('credit')">Crédito</button>
+    </div>
+
+    <!-- Credit Section (hidden by default) -->
+    <div id="credit-section" style="display:none; margin-bottom:12px; padding:10px; background:var(--bg); border-radius:8px; border:2px solid var(--warning);">
+      <div class="form-group" style="margin-bottom:8px;">
+        <label>Cliente *</label>
+        <select id="credit-customer" class="form-control" required onchange="onCreditCustomerChange()">
+          <option value="">Seleccione cliente...</option>
+        </select>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group" style="margin:0;"><label style="font-size:12px;">Días de crédito</label><input type="number" id="credit-days" class="form-control" value="30" min="1"></div>
+        <div class="form-group" style="margin:0;"><label style="font-size:12px;">Límite disponible</label><div id="credit-limit-info" style="font-size:14px; font-weight:600; color:var(--success); padding:6px 0;">—</div></div>
+      </div>
+    </div>
+
+    <!-- Payment Method (only for cash sales) -->
+    <div id="payment-method-section">
+      <div class="form-group">
+        <label>Método de pago</label>
+        <select id="pay-method" class="form-control" onchange="onPayMethodChange()">
+          <option value="cash">Efectivo</option>
+          <option value="nequi">Nequi</option>
+          <option value="daviplata">Daviplata</option>
+          <option value="transfer">Transferencia</option>
+          <option value="card">Tarjeta</option>
+        </select>
+      </div>
+    </div>
+    <!-- Buyer data (for invoicing) -->
+    <div style="margin-bottom:8px; padding:8px; background:var(--bg); border-radius:6px;">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px;">
+        <input type="checkbox" id="pay-is-company" onchange="toggleBuyerFields()">
+        <span>El comprador es empresa o exige factura</span>
+      </label>
+      <div id="buyer-fields" style="display:none; margin-top:8px;">
+        <div style="display:grid; grid-template-columns:2fr 1fr; gap:8px;">
+          <div class="form-group" style="margin:0;"><label style="font-size:12px;">Nombre / Razón social</label><input type="text" id="pay-buyer-name" class="form-control" placeholder="Nombre del comprador"></div>
+          <div class="form-group" style="margin:0;"><label style="font-size:12px;">NIT / Cédula</label><input type="text" id="pay-buyer-taxid" class="form-control" placeholder="NIT o CC"></div>
+        </div>
+        <div class="form-group" style="margin:4px 0 0;"><label style="font-size:12px;">Email (para factura electrónica)</label><input type="email" id="pay-buyer-email" class="form-control" placeholder="correo@empresa.com"></div>
+      </div>
+    </div>
+    <!-- Cash: quick amounts + received -->
+    <div id="cash-section">
+      <div class="form-group">
+        <label>Monto recibido</label>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+          <button type="button" class="quick-amount" onclick="setReceived(10000)">$10.000</button>
+          <button type="button" class="quick-amount" onclick="setReceived(20000)">$20.000</button>
+          <button type="button" class="quick-amount" onclick="setReceived(50000)">$50.000</button>
+          <button type="button" class="quick-amount" onclick="setReceived(100000)">$100.000</button>
+          <button type="button" class="quick-amount" onclick="setReceived('exact')" id="btn-exact">Exacto</button>
+        </div>
+        <input type="number" id="pay-received" class="form-control" placeholder="Ingrese monto..." min="0" oninput="calcChange()" style="font-size:18px; text-align:center;">
+      </div>
+      <div id="change-display" class="change-display change-pending">
+        Ingrese el monto recibido
+      </div>
+    </div>
+    <!-- Non-cash: reference -->
+    <div id="ref-section" style="display:none;">
+      <div class="form-group">
+        <label>Referencia / Número de transacción</label>
+        <input type="text" id="pay-reference" class="form-control" placeholder="Ej: NEQ-123456">
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="btn btn-outline" onclick="closePaymentModal()" style="flex:1;">Cancelar</button>
+      <button id="btn-confirm-sale" class="btn btn-success btn-lg" onclick="confirmSale()" style="flex:2;" disabled>
+        Confirmar Venta
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt Modal -->
+<div id="receipt-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:260; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:400px; max-height:90vh; overflow-y:auto;">
+    <div id="receipt-content"></div>
+    <div id="invoice-status" style="display:none; margin-top:8px;"></div>
+    <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="window.print()" style="flex:1;">Imprimir</button>
+      <button class="btn btn-outline" id="btn-einvoice" onclick="generateEInvoice()" style="flex:1;">Factura Electrónica</button>
+      <button class="btn btn-outline" onclick="openReturnModal(lastSaleId)" style="flex:1;">Devolución</button>
+      <button class="btn btn-success" onclick="closeReceipt()" style="flex:1;">Nueva Venta</button>
+    </div>
+  </div>
+</div>
+
+<!-- Return Modal -->
+<div id="return-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:270; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:520px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:12px;">Devolución Parcial</h3>
+    <div id="return-items"></div>
+    <div class="form-group" style="margin-top:12px;">
+      <label>Razón de la devolución *</label>
+      <input type="text" id="return-reason" class="form-control" placeholder="Ej: Producto defectuoso" required>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button class="btn btn-outline" onclick="document.getElementById('return-modal').style.display='none'" style="flex:1;">Cancelar</button>
+      <button class="btn btn-danger" onclick="processReturn()" style="flex:1;">Procesar Devolución</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sales History (collapsible) -->
+<div style="margin-bottom:12px;">
+  <button class="btn btn-outline" onclick="toggleSalesHistory()" style="font-size:13px;">
+    Ventas recientes / Devoluciones
+  </button>
+  <div id="sales-history" style="display:none; margin-top:8px;">
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Venta #</th><th>Total</th><th>Estado</th><th>Hora</th><th>Acciones</th></tr></thead>
+          <tbody id="recent-sales"><tr><td colspan="5">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pos-layout">
+  <!-- Left: Products -->
+  <div class="pos-products">
+    <div style="margin-bottom:12px; display:flex; gap:8px;">
+      <input type="text" id="search-input" class="form-control search-input"
+             placeholder="Escanee con pistola lectora, cámara QR o busque por nombre..." autofocus style="flex:1;">
+      <button class="btn btn-primary" onclick="openQRScanner()" title="Escanear QR con cámara">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/>
+          <line x1="21" y1="14" x2="21" y2="21"/><line x1="14" y1="21" x2="21" y2="21"/>
+        </svg>
+      </button>
+    </div>
+    <div class="product-grid" id="product-grid">
+      <div style="grid-column:1/-1; text-align:center; color:var(--text-light); padding:40px;">
+        Escriba para buscar o presione el botón QR para escanear
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Cart -->
+  <div class="pos-cart">
+    <div class="cart-header">
+      Carrito
+      <span id="cart-count" style="float:right; color:var(--text-light); font-weight:400; font-size:14px;">0 items</span>
+    </div>
+    <div class="cart-items" id="cart-items">
+      <div style="text-align:center; color:var(--text-light); padding:40px 20px;">
+        Agregue productos escaneando QR o buscando por nombre
+      </div>
+    </div>
+    <div class="cart-footer">
+      <div class="cart-totals">
+        <div class="cart-total-row"><span>Subtotal</span><span id="cart-subtotal">$0</span></div>
+        <div class="cart-total-row"><span>IVA</span><span id="cart-tax">$0</span></div>
+        <div class="cart-total-row total"><span>TOTAL</span><span id="cart-total">$0</span></div>
+      </div>
+      <button class="btn-checkout" id="btn-checkout" onclick="openPaymentModal()" disabled>
+        COBRAR $0
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const PAY_NAMES = {cash:'Efectivo',card:'Tarjeta',transfer:'Transferencia',nequi:'Nequi',daviplata:'Daviplata'};
+
+  let cart = [];
+  let searchTimeout = null;
+  let html5QrCode = null;
+  let currentTotal = 0;
+  let tenantInfo = null;
+  let lastSaleId = null;
+  let lastBuyerData = {};
+
+  // Load tenant info for receipts
+  fetch('/api/v1/auth/tenant', {headers}).then(r => r.json()).then(d => {
+    if (d.success) { tenantInfo = d.data; localStorage.setItem('tenant', JSON.stringify(d.data)); }
+  }).catch(() => { tenantInfo = JSON.parse(localStorage.getItem('tenant') || '{}'); });
+
+  // ── QR Camera Scanner ────────────────────────────────────
+  function openQRScanner() {
+    document.getElementById('qr-modal').style.display = 'flex';
+    html5QrCode = new Html5Qrcode("qr-reader");
+    html5QrCode.start(
+      { facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } },
+      (text) => { stopQRScanner(); scanQR(text); },
+      () => {}
+    ).catch(() => {
+      stopQRScanner();
+      rohuAlert('Cámara no disponible. Use el campo de búsqueda para ingresar el código QR manualmente.', 'warning');
+      searchInput.focus();
+    });
+  }
+
+  function stopQRScanner() {
+    document.getElementById('qr-modal').style.display = 'none';
+    if (html5QrCode) { html5QrCode.stop().catch(()=>{}); html5QrCode.clear(); html5QrCode = null; }
+  }
+
+  // ── Search ───────────────────────────────────────────────
+  const searchInput = document.getElementById('search-input');
+  searchInput.addEventListener('input', e => {
+    clearTimeout(searchTimeout);
+    const q = e.target.value.trim();
+    if (q.length < 2) return;
+    searchTimeout = setTimeout(() => searchProducts(q), 200);
+  });
+  searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); const q = searchInput.value.trim(); if (q) scanQR(q); }
+  });
+
+  async function searchProducts(query) {
+    try {
+      const resp = await fetch(`/api/v1/inventory/products?q=${encodeURIComponent(query)}&per_page=20`, {headers, cache: 'no-store'});
+      if (resp.status === 401) { window.location.href = '/app/login'; return; }
+      if (!resp.ok) {
+        document.getElementById('product-grid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--danger);padding:20px;">Error cargando productos. Verifique permisos.</div>';
+        return;
+      }
+      const result = await resp.json();
+      const products = result.data || [];
+      renderProducts(products);
+      // Cache products for offline
+      // Product cache handled by rohuRefreshProductCache (full catalog), not per-search
+    } catch (e) {
+      // Offline fallback
+      if (typeof rohuGetCachedProducts === 'function') {
+        const cached = await rohuGetCachedProducts(query);
+        if (cached.length > 0) { renderProducts(cached); return; }
+      }
+      document.getElementById('product-grid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-light);padding:20px;">Sin conexión — sin productos en caché</div>';
+    }
+  }
+
+  async function scanQR(code) {
+    try {
+      const resp = await fetch(`/api/v1/inventory/products/scan?qr=${encodeURIComponent(code)}`, {headers});
+      if (resp.ok) {
+        const result = await resp.json();
+        if (result.success) { addToCart(result.data); searchInput.value = ''; searchInput.focus(); return; }
+      }
+      searchProducts(code);
+    } catch (e) {
+      // Offline QR lookup
+      if (typeof rohuGetProductByQR === 'function') {
+        const p = await rohuGetProductByQR(code);
+        if (p) { addToCart(p); searchInput.value = ''; searchInput.focus(); return; }
+      }
+      searchProducts(code);
+    }
+  }
+
+  function renderProducts(products) {
+    const grid = document.getElementById('product-grid');
+    if (products.length === 0) { grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-light); padding:40px;">No se encontraron productos</div>'; return; }
+    grid.innerHTML = products.map(p => `
+      <div class="product-card" onclick='addToCart(${JSON.stringify(p).replace(/'/g,"&#39;")})'>
+        <div class="product-card-name">${p.name}</div>
+        <div class="product-card-price">${COP(p.sale_price)}</div>
+        <div class="product-card-stock ${p.is_low_stock?'low':''}">Stock: ${p.stock_current} ${p.unit}</div>
+      </div>
+    `).join('');
+  }
+
+  // ── Cart ─────────────────────────────────────────────────
+  function addToCart(product) {
+    const ex = cart.find(i => i.product_id === product.id);
+    if (ex) { ex.quantity += 1; } else {
+      cart.push({ product_id:product.id, name:product.name, unit_price:product.sale_price,
+        tax_rate:product.tax_rate, quantity:1, stock:product.stock_current });
+    }
+    renderCart();
+  }
+  function updateQty(i,d) { cart[i].quantity += d; if (cart[i].quantity<=0) cart.splice(i,1); renderCart(); }
+  function removeItem(i) { cart.splice(i,1); renderCart(); }
+
+  function renderCart() {
+    const el = document.getElementById('cart-items');
+    const countEl = document.getElementById('cart-count');
+    if (cart.length === 0) {
+      el.innerHTML = '<div style="text-align:center;color:var(--text-light);padding:40px 20px;">Agregue productos</div>';
+      countEl.textContent = '0 items'; updateTotals(0,0); return;
+    }
+    countEl.textContent = `${cart.reduce((s,i)=>s+i.quantity,0)} items`;
+    el.innerHTML = cart.map((item,idx) => {
+      const sub = item.unit_price * item.quantity;
+      const tax = sub * item.tax_rate / 100;
+      return `<div class="cart-item">
+        <div class="cart-item-info"><div class="cart-item-name">${item.name}</div><div class="cart-item-price">${COP(item.unit_price)} x ${item.quantity}</div></div>
+        <div class="cart-item-qty"><button onclick="updateQty(${idx},-1)">−</button>
+          <input type="number" value="${item.quantity}" min="1" onchange="cart[${idx}].quantity=parseInt(this.value)||1;renderCart()">
+          <button onclick="updateQty(${idx},1)">+</button></div>
+        <div class="cart-item-total">${COP(sub+tax)}</div>
+        <button onclick="removeItem(${idx})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:18px;">&times;</button>
+      </div>`;
+    }).join('');
+    let subtotal=0, tax=0;
+    cart.forEach(i => { const s=i.unit_price*i.quantity; subtotal+=s; tax+=s*i.tax_rate/100; });
+    updateTotals(subtotal, tax);
+  }
+
+  function updateTotals(subtotal, tax) {
+    currentTotal = Math.ceil(subtotal + tax);
+    document.getElementById('cart-subtotal').textContent = COP(subtotal);
+    document.getElementById('cart-tax').textContent = COP(tax);
+    document.getElementById('cart-total').textContent = COP(currentTotal);
+    const btn = document.getElementById('btn-checkout');
+    btn.textContent = `COBRAR ${COP(currentTotal)}`;
+    btn.disabled = currentTotal <= 0;
+  }
+
+  // ── Payment Modal ────────────────────────────────────────
+  let currentSaleType = 'cash';
+
+  function openPaymentModal() {
+    if (currentTotal <= 0) return;
+    document.getElementById('pay-total').textContent = COP(currentTotal);
+    document.getElementById('pay-received').value = '';
+    document.getElementById('pay-reference').value = '';
+    document.getElementById('change-display').className = 'change-display change-pending';
+    document.getElementById('change-display').textContent = 'Ingrese el monto recibido';
+    document.getElementById('btn-confirm-sale').disabled = true;
+    document.getElementById('pay-method').value = 'cash';
+    setSaleType('cash');
+    onPayMethodChange();
+    document.getElementById('payment-modal').style.display = 'flex';
+  }
+
+  function closePaymentModal() { document.getElementById('payment-modal').style.display = 'none'; }
+
+  function setSaleType(type) {
+    currentSaleType = type;
+    const btnCash = document.getElementById('btn-sale-cash');
+    const btnCredit = document.getElementById('btn-sale-credit');
+    const creditSec = document.getElementById('credit-section');
+    const paySec = document.getElementById('payment-method-section');
+    const cashSec = document.getElementById('cash-section');
+    const refSec = document.getElementById('ref-section');
+    const btnConfirm = document.getElementById('btn-confirm-sale');
+
+    if (type === 'credit') {
+      btnCash.className = 'btn btn-outline'; btnCash.style.flex = '1';
+      btnCredit.className = 'btn btn-primary'; btnCredit.style.flex = '1';
+      creditSec.style.display = 'block';
+      paySec.style.display = 'none';
+      cashSec.style.display = 'none';
+      refSec.style.display = 'none';
+      btnConfirm.disabled = false;
+      btnConfirm.textContent = 'Confirmar Venta a Crédito';
+      loadCreditCustomers();
+    } else {
+      btnCash.className = 'btn btn-primary'; btnCash.style.flex = '1';
+      btnCredit.className = 'btn btn-outline'; btnCredit.style.flex = '1';
+      creditSec.style.display = 'none';
+      paySec.style.display = 'block';
+      cashSec.style.display = '';
+      btnConfirm.textContent = 'Confirmar Venta';
+      onPayMethodChange();
+    }
+  }
+
+  async function loadCreditCustomers() {
+    try {
+      const resp = await fetch('/api/v1/customers', {headers});
+      const {data} = await resp.json();
+      const sel = document.getElementById('credit-customer');
+      sel.innerHTML = '<option value="">Seleccione cliente...</option>' +
+        (data||[]).filter(c => c.credit_limit > 0).map(c =>
+          `<option value="${c.id}" data-days="${c.credit_days}" data-limit="${c.credit_limit}" data-name="${c.name}">${c.name} (Límite: ${COP(c.credit_limit)})</option>`
+        ).join('');
+    } catch(e) {}
+  }
+
+  function onCreditCustomerChange() {
+    const sel = document.getElementById('credit-customer');
+    const opt = sel.options[sel.selectedIndex];
+    if (opt && opt.value) {
+      document.getElementById('credit-days').value = opt.dataset.days || 30;
+      document.getElementById('credit-limit-info').textContent = COP(opt.dataset.limit || 0);
+    }
+  }
+
+  function onPayMethodChange() {
+    const m = document.getElementById('pay-method').value;
+    document.getElementById('cash-section').style.display = m === 'cash' ? '' : 'none';
+    document.getElementById('ref-section').style.display = m !== 'cash' ? '' : 'none';
+    if (m !== 'cash') {
+      document.getElementById('btn-confirm-sale').disabled = false;
+      document.getElementById('change-display').className = 'change-display change-ok';
+      document.getElementById('change-display').textContent = PAY_NAMES[m] || m;
+    }
+  }
+
+  function setReceived(amount) {
+    const el = document.getElementById('pay-received');
+    el.value = amount === 'exact' ? currentTotal : amount;
+    calcChange();
+    document.querySelectorAll('.quick-amount').forEach(b => b.classList.remove('selected'));
+    event.target.classList.add('selected');
+  }
+
+  function calcChange() {
+    const received = parseFloat(document.getElementById('pay-received').value) || 0;
+    const change = received - currentTotal;
+    const el = document.getElementById('change-display');
+    const btn = document.getElementById('btn-confirm-sale');
+
+    if (received <= 0) {
+      el.className = 'change-display change-pending';
+      el.textContent = 'Ingrese el monto recibido';
+      btn.disabled = true;
+    } else if (change < 0) {
+      el.className = 'change-display change-pending';
+      el.innerHTML = `Faltan <strong>${COP(Math.abs(change))}</strong>`;
+      btn.disabled = true;
+    } else {
+      el.className = 'change-display change-ok';
+      el.innerHTML = `Cambio: <strong>${COP(change)}</strong>`;
+      btn.disabled = false;
+    }
+  }
+
+  function toggleBuyerFields() {
+    document.getElementById('buyer-fields').style.display =
+      document.getElementById('pay-is-company').checked ? '' : 'none';
+  }
+
+  // ── Confirm Sale ─────────────────────────────────────────
+  async function confirmSale() {
+    const btn = document.getElementById('btn-confirm-sale');
+    btn.disabled = true; btn.textContent = 'Procesando...';
+
+    const method = document.getElementById('pay-method').value;
+    const received = method === 'cash' ? parseFloat(document.getElementById('pay-received').value) : currentTotal;
+    const reference = document.getElementById('pay-reference').value;
+
+    const isCompany = document.getElementById('pay-is-company').checked;
+    const buyerName = isCompany ? document.getElementById('pay-buyer-name').value : 'Consumidor Final';
+    const buyerTaxId = isCompany ? document.getElementById('pay-buyer-taxid').value : '222222222222';
+    const buyerEmail = isCompany ? document.getElementById('pay-buyer-email').value : '';
+
+    const payload = {
+      items: cart.map(i => ({product_id: i.product_id, quantity: i.quantity})),
+      customer_name: buyerName,
+      customer_tax_id: buyerTaxId,
+      idempotency_key: crypto.randomUUID(),
+    };
+
+    if (currentSaleType === 'credit') {
+      const custId = document.getElementById('credit-customer').value;
+      if (!custId) { rohuAlert('Seleccione un cliente para la venta a crédito', 'warning'); btn.disabled = false; btn.textContent = 'Confirmar Venta a Crédito'; return; }
+      payload.sale_type = 'credit';
+      payload.customer_id = custId;
+      payload.credit_days = parseInt(document.getElementById('credit-days').value) || 30;
+      payload.payments = [];
+      // Use customer name from selector
+      const opt = document.getElementById('credit-customer').options[document.getElementById('credit-customer').selectedIndex];
+      payload.customer_name = opt.dataset.name || buyerName;
+    } else {
+      payload.sale_type = 'cash';
+      payload.payments = [{method, amount: currentTotal, received_amount: received, reference: reference || undefined}];
+    }
+
+    try {
+      const resp = await fetch('/api/v1/pos/checkout', {method:'POST', headers, body:JSON.stringify(payload)});
+      const result = await resp.json();
+      if (result.success) {
+        closePaymentModal();
+        cart = []; renderCart();
+        lastSaleId = result.data.id;
+        lastBuyerData = { customer_name: buyerName, customer_tax_id: buyerTaxId, customer_email: buyerEmail };
+        showReceipt(result.data);
+        // Refresh product grid to show updated stock
+        setTimeout(() => searchProducts(''), 500);
+      } else {
+        rohuAlert('Error: ' + result.error.message, 'error');
+      }
+    } catch (err) {
+      // Offline: queue the sale for later sync
+      if (!navigator.onLine && typeof rohuAddToOutbox === 'function') {
+        try {
+          await rohuAddToOutbox('/api/v1/pos/checkout', 'POST', headers, JSON.stringify(payload));
+          closePaymentModal();
+          cart = []; renderCart();
+          rohuAlert('Venta guardada offline. Se sincronizará al reconectar.', 'warning');
+          if (typeof rohuUpdateOutboxBadge === 'function') rohuUpdateOutboxBadge();
+        } catch (queueErr) {
+          rohuAlert(queueErr.message || 'Error guardando venta offline', 'error');
+        }
+      } else {
+        rohuAlert('Error de conexión: ' + (err.message || 'Intente de nuevo'), 'error');
+      }
+    }
+    btn.disabled = false;
+    btn.textContent = currentSaleType === 'credit' ? 'Confirmar Venta a Crédito' : 'Confirmar Venta';
+  }
+
+  // ── Receipt ──────────────────────────────────────────────
+  function showReceipt(sale) {
+    const t = tenantInfo || {};
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const pay = sale.payments[0] || {};
+    const change = (pay.received_amount || 0) - (pay.amount || 0);
+    const date = new Date(sale.sale_date).toLocaleString('es-CO');
+
+    document.getElementById('receipt-content').innerHTML = `
+      <div class="receipt-ticket">
+        <div class="r-header">
+          <h3>${t.name || 'ROHU Contable'}</h3>
+          ${t.tax_id ? `<div>NIT: ${t.tax_id}${t.tax_id_check_digit ? '-'+t.tax_id_check_digit : ''}</div>` : ''}
+          ${t.address ? `<div>${t.address}${t.city ? ', '+t.city : ''}</div>` : ''}
+          ${t.phone ? `<div>Tel: ${t.phone}</div>` : ''}
+        </div>
+        <div style="margin-bottom:8px;">
+          <div><strong>${sale.invoice_number}</strong></div>
+          <div>${date}</div>
+          <div>Cajero: ${user.full_name || ''}</div>
+        </div>
+        <table class="r-items" style="width:100%; border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #333;">
+            <th style="text-align:left;">Producto</th><th style="text-align:right;">Cant</th>
+            <th style="text-align:right;">P.Unit</th><th style="text-align:right;">Total</th>
+          </tr></thead>
+          <tbody>
+            ${sale.items.map(i => `<tr>
+              <td>${i.product_name}</td><td style="text-align:right;">${i.quantity}</td>
+              <td style="text-align:right;">${COP(i.unit_price)}</td><td style="text-align:right;">${COP(i.total)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top:8px; border-top:1px dashed #999; padding-top:6px;">
+          <div style="display:flex; justify-content:space-between;"><span>Subtotal</span><span>${COP(sale.subtotal)}</span></div>
+          <div style="display:flex; justify-content:space-between;"><span>IVA</span><span>${COP(sale.tax_amount)}</span></div>
+        </div>
+        <div class="r-total">${COP(sale.total_amount)}</div>
+        <div style="margin-top:8px; font-size:12px;">
+          <div>Método: ${PAY_NAMES[pay.method] || pay.method}</div>
+          ${pay.received_amount ? `<div>Recibido: ${COP(pay.received_amount)}</div>` : ''}
+        </div>
+        ${change > 0 ? `<div class="r-change">CAMBIO: ${COP(change)}</div>` : ''}
+        <div class="r-footer">
+          ¡Gracias por su compra!<br>
+          Este documento no es factura electrónica DIAN.<br>
+          Conserve este comprobante.
+        </div>
+      </div>`;
+    document.getElementById('receipt-modal').style.display = 'flex';
+  }
+
+  function closeReceipt() {
+    document.getElementById('receipt-modal').style.display = 'none';
+    searchInput.focus();
+  }
+
+  // ── Keyboard Shortcuts ───────────────────────────────────
+  // ── Generate Electronic Invoice ───────────────────────────
+  async function generateEInvoice() {
+    if (!lastSaleId) { rohuAlert('No hay venta activa para facturar', 'warning'); return; }
+    const btn = document.getElementById('btn-einvoice');
+    btn.disabled = true; btn.textContent = 'Generando...';
+    const statusEl = document.getElementById('invoice-status');
+
+    try {
+      const resp = await fetch(`/api/v1/invoicing/generate/${lastSaleId}`, {
+        method: 'POST', headers, body: JSON.stringify(lastBuyerData),
+      });
+      const r = await resp.json();
+      if (r.success) {
+        const inv = r.data;
+        const statusText = {draft:'Borrador',sent:'Enviada',accepted:'Aceptada DIAN',rejected:'Rechazada',error:'Error'};
+        const statusColor = {draft:'badge-warning',sent:'badge-info',accepted:'badge-success',rejected:'badge-danger',error:'badge-danger'};
+        statusEl.style.display = 'block';
+        statusEl.innerHTML = `
+          <div style="background:#DCFCE7;padding:10px;border-radius:8px;text-align:center;">
+            <div style="font-weight:700;">Factura Electrónica ${inv.invoice_number}</div>
+            <span class="badge ${statusColor[inv.status]||''}">${statusText[inv.status]||inv.status}</span>
+            ${inv.cufe ? `<div style="font-size:12px;font-family:monospace;margin-top:4px;word-break:break-all;">CUFE: ${inv.cufe}</div>` : ''}
+            ${inv.qr_code_url ? `<a href="${inv.qr_code_url}" target="_blank" style="font-size:12px;">Ver en DIAN</a>` : ''}
+          </div>`;
+        btn.textContent = 'Facturada';
+      } else {
+        statusEl.style.display = 'block';
+        statusEl.innerHTML = `<div class="alert alert-danger" style="margin:0;">${r.error.message}</div>`;
+        btn.disabled = false; btn.textContent = 'Reintentar';
+      }
+    } catch (err) {
+      rohuAlert('Error al generar factura: ' + err.message, 'error');
+      btn.disabled = false; btn.textContent = 'Factura Electrónica';
+    }
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    // F2 or / = focus search
+    if ((e.key === '/' || e.key === 'F2') && document.activeElement !== searchInput) { e.preventDefault(); searchInput.focus(); }
+    // F12 = open payment modal (COBRAR)
+    if (e.key === 'F12') { e.preventDefault(); openPaymentModal(); }
+    // Escape = close modals
+    if (e.key === 'Escape') { closePaymentModal(); closeReceipt(); stopQRScanner(); }
+    // Num+ = increment last item qty
+    if (e.key === '+' && cart.length > 0 && document.activeElement !== searchInput) {
+      e.preventDefault(); cart[cart.length-1].quantity++; renderCart();
+    }
+    // Num- = decrement last item qty
+    if (e.key === '-' && cart.length > 0 && document.activeElement !== searchInput) {
+      e.preventDefault(); updateQty(cart.length-1, -1);
+    }
+  });
+
+  searchProducts('');
+
+  // ── Sales History + Returns ─────────────────────────────────
+  // lastSaleId declared above (line ~217)
+  let returnSaleData = null;
+
+  function toggleSalesHistory() {
+    const el = document.getElementById('sales-history');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    if (el.style.display === 'block') loadRecentSales();
+  }
+
+  async function loadRecentSales() {
+    const resp = await fetch('/api/v1/pos/sales?per_page=10', {headers});
+    const {data} = await resp.json();
+    const tbody = document.getElementById('recent-sales');
+    if (!data || !data.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-light)">Sin ventas hoy</td></tr>'; return; }
+    const STATUS_COLORS = {completed:'badge-success', voided:'badge-danger'};
+    const STATUS_NAMES = {completed:'Completada', voided:'Anulada'};
+    tbody.innerHTML = data.map(s => `<tr>
+      <td><strong>${s.invoice_number}</strong></td>
+      <td>${COP(s.total_amount)}</td>
+      <td><span class="badge ${STATUS_COLORS[s.status]||''}">${STATUS_NAMES[s.status]||s.status}</span></td>
+      <td>${new Date(s.sale_date).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td>${s.status==='completed'?`<button class="btn btn-outline" style="padding:2px 8px;font-size:12px;" onclick="openReturnModal('${s.id}')">Devolución</button>`:''}</td>
+    </tr>`).join('');
+  }
+
+  async function openReturnModal(saleId) {
+    if (!saleId) return;
+    document.getElementById('receipt-modal').style.display = 'none';
+    const resp = await fetch(`/api/v1/pos/sales/${saleId}`, {headers});
+    const {data} = await resp.json();
+    returnSaleData = data;
+    const el = document.getElementById('return-items');
+    el.innerHTML = `<div style="font-size:13px;color:var(--text-light);margin-bottom:8px;">Venta: ${data.invoice_number}</div>
+      <table style="width:100%;font-size:13px;">
+        <thead><tr><th></th><th>Producto</th><th>Cant. vendida</th><th>Devolver</th></tr></thead>
+        <tbody>${data.items.map((item, i) => `<tr>
+          <td><input type="checkbox" id="ret-chk-${i}" checked></td>
+          <td>${item.product_name}</td>
+          <td>${item.quantity}</td>
+          <td><input type="number" id="ret-qty-${i}" value="${item.quantity}" min="1" max="${item.quantity}" style="width:60px;" class="form-control"></td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    document.getElementById('return-reason').value = '';
+    document.getElementById('return-modal').style.display = 'flex';
+  }
+
+  async function processReturn() {
+    if (!returnSaleData) return;
+    const reason = document.getElementById('return-reason').value.trim();
+    if (!reason) { rohuAlert('Ingrese la razón de la devolución', 'warning'); return; }
+
+    const items = [];
+    returnSaleData.items.forEach((item, i) => {
+      const chk = document.getElementById(`ret-chk-${i}`);
+      const qty = parseFloat(document.getElementById(`ret-qty-${i}`).value);
+      if (chk.checked && qty > 0) {
+        items.push({ product_id: item.product_id, quantity: qty });
+      }
+    });
+
+    if (!items.length) { rohuAlert('Seleccione al menos un producto a devolver', 'warning'); return; }
+
+    const resp = await fetch(`/api/v1/pos/sales/${returnSaleData.id}/return`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ items, reason }),
+    });
+    const r = await resp.json();
+    if (r.success) {
+      document.getElementById('return-modal').style.display = 'none';
+      rohuAlert(`Nota crédito ${r.data.credit_note_number} generada por ${COP(r.data.total_amount)}`, 'success');
+      loadRecentSales();
+    } else {
+      rohuAlert(r.error.message, 'error');
+    }
+  }
+</script>
+{% endblock %}

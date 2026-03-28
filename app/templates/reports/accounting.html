@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% set active_page = 'accounting' %}
+{% block title %}Contabilidad — ROHU Contable{% endblock %}
+{% block header_title %}Contabilidad{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Contabilidad</h1>
+</div>
+
+<!-- Tabs -->
+<div style="display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid var(--border);">
+  <button class="btn btn-outline tab-btn active" onclick="switchTab('balance')" id="tab-balance" style="border-radius:8px 8px 0 0; border-bottom:none;">Balance de Prueba</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('journal')" id="tab-journal" style="border-radius:8px 8px 0 0; border-bottom:none;">Libro Diario</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('puc')" id="tab-puc" style="border-radius:8px 8px 0 0; border-bottom:none;">Plan de Cuentas (PUC)</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('periods')" id="tab-periods" style="border-radius:8px 8px 0 0; border-bottom:none;">Periodos / Cierre</button>
+</div>
+
+<!-- Tab: Balance -->
+<div id="panel-balance" class="tab-panel">
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Cuenta</th><th>Nombre</th><th style="text-align:right">Débito</th><th style="text-align:right">Crédito</th><th style="text-align:right">Saldo</th></tr></thead>
+        <tbody id="balance-table"><tr><td colspan="5">Cargando...</td></tr></tbody>
+        <tfoot id="balance-footer"></tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Journal -->
+<div id="panel-journal" class="tab-panel" style="display:none;">
+  <div class="card">
+    <div id="journal-list">Cargando...</div>
+  </div>
+</div>
+
+<!-- Tab: PUC Management -->
+<div id="panel-puc" class="tab-panel" style="display:none;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <input type="text" id="puc-search" class="search-input" placeholder="Buscar por código o nombre..." oninput="filterPUC()" style="max-width:400px;">
+    <button class="btn btn-primary" onclick="openPUCModal()">+ Nueva Cuenta</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Código PUC</th><th>Nombre</th><th>Tipo</th><th>Balance</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody id="puc-table"><tr><td colspan="6">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- PUC Create/Edit Modal -->
+<div id="puc-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:460px; max-height:90vh; overflow-y:auto;">
+    <h3 id="puc-modal-title" style="margin-bottom:16px;">Nueva Cuenta PUC</h3>
+    <form id="puc-form">
+      <div style="display:grid; grid-template-columns:1fr 2fr; gap:8px;">
+        <div class="form-group"><label>Código PUC *</label><input type="text" id="puc-code" class="form-control" required placeholder="Ej: 1110, 510501"></div>
+        <div class="form-group"><label>Nombre *</label><input type="text" id="puc-name" class="form-control" required placeholder="Ej: Bancos nacionales"></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Tipo de cuenta *</label>
+          <select id="puc-type" class="form-control" required>
+            <option value="asset">Activo</option>
+            <option value="liability">Pasivo</option>
+            <option value="equity">Patrimonio</option>
+            <option value="income">Ingreso</option>
+            <option value="expense">Gasto</option>
+            <option value="cost">Costo</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Balance normal *</label>
+          <select id="puc-balance" class="form-control" required>
+            <option value="debit">Débito</option>
+            <option value="credit">Crédito</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Cuenta padre (código)</label><input type="text" id="puc-parent" class="form-control" placeholder="Ej: 11 (para subcuenta de activos)"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closePUCModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="puc-submit">Crear Cuenta</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Tab: Periods -->
+<div id="panel-periods" class="tab-panel" style="display:none;">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Cierre de Periodo Mensual</div>
+    <p style="font-size:13px; color:var(--text-light); margin-bottom:12px;">
+      Al cerrar un periodo, se genera un asiento de cierre que traslada ingresos y gastos a la cuenta de Utilidad del Ejercicio (3605). No se podrán crear asientos en periodos cerrados.
+    </p>
+    <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:16px;">
+      <div class="form-group" style="margin:0;">
+        <label>Año</label>
+        <input type="number" id="period-year" class="form-control" style="width:100px;" value="2026">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Mes</label>
+        <select id="period-month" class="form-control" style="width:150px;">
+          <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+          <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+          <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+          <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="closePeriod()">Cerrar Periodo</button>
+      <button class="btn btn-outline" onclick="reopenPeriod()">Reabrir</button>
+    </div>
+    <div id="period-result"></div>
+  </div>
+</div>
+
+<p style="margin-top:16px; font-size:12px; color:var(--text-light);">
+  La información contable es generada automáticamente. Consulte con su contador para declaraciones ante la DIAN.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 2});
+  const TYPES = {asset:'Activo',liability:'Pasivo',equity:'Patrimonio',income:'Ingreso',expense:'Gasto',cost:'Costo'};
+  let allAccounts = [];
+  let editingPUC = null;
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + tab).style.display = 'block';
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'balance') loadBalance();
+    if (tab === 'journal') loadJournal();
+    if (tab === 'puc') loadPUC();
+  }
+
+  // ── Balance ───────────────────────────────────────────────────
+  async function loadBalance() {
+    try {
+      const resp = await fetch('/api/v1/accounting/trial-balance', {headers});
+      const {data} = await resp.json();
+      const tbody = document.getElementById('balance-table');
+      tbody.innerHTML = data.accounts.map(a => `
+        <tr>
+          <td><strong>${a.puc_code}</strong></td>
+          <td>${a.name}</td>
+          <td style="text-align:right">${a.total_debit > 0 ? COP(a.total_debit) : ''}</td>
+          <td style="text-align:right">${a.total_credit > 0 ? COP(a.total_credit) : ''}</td>
+          <td style="text-align:right; font-weight:700; color:${a.balance >= 0 ? 'var(--text)' : 'var(--danger)'};">${COP(a.balance)}</td>
+        </tr>
+      `).join('');
+      document.getElementById('balance-footer').innerHTML = `
+        <tr style="font-weight:700; background:var(--bg);">
+          <td colspan="2">TOTALES</td>
+          <td style="text-align:right">${COP(data.total_debit)}</td>
+          <td style="text-align:right">${COP(data.total_credit)}</td>
+          <td style="text-align:right">${data.is_balanced ? '<span class="badge badge-success">Cuadrado</span>' : '<span class="badge badge-danger">Descuadre</span>'}</td>
+        </tr>`;
+    } catch (e) { console.error(e); }
+  }
+
+  // ── Journal ───────────────────────────────────────────────────
+  async function loadJournal() {
+    try {
+      const resp = await fetch('/api/v1/accounting/journal?per_page=10', {headers});
+      const {data} = await resp.json();
+      const el = document.getElementById('journal-list');
+      if (!data.length) { el.innerHTML = '<div style="color:var(--text-light);">Sin asientos contables</div>'; return; }
+      el.innerHTML = data.map(e => `
+        <div style="border:1px solid var(--border); border-radius:var(--radius); padding:12px; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span class="badge badge-info">${e.entry_type}</span>
+            <span style="font-size:12px; color:var(--text-light);">${new Date(e.entry_date).toLocaleString('es-CO')}</span>
+          </div>
+          <div style="font-weight:500; margin-bottom:8px;">${e.description}</div>
+          <table style="font-size:13px;">
+            <thead><tr><th>Cuenta</th><th>Nombre</th><th style="text-align:right">Débito</th><th style="text-align:right">Crédito</th></tr></thead>
+            <tbody>${e.lines.map(l => `
+              <tr>
+                <td>${l.account_puc}</td>
+                <td>${l.account_name}</td>
+                <td style="text-align:right">${l.debit > 0 ? COP(l.debit) : ''}</td>
+                <td style="text-align:right">${l.credit > 0 ? COP(l.credit) : ''}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      `).join('');
+    } catch (e) { console.error(e); }
+  }
+
+  // ── PUC Management ────────────────────────────────────────────
+  async function loadPUC() {
+    try {
+      const resp = await fetch('/api/v1/accounting/accounts', {headers});
+      const {data} = await resp.json();
+      allAccounts = data;
+      renderPUC(data);
+    } catch (e) { console.error(e); }
+  }
+
+  function renderPUC(accounts) {
+    const tbody = document.getElementById('puc-table');
+    if (!accounts.length) { tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-light)">Sin cuentas. Ejecute "Sembrar PUC" desde configuración.</td></tr>'; return; }
+    // Sort by PUC code and indent by length
+    const sorted = [...accounts].sort((a, b) => a.puc_code.localeCompare(b.puc_code));
+    tbody.innerHTML = sorted.map(a => {
+      const indent = Math.max(0, a.puc_code.length - 2) * 12;
+      const isParent = a.puc_code.length <= 2;
+      return `<tr style="${!a.is_active ? 'opacity:0.5;' : ''}">
+        <td style="padding-left:${indent + 8}px;"><strong>${a.puc_code}</strong></td>
+        <td style="${isParent ? 'font-weight:600;' : ''}">${a.name}</td>
+        <td><span class="badge ${a.account_type === 'asset' || a.account_type === 'expense' || a.account_type === 'cost' ? 'badge-info' : 'badge-success'}">${TYPES[a.account_type] || a.account_type}</span></td>
+        <td>${a.normal_balance === 'debit' ? 'Débito' : 'Crédito'}</td>
+        <td>${a.is_active ? '<span class="badge badge-success">Activa</span>' : '<span class="badge badge-danger">Inactiva</span>'}</td>
+        <td style="white-space:nowrap;">
+          ${!a.is_system ? `
+            <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="editPUC('${a.id}','${a.puc_code}','${a.name}',${a.is_active})">Editar</button>
+            <button class="btn ${a.is_active ? 'btn-outline' : 'btn-success'}" style="padding:4px 10px;font-size:12px;" onclick="togglePUC('${a.id}',${!a.is_active})">${a.is_active ? 'Inactivar' : 'Activar'}</button>
+            <button class="btn btn-danger" style="padding:4px 10px;font-size:12px;" onclick="deletePUC('${a.id}','${a.puc_code}')">Eliminar</button>
+          ` : '<span style="font-size:12px;color:var(--text-light);">Sistema</span>'}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function filterPUC() {
+    const q = (document.getElementById('puc-search').value || '').toLowerCase();
+    if (!q) { renderPUC(allAccounts); return; }
+    renderPUC(allAccounts.filter(a => a.puc_code.includes(q) || a.name.toLowerCase().includes(q)));
+  }
+
+  function openPUCModal() {
+    editingPUC = null;
+    document.getElementById('puc-modal-title').textContent = 'Nueva Cuenta PUC';
+    document.getElementById('puc-submit').textContent = 'Crear Cuenta';
+    document.getElementById('puc-code').disabled = false;
+    document.getElementById('puc-form').reset();
+    document.getElementById('puc-modal').style.display = 'flex';
+  }
+
+  function closePUCModal() { document.getElementById('puc-modal').style.display = 'none'; editingPUC = null; }
+
+  function editPUC(id, code, name, isActive) {
+    editingPUC = id;
+    document.getElementById('puc-modal-title').textContent = 'Editar Cuenta ' + code;
+    document.getElementById('puc-submit').textContent = 'Guardar';
+    document.getElementById('puc-code').value = code;
+    document.getElementById('puc-code').disabled = true;
+    document.getElementById('puc-name').value = name;
+    document.getElementById('puc-modal').style.display = 'flex';
+  }
+
+  document.getElementById('puc-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (editingPUC) {
+      const body = { name: document.getElementById('puc-name').value };
+      const resp = await fetch(`/api/v1/accounting/accounts/${editingPUC}`, {method:'PATCH', headers, body:JSON.stringify(body)});
+      const r = await resp.json();
+      if (r.success) { closePUCModal(); loadPUC(); rohuAlert('Cuenta actualizada', 'success'); }
+      else { rohuAlert(r.error.message, 'error'); }
+    } else {
+      const body = {
+        puc_code: document.getElementById('puc-code').value,
+        name: document.getElementById('puc-name').value,
+        account_type: document.getElementById('puc-type').value,
+        normal_balance: document.getElementById('puc-balance').value,
+        parent_code: document.getElementById('puc-parent').value || null,
+      };
+      const resp = await fetch('/api/v1/accounting/accounts', {method:'POST', headers, body:JSON.stringify(body)});
+      const r = await resp.json();
+      if (r.success) { closePUCModal(); loadPUC(); rohuAlert(`Cuenta ${body.puc_code} creada`, 'success'); }
+      else { rohuAlert(r.error.message, 'error'); }
+    }
+  });
+
+  async function togglePUC(id, newActive) {
+    const action = newActive ? 'activar' : 'inactivar';
+    const ok = await rohuConfirm(`¿${newActive ? 'Activar' : 'Inactivar'} esta cuenta? ${!newActive ? 'No aparecerá en nuevos asientos pero sus movimientos históricos se conservan.' : ''}`);
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/accounting/accounts/${id}`, {method:'PATCH', headers, body:JSON.stringify({is_active:newActive})});
+    const r = await resp.json();
+    if (r.success) { loadPUC(); rohuAlert(`Cuenta ${action}da`, 'success'); }
+    else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  async function deletePUC(id, code) {
+    const ok = await rohuConfirm(`¿Eliminar la cuenta <strong>${code}</strong>?<br><br>Solo se puede eliminar si no tiene movimientos contables. Si tiene movimientos, use "Inactivar".`);
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/accounting/accounts/${id}`, {method:'DELETE', headers});
+    const r = await resp.json();
+    if (r.success) { loadPUC(); rohuAlert(`Cuenta ${code} eliminada`, 'info'); }
+    else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  // ── Period Close/Reopen ────────────────────────────────────────
+  async function closePeriod() {
+    const year = document.getElementById('period-year').value;
+    const month = document.getElementById('period-month').value;
+    const MONTHS = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const ok = await rohuConfirm(`¿Cerrar el periodo <strong>${MONTHS[month]} ${year}</strong>?<br><br>Se generará un asiento de cierre y no se podrán crear nuevos asientos en este mes.`);
+    if (!ok) return;
+
+    try {
+      const resp = await fetch(`/api/v1/accounting/periods/${year}/${month}/close`, {method:'POST', headers, body:'{}'});
+      const r = await resp.json();
+      if (r.success) {
+        const d = r.data;
+        document.getElementById('period-result').innerHTML = `
+          <div class="alert" style="background:#D1FAE5; border:1px solid var(--success); padding:12px; border-radius:8px;">
+            <strong>Periodo ${MONTHS[month]} ${year} cerrado.</strong><br>
+            Ingresos: ${COP(d.income || 0)}<br>
+            Gastos: ${COP(d.expenses || 0)}<br>
+            Costos: ${COP(d.costs || 0)}<br>
+            <strong>Utilidad neta: ${COP(d.net_income || 0)}</strong>
+          </div>`;
+        rohuAlert(`Periodo ${MONTHS[month]} ${year} cerrado exitosamente`, 'success');
+      } else {
+        document.getElementById('period-result').innerHTML = `<div class="alert alert-danger">${r.error.message}</div>`;
+      }
+    } catch (e) { rohuAlert('Error cerrando periodo', 'error'); }
+  }
+
+  async function reopenPeriod() {
+    const year = document.getElementById('period-year').value;
+    const month = document.getElementById('period-month').value;
+    const ok = await rohuConfirm('¿Reabrir este periodo? Solo se puede si no hay periodos posteriores cerrados.');
+    if (!ok) return;
+
+    try {
+      const resp = await fetch(`/api/v1/accounting/periods/${year}/${month}/reopen`, {method:'POST', headers, body:'{}'});
+      const r = await resp.json();
+      if (r.success) {
+        document.getElementById('period-result').innerHTML = '<div class="alert" style="background:#DBEAFE; border:1px solid var(--info);">Periodo reabierto correctamente.</div>';
+        rohuAlert('Periodo reabierto', 'success');
+      } else {
+        document.getElementById('period-result').innerHTML = `<div class="alert alert-danger">${r.error.message}</div>`;
+      }
+    } catch (e) { rohuAlert('Error reabriendo periodo', 'error'); }
+  }
+
+  loadBalance();
+</script>
+{% endblock %}

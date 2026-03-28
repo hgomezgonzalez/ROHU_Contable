@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% set active_page = 'cash' %}
+{% block title %}Caja y Bancos — ROHU Contable{% endblock %}
+{% block header_title %}Caja y Bancos{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Caja y Bancos</h1>
+</div>
+
+<!-- Tabs -->
+<div style="display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid var(--border);">
+  <button class="btn btn-outline tab-btn active" onclick="switchTab('receipts')" id="tab-receipts" style="border-radius:8px 8px 0 0; border-bottom:none;">Recibos de Caja</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('disbursements')" id="tab-disbursements" style="border-radius:8px 8px 0 0; border-bottom:none;">Egresos</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('transfers')" id="tab-transfers" style="border-radius:8px 8px 0 0; border-bottom:none;">Traslados</button>
+</div>
+
+<!-- Tab: Receipts -->
+<div id="panel-receipts" class="tab-panel">
+  <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+    <button class="btn btn-primary" onclick="openReceiptModal()">+ Recibo de Caja</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>RC #</th><th>Tipo</th><th>Concepto</th><th>Monto</th><th>Método</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+        <tbody id="rc-table"><tr><td colspan="8">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Disbursements -->
+<div id="panel-disbursements" class="tab-panel" style="display:none;">
+  <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+    <button class="btn btn-primary" onclick="openDisbModal()">+ Comprobante de Egreso</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>CE #</th><th>Tipo</th><th>Concepto</th><th>Monto</th><th>Método</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+        <tbody id="ce-table"><tr><td colspan="8">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Transfers -->
+<div id="panel-transfers" class="tab-panel" style="display:none;">
+  <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+    <button class="btn btn-primary" onclick="openTransferModal()">+ Traslado</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>TR #</th><th>Origen</th><th>Destino</th><th>Monto</th><th>Referencia</th><th>Fecha</th></tr></thead>
+        <tbody id="tr-table"><tr><td colspan="6">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt Modal -->
+<div id="rc-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:480px;">
+    <h3 style="margin-bottom:16px;">Recibo de Caja (Ingreso)</h3>
+    <form id="rc-form">
+      <div class="form-group"><label>Tipo de ingreso *</label>
+        <select id="rc-type" class="form-control" required>
+          <option value="customer_payment">Pago de cliente</option>
+          <option value="other_income">Otro ingreso</option>
+          <option value="partner_capital">Aporte de socio</option>
+          <option value="loan">Préstamo recibido</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Concepto *</label><input type="text" id="rc-concept" class="form-control" required placeholder="Ej: Abono factura #123"></div>
+      <div class="form-group"><label>Nombre / Origen</label><input type="text" id="rc-source" class="form-control" placeholder="Nombre del cliente, socio, etc."></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Monto *</label><input type="number" id="rc-amount" class="form-control" step="100" min="1" required></div>
+        <div class="form-group"><label>Método</label>
+          <select id="rc-method" class="form-control">
+            <option value="cash">Efectivo</option><option value="transfer">Transferencia</option>
+            <option value="nequi">Nequi</option><option value="daviplata">Daviplata</option><option value="check">Cheque</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Referencia</label><input type="text" id="rc-ref" class="form-control" placeholder="# comprobante, recibo, etc."></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeM('rc-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar Ingreso</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Disbursement Modal -->
+<div id="ce-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:480px;">
+    <h3 style="margin-bottom:16px;">Comprobante de Egreso</h3>
+    <form id="ce-form">
+      <div class="form-group"><label>Tipo de egreso *</label>
+        <select id="ce-type" class="form-control" required onchange="togglePuc()">
+          <option value="expense">Gasto operativo</option>
+          <option value="supplier_payment">Pago a proveedor</option>
+          <option value="petty_cash">Reembolso caja menor</option>
+          <option value="bank_transfer">Consignación a banco</option>
+          <option value="other">Otro</option>
+        </select>
+      </div>
+      <div class="form-group" id="puc-group"><label>Cuenta de gasto</label>
+        <select id="ce-puc" class="form-control">
+          <option value="5105">5105 - Gastos de personal</option>
+          <option value="5115">5115 - Honorarios (contador)</option>
+          <option value="5135">5135 - Servicios públicos</option>
+          <option value="5150">5150 - Seguros</option>
+          <option value="5160">5160 - Arrendamiento</option>
+          <option value="5195">5195 - Gastos diversos</option>
+          <option value="5305">5305 - Comisiones bancarias</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Concepto *</label><input type="text" id="ce-concept" class="form-control" required placeholder="Ej: Pago arriendo local"></div>
+      <div class="form-group"><label>Beneficiario</label><input type="text" id="ce-dest" class="form-control" placeholder="Nombre del beneficiario"></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Monto *</label><input type="number" id="ce-amount" class="form-control" step="100" min="1" required></div>
+        <div class="form-group"><label>Método</label>
+          <select id="ce-method" class="form-control">
+            <option value="cash">Efectivo</option><option value="transfer">Transferencia</option>
+            <option value="nequi">Nequi</option><option value="daviplata">Daviplata</option><option value="check">Cheque</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Referencia</label><input type="text" id="ce-ref" class="form-control"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeM('ce-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-danger">Registrar Egreso</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Transfer Modal -->
+<div id="tr-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:420px;">
+    <h3 style="margin-bottom:16px;">Traslado entre Cuentas</h3>
+    <form id="tr-form">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Origen *</label>
+          <select id="tr-from" class="form-control" required>
+            <option value="1105">Caja</option><option value="1110">Bancos</option>
+            <option value="1115">Cta. Ahorro</option><option value="1705">Caja menor</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Destino *</label>
+          <select id="tr-to" class="form-control" required>
+            <option value="1110">Bancos</option><option value="1105">Caja</option>
+            <option value="1115">Cta. Ahorro</option><option value="1705">Caja menor</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Monto *</label><input type="number" id="tr-amount" class="form-control" step="100" min="1" required></div>
+      <div class="form-group"><label>Referencia</label><input type="text" id="tr-ref" class="form-control" placeholder="# consignación, etc."></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeM('tr-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Realizar Traslado</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  function closeM(id) { document.getElementById(id).style.display = 'none'; }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + tab).style.display = 'block';
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'receipts') loadReceipts();
+    if (tab === 'disbursements') loadDisbursements();
+    if (tab === 'transfers') loadTransfers();
+  }
+
+  function togglePuc() {
+    const type = document.getElementById('ce-type').value;
+    document.getElementById('puc-group').style.display = type === 'expense' ? 'block' : 'none';
+  }
+
+  // ── Receipts ──────────────────────────────────────────────────
+  function openReceiptModal() { document.getElementById('rc-modal').style.display = 'flex'; }
+
+  async function loadReceipts() {
+    const resp = await fetch('/api/v1/cash/receipts', {headers});
+    if (resp.status === 401) { window.location.href = '/app/login'; return; }
+    const {data} = await resp.json();
+    const tbody = document.getElementById('rc-table');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-light)">Sin recibos de caja</td></tr>'; return; }
+    tbody.innerHTML = data.map(r => `<tr>
+      <td><strong>${r.receipt_number}</strong></td>
+      <td>${r.source_type_label}</td>
+      <td>${r.concept}</td>
+      <td>${COP(r.amount)}</td>
+      <td>${r.method_label}</td>
+      <td><span class="badge ${r.status==='active'?'badge-success':'badge-danger'}">${r.status==='active'?'Activo':'Anulado'}</span></td>
+      <td>${new Date(r.receipt_date).toLocaleDateString('es-CO')}</td>
+      <td>${r.status==='active'?`<button class="btn btn-danger" style="padding:6px 12px;font-size:12px;" onclick="voidReceipt('${r.id}')">Anular</button>`:''}</td>
+    </tr>`).join('');
+  }
+
+  document.getElementById('rc-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const body = {
+      source_type: document.getElementById('rc-type').value,
+      concept: document.getElementById('rc-concept').value,
+      source_name: document.getElementById('rc-source').value || null,
+      amount: parseFloat(document.getElementById('rc-amount').value),
+      payment_method: document.getElementById('rc-method').value,
+      reference: document.getElementById('rc-ref').value || null,
+    };
+    const resp = await fetch('/api/v1/cash/receipts', {method:'POST', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) { closeM('rc-modal'); e.target.reset(); loadReceipts(); rohuAlert(`Recibo ${r.data.receipt_number} creado`, 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  });
+
+  async function voidReceipt(id) {
+    const ok = await rohuConfirm('¿Anular este recibo de caja?');
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/cash/receipts/${id}/void`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { loadReceipts(); rohuAlert('Recibo anulado', 'info'); } else { rohuAlert(r.error.message, 'error'); }
+  }
+
+  // ── Disbursements ─────────────────────────────────────────────
+  function openDisbModal() { togglePuc(); document.getElementById('ce-modal').style.display = 'flex'; }
+
+  async function loadDisbursements() {
+    const resp = await fetch('/api/v1/cash/disbursements', {headers});
+    const {data} = await resp.json();
+    const tbody = document.getElementById('ce-table');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-light)">Sin egresos registrados</td></tr>'; return; }
+    tbody.innerHTML = data.map(d => `<tr>
+      <td><strong>${d.disbursement_number}</strong></td>
+      <td>${d.destination_type_label}</td>
+      <td>${d.concept}</td>
+      <td>${COP(d.amount)}</td>
+      <td>${d.method_label}</td>
+      <td><span class="badge ${d.status==='active'?'badge-success':'badge-danger'}">${d.status==='active'?'Activo':'Anulado'}</span></td>
+      <td>${new Date(d.disbursement_date).toLocaleDateString('es-CO')}</td>
+      <td>${d.status==='active'?`<button class="btn btn-danger" style="padding:6px 12px;font-size:12px;" onclick="voidDisb('${d.id}')">Anular</button>`:''}</td>
+    </tr>`).join('');
+  }
+
+  document.getElementById('ce-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const destType = document.getElementById('ce-type').value;
+    const body = {
+      destination_type: destType,
+      concept: document.getElementById('ce-concept').value,
+      destination_name: document.getElementById('ce-dest').value || null,
+      amount: parseFloat(document.getElementById('ce-amount').value),
+      payment_method: document.getElementById('ce-method').value,
+      reference: document.getElementById('ce-ref').value || null,
+    };
+    if (destType === 'expense') body.puc_code = document.getElementById('ce-puc').value;
+    const resp = await fetch('/api/v1/cash/disbursements', {method:'POST', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) { closeM('ce-modal'); e.target.reset(); loadDisbursements(); rohuAlert(`Egreso ${r.data.disbursement_number} registrado`, 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  });
+
+  async function voidDisb(id) {
+    const ok = await rohuConfirm('¿Anular este egreso?');
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/cash/disbursements/${id}/void`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { loadDisbursements(); rohuAlert('Egreso anulado', 'info'); } else { rohuAlert(r.error.message, 'error'); }
+  }
+
+  // ── Transfers ─────────────────────────────────────────────────
+  function openTransferModal() { document.getElementById('tr-modal').style.display = 'flex'; }
+
+  async function loadTransfers() {
+    const resp = await fetch('/api/v1/cash/transfers', {headers});
+    const {data} = await resp.json();
+    const tbody = document.getElementById('tr-table');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-light)">Sin traslados</td></tr>'; return; }
+    tbody.innerHTML = data.map(t => `<tr>
+      <td><strong>${t.transfer_number}</strong></td>
+      <td>${t.from_account_name}</td>
+      <td>${t.to_account_name}</td>
+      <td>${COP(t.amount)}</td>
+      <td>${t.reference||'-'}</td>
+      <td>${new Date(t.transfer_date).toLocaleDateString('es-CO')}</td>
+    </tr>`).join('');
+  }
+
+  document.getElementById('tr-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const from = document.getElementById('tr-from').value;
+    const to = document.getElementById('tr-to').value;
+    if (from === to) { rohuAlert('Origen y destino deben ser diferentes', 'warning'); return; }
+    const body = {
+      from_account_puc: from, to_account_puc: to,
+      amount: parseFloat(document.getElementById('tr-amount').value),
+      reference: document.getElementById('tr-ref').value || null,
+    };
+    const resp = await fetch('/api/v1/cash/transfers', {method:'POST', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) { closeM('tr-modal'); e.target.reset(); loadTransfers(); rohuAlert(`Traslado ${r.data.transfer_number} realizado`, 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  });
+
+  // Init
+  loadReceipts();
+</script>
+{% endblock %}

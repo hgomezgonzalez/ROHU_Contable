@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% set active_page = 'dashboard' %}
+
+{% block title %}Tablero — ROHU Contable{% endblock %}
+{% block header_title %}Tablero de Control{% endblock %}
+
+{% block head %}
+<script src="/static/js/chart.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Hoy</h1>
+  <span class="badge badge-info" id="dashboard-date"></span>
+</div>
+
+<!-- KPI Cards — Ventas + Utilidad -->
+<div class="kpi-grid" id="kpi-grid">
+  <div class="card">
+    <div class="card-title">Ventas del día</div>
+    <div class="card-value" id="kpi-count">—</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Ventas (sin IVA)</div>
+    <div class="card-value positive" id="kpi-subtotal">—</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Costo mercancía</div>
+    <div class="card-value" id="kpi-cost" style="color:var(--danger);">—</div>
+  </div>
+  <div class="card" style="border-left:3px solid var(--success);">
+    <div class="card-title">Utilidad bruta</div>
+    <div class="card-value" id="kpi-profit" style="color:var(--success);">—</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Margen %</div>
+    <div class="card-value" id="kpi-margin">—</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Total con IVA</div>
+    <div class="card-value" id="kpi-revenue">—</div>
+  </div>
+  <div class="card">
+    <div class="card-title">IVA recaudado</div>
+    <div class="card-value" id="kpi-tax" style="color:var(--accent);">—</div>
+  </div>
+  <div class="card">
+    <div class="card-title">CxP pendiente</div>
+    <div class="card-value" id="kpi-cxp" style="color:var(--danger);">—</div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Ventas por hora</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-sales-hour')" title="Expandir">⛶</button><canvas id="chart-sales-hour" height="70"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Métodos de pago</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-payments')" title="Expandir">⛶</button><canvas id="chart-payments" height="70"></canvas></div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <!-- Top Products Chart -->
+  <div class="card">
+    <div class="card-title">Productos más vendidos hoy</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-top-products')" title="Expandir">⛶</button><canvas id="chart-top-products" height="70"></canvas></div>
+    <div class="table-wrap" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>Producto</th><th>Uds.</th><th>Venta</th><th>Utilidad</th><th>Margen</th></tr></thead>
+        <tbody id="top-products"><tr><td colspan="3" style="color:var(--text-light)">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Alerts -->
+  <div class="card">
+    <div class="card-title">Alertas</div>
+    <div id="alerts-list" style="padding:12px 0;">Cargando...</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const COLORS = {primary:'#1E3A8A', secondary:'#10B981', accent:'#06B6D4', warning:'#F59E0B', danger:'#EF4444', purple:'#8B5CF6'};
+  const PAY_NAMES = {cash:'Efectivo', card:'Tarjeta', transfer:'Transferencia', nequi:'Nequi', daviplata:'Daviplata'};
+
+  let chartHour, chartPayments, chartProducts;
+
+  async function loadDashboard() {
+    try {
+      const resp = await fetch('/api/v1/reports/dashboard', {headers});
+      if (resp.status === 401) { window.location.href = '/app/login'; return; }
+      const {data} = await resp.json();
+
+      // KPIs
+      document.getElementById('dashboard-date').textContent = data.date;
+      document.getElementById('kpi-count').textContent = data.sales.count;
+      document.getElementById('kpi-subtotal').textContent = COP(data.sales.subtotal || 0);
+      document.getElementById('kpi-cost').textContent = COP(data.sales.cost || 0);
+      document.getElementById('kpi-profit').textContent = COP(data.sales.gross_profit || 0);
+      const mp = data.sales.margin_pct || 0;
+      document.getElementById('kpi-margin').textContent = mp + '%';
+      document.getElementById('kpi-margin').style.color = mp > 30 ? 'var(--success)' : mp > 15 ? 'var(--warning)' : 'var(--danger)';
+      document.getElementById('kpi-revenue').textContent = COP(data.sales.revenue || 0);
+      document.getElementById('kpi-tax').textContent = COP(data.sales.tax || 0);
+      document.getElementById('kpi-cxp').textContent = COP(data.cxp_balance || 0);
+
+      // Chart: Sales by hour
+      const hours = Array.from({length:24}, (_,i) => `${i}:00`);
+      const hourData = new Array(24).fill(0);
+      (data.sales_by_hour || []).forEach(h => { hourData[h.hour] = h.total; });
+
+      if (chartHour) chartHour.destroy();
+      chartHour = new Chart(document.getElementById('chart-sales-hour'), {
+        type: 'line',
+        data: {
+          labels: hours,
+          datasets: [{label: 'Ventas ($)', data: hourData, borderColor: COLORS.primary, backgroundColor: COLORS.primary + '20', borderWidth: 2, tension: 0.4, fill: true, pointRadius: 3, pointBackgroundColor: COLORS.primary}]
+        },
+        options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, ticks: {display: false}, grid: {display: false}}, x: {ticks: {display: false}, grid: {display: false}}}, elements: {point: {radius: 1}}}
+      });
+
+      // Chart: Payment methods (doughnut)
+      if (data.payment_methods.length > 0) {
+        const pmLabels = data.payment_methods.map(p => PAY_NAMES[p.method] || p.method);
+        const pmData = data.payment_methods.map(p => p.total);
+        const pmColors = [COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.warning, COLORS.purple];
+
+        if (chartPayments) chartPayments.destroy();
+        chartPayments = new Chart(document.getElementById('chart-payments'), {
+          type: 'doughnut',
+          data: {labels: pmLabels, datasets: [{data: pmData, backgroundColor: pmColors}]},
+          options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}}
+        });
+      }
+
+      // Chart: Top products (horizontal bar)
+      if (data.top_products.length > 0) {
+        const tpLabels = data.top_products.map(p => p.name.substring(0, 20));
+        const tpData = data.top_products.map(p => p.revenue);
+
+        if (chartProducts) chartProducts.destroy();
+        chartProducts = new Chart(document.getElementById('chart-top-products'), {
+          type: 'bar',
+          data: {
+            labels: tpLabels,
+            datasets: [{label: 'Ingresos ($)', data: tpData, backgroundColor: [COLORS.secondary, COLORS.accent, COLORS.primary, COLORS.warning, COLORS.purple]}]
+          },
+          options: {indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {x: {ticks: {display: false}, grid: {display: false}}, y: {ticks: {font: {size: 11}}, grid: {display: false}}}}
+        });
+      }
+
+      // Table: top products
+      const tbody = document.getElementById('top-products');
+      tbody.innerHTML = data.top_products.length === 0
+        ? '<tr><td colspan="3" style="color:var(--text-light)">Sin ventas hoy</td></tr>'
+        : data.top_products.map(p => `<tr><td>${p.name}</td><td>${p.qty_sold}</td><td>${COP(p.revenue)}</td><td style="color:var(--success);font-weight:600;">${COP(p.profit)}</td><td style="color:${p.margin_pct>30?'var(--success)':p.margin_pct>15?'var(--warning)':'var(--danger)'};">${p.margin_pct}%</td></tr>`).join('');
+
+      // Alerts
+      const alertsEl = document.getElementById('alerts-list');
+      let html = '';
+      if (data.alerts.low_stock_count > 0) {
+        html += `<div class="alert alert-warning"><strong>${data.alerts.low_stock_count} productos con stock bajo</strong>
+          <ul style="margin:8px 0 0 16px;">${data.alerts.low_stock_items.map(i => `<li>${i.name}: ${i.stock} uds (mín: ${i.minimum})</li>`).join('')}</ul></div>`;
+      }
+      if (data.alerts.pending_purchase_orders > 0) {
+        html += `<div class="alert alert-warning">${data.alerts.pending_purchase_orders} órdenes de compra pendientes</div>`;
+      }
+      alertsEl.innerHTML = html || '<div style="color:var(--text-light); padding:12px 0;">Sin alertas activas</div>';
+
+    } catch (err) { console.error('Dashboard error:', err); }
+  }
+
+  loadDashboard();
+</script>
+{% endblock %}

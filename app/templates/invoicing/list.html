@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% set active_page = 'invoicing' %}
+{% block title %}Facturación Electrónica — ROHU Contable{% endblock %}
+{% block header_title %}Facturación Electrónica DIAN{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Facturas Electrónicas</h1>
+</div>
+
+<div id="config-alert" class="alert alert-warning" style="display:none;">
+  <strong>Configuración requerida:</strong> Para enviar facturas electrónicas a la DIAN necesita configurar su proveedor tecnológico (PTA) en
+  <a href="/app/admin/settings" style="color:var(--primary);font-weight:600;">Mi Negocio</a>.
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Factura #</th><th>Cliente</th><th>Total</th><th>CUFE</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+      <tbody id="inv-table"><tr><td colspan="7" style="color:var(--text-light)">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <div class="card-title">¿Cómo funciona la facturación electrónica?</div>
+  <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; text-align:center; font-size:13px;">
+    <div style="padding:12px;">
+      <div style="font-size:24px; margin-bottom:4px;">1</div>
+      <strong>Venta en POS</strong><br>Registre la venta normalmente
+    </div>
+    <div style="padding:12px;">
+      <div style="font-size:24px; margin-bottom:4px;">2</div>
+      <strong>Generar factura</strong><br>Click "Facturar" en el recibo
+    </div>
+    <div style="padding:12px;">
+      <div style="font-size:24px; margin-bottom:4px;">3</div>
+      <strong>Envío a DIAN</strong><br>El PTA firma y envía automáticamente
+    </div>
+    <div style="padding:12px;">
+      <div style="font-size:24px; margin-bottom:4px;">4</div>
+      <strong>CUFE generado</strong><br>Factura válida ante la DIAN
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const STATUS_MAP = {draft:'Borrador', sent:'Enviada', accepted:'Aceptada DIAN', rejected:'Rechazada', error:'Error'};
+  const STATUS_COLOR = {draft:'badge-warning', sent:'badge-info', accepted:'badge-success', rejected:'badge-danger', error:'badge-danger'};
+
+  async function load() {
+    // Check PTA config
+    const tr = await fetch('/api/v1/auth/tenant', {headers});
+    if (tr.status === 401) { window.location.href = '/app/login'; return; }
+    const tenant = (await tr.json()).data;
+    if (!tenant.pta_api_key) {
+      document.getElementById('config-alert').style.display = 'block';
+    }
+
+    const resp = await fetch('/api/v1/invoicing/', {headers});
+    const {data} = await resp.json();
+    const tbody = document.getElementById('inv-table');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-light)">Sin facturas electrónicas. Genere una desde el POS al completar una venta.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(i => `
+      <tr>
+        <td><strong>${i.invoice_number}</strong></td>
+        <td>${i.customer_name}</td>
+        <td>${COP(i.total_amount)}</td>
+        <td style="font-size:12px; font-family:monospace; max-width:150px; overflow:hidden; text-overflow:ellipsis;">${i.cufe || '—'}</td>
+        <td><span class="badge ${STATUS_COLOR[i.status]||''}">${STATUS_MAP[i.status]||i.status}</span></td>
+        <td>${new Date(i.created_at).toLocaleString('es-CO')}</td>
+        <td>
+          ${i.pdf_url ? `<a href="${i.pdf_url}" target="_blank" class="btn btn-outline" style="padding:6px 12px;font-size:12px;">PDF</a>` : ''}
+          ${i.qr_code_url ? `<a href="${i.qr_code_url}" target="_blank" class="btn btn-outline" style="padding:6px 12px;font-size:12px;">QR DIAN</a>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+  load();
+</script>
+{% endblock %}

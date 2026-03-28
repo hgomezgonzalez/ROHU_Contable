@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ROHU Contable{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/rohu.css') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#1E3A8A">
+  <meta name="description" content="ROHU Contable — Gestión comercial para tu negocio">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/icon-rohu.svg') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/icon-rohu.svg') }}">
+  <script>
+    // XSS protection — escape HTML in all user data before innerHTML
+    const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  </script>
+  <script src="{{ url_for('static', filename='js/rohu-modal.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/rohu-offline.js') }}"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-brand" style="padding:12px 16px;">
+        <img id="sidebar-logo" src="{{ url_for('static', filename='img/logo-rohu.svg') }}" alt="ROHU Contable" style="height:40px; width:auto;">
+      </div>
+      <div class="sidebar-nav">
+        <div class="nav-section">Principal</div>
+        <a href="/app/dashboard" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Tablero
+        </a>
+        <a href="/app/pos" class="nav-item {% if active_page == 'pos' %}active{% endif %}" data-perm="sales:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+          Punto de Venta
+        </a>
+
+        <div class="nav-section">Gestión</div>
+        <a href="/app/inventory" class="nav-item {% if active_page == 'inventory' %}active{% endif %}" data-perm="products:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+          Inventario
+        </a>
+        <a href="/app/purchases" class="nav-item {% if active_page == 'purchases' %}active{% endif %}" data-perm="purchases:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+          Compras
+        </a>
+        <a href="/app/suppliers" class="nav-item {% if active_page == 'suppliers' %}active{% endif %}" data-perm="purchases:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+          Proveedores
+        </a>
+        <a href="/app/customers" class="nav-item {% if active_page == 'customers' %}active{% endif %}" data-perm="customers:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Clientes
+        </a>
+        <a href="/app/customers/campaigns" class="nav-item {% if active_page == 'campaigns' %}active{% endif %}" data-perm="customers:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Cobro Cartera
+        </a>
+
+        <div class="nav-section">Finanzas</div>
+        <a href="/app/cash" class="nav-item {% if active_page == 'cash' %}active{% endif %}" data-perm="cash_receipts:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M2 10h2"/><path d="M20 10h2"/><path d="M2 14h2"/><path d="M20 14h2"/></svg>
+          Caja y Bancos
+        </a>
+        <a href="/app/reports" class="nav-item {% if active_page == 'reports' %}active{% endif %}" data-perm="reports:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          Reportes
+        </a>
+        <a href="/app/reports/analytics" class="nav-item {% if active_page == 'analytics' %}active{% endif %}" data-perm="reports:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21H4.6c-.56 0-.84 0-1.054-.109a1 1 0 01-.437-.437C3 20.24 3 19.96 3 19.4V3"/><path d="M7 14l4-4 4 4 6-6"/></svg>
+          Análisis
+        </a>
+        <a href="/app/invoicing" class="nav-item {% if active_page == 'invoicing' %}active{% endif %}" data-perm="sales:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Facturación
+        </a>
+        <a href="/app/reports/financial" class="nav-item {% if active_page == 'financial' %}active{% endif %}" data-perm="reports:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Estados Financieros
+        </a>
+        <a href="/app/reports/dian" class="nav-item {% if active_page == 'dian' %}active{% endif %}" data-perm="reports:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Soporte DIAN
+        </a>
+        <a href="/app/accounting" class="nav-item {% if active_page == 'accounting' %}active{% endif %}" data-perm="journal_entries:read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+          Contabilidad
+        </a>
+
+        <div class="nav-section" id="admin-section" style="display:none;">Administración</div>
+        <a href="/app/admin/settings" class="nav-item admin-link {% if active_page == 'admin_settings' %}active{% endif %}" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          Mi Negocio
+        </a>
+        <a href="/app/admin/users" class="nav-item admin-link {% if active_page == 'admin_users' %}active{% endif %}" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          Usuarios
+        </a>
+      </div>
+
+      <!-- User info -->
+      <div style="padding:12px 20px; border-top:1px solid rgba(255,255,255,0.1); font-size:12px;">
+        <div style="color:rgba(255,255,255,0.6)">{{ tenant_name or 'Mi Negocio' }}</div>
+        <div style="color:white;">{{ user_name or 'Usuario' }}</div>
+        <a href="/app/logout" style="color:var(--secondary); text-decoration:none; font-size:13px; padding:6px 0; display:inline-block;">Cerrar sesión</a>
+        <div id="app-version-sidebar" style="color:rgba(255,255,255,0.35); font-size:10px; margin-top:6px; font-family:monospace;"></div>
+      </div>
+    </nav>
+
+    <!-- Main -->
+    <div class="main-content">
+      <header class="header">
+        <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <h2 class="header-title">{% block header_title %}ROHU Contable{% endblock %}</h2>
+        <div class="header-actions">
+          <span id="outbox-badge" class="badge badge-warning" style="display:none; margin-right:8px;"></span>
+          <span id="connection-status" class="online-badge">En línea</span>
+        </div>
+      </header>
+
+      <main class="page">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // Online/Offline detection
+    function updateStatus() {
+      const el = document.getElementById('connection-status');
+      if (navigator.onLine) {
+        el.className = 'online-badge';
+        el.textContent = 'En línea';
+      } else {
+        el.className = 'offline-badge';
+        el.textContent = 'Sin conexión';
+      }
+    }
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    updateStatus();
+
+    // Auth guard — redirect to login if no token
+    if (!localStorage.getItem('access_token')) {
+      window.location.href = '/app/login';
+    }
+
+    // Set user info in sidebar + show admin section if admin
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      if (user.full_name) {
+        document.querySelector('.sidebar div:last-child div:nth-child(2)').textContent = user.full_name;
+      }
+      if (user.roles && user.roles.includes('admin')) {
+        document.getElementById('admin-section').style.display = '';
+        document.querySelectorAll('.admin-link').forEach(el => el.style.display = '');
+      }
+      // Hide sidebar modules based on user permissions
+      const userPerms = new Set(user.permissions || []);
+      document.querySelectorAll('.nav-item[data-perm]').forEach(el => {
+        const requiredPerm = el.dataset.perm;
+        if (requiredPerm && !userPerms.has(requiredPerm)) {
+          el.style.display = 'none';
+        }
+      });
+    } catch(e) {}
+
+    // Apply tenant logo and favicon if configured
+    try {
+      const tenant = JSON.parse(localStorage.getItem('tenant') || '{}');
+      if (tenant.logo_url) {
+        const logoEl = document.getElementById('sidebar-logo');
+        if (logoEl) { logoEl.src = tenant.logo_url; logoEl.onerror = () => { logoEl.src = '/static/img/logo-rohu.svg'; }; }
+      }
+      if (tenant.favicon_url) {
+        const link = document.querySelector('link[rel="icon"]');
+        if (link) link.href = tenant.favicon_url;
+      }
+    } catch(e) {}
+
+    // Close sidebar on mobile when clicking outside (but not inside modals)
+    document.querySelector('.main-content').addEventListener('click', (e) => {
+      if (!e.target.closest('[style*="position:fixed"], [style*="position: fixed"]')) {
+        document.getElementById('sidebar').classList.remove('open');
+      }
+    });
+
+    // Load app version in sidebar
+    fetch('/health').then(r=>r.json()).then(d => {
+      const el = document.getElementById('app-version-sidebar');
+      if (el && d.deployed_at) {
+        const dt = new Date(d.deployed_at);
+        el.textContent = `v${d.version||'?'} — ${dt.toLocaleDateString('es-CO')} ${dt.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}`;
+      }
+    }).catch(()=>{});
+
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(reg => { console.log('SW registered:', reg.scope); })
+        .catch(err => { console.warn('SW registration failed:', err); });
+    }
+
+    // Refresh product cache for offline POS (after auth check)
+    if (localStorage.getItem('access_token') && typeof rohuRefreshProductCache === 'function') {
+      setTimeout(() => rohuRefreshProductCache(), 2000);
+    }
+
+    // Update outbox badge
+    if (typeof rohuUpdateOutboxBadge === 'function') {
+      rohuUpdateOutboxBadge();
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

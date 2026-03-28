@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 80">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1E3A8A"/>
+      <stop offset="100%" style="stop-color:#162D6B"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#10B981"/>
+      <stop offset="100%" style="stop-color:#06B6D4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon: Stylized store/register with chart arrow -->
+  <rect x="4" y="12" width="56" height="56" rx="12" fill="url(#bg)"/>
+
+  <!-- Store icon -->
+  <path d="M20 32 L20 52 L44 52 L44 32" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16 32 L32 20 L48 32" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Growth arrow inside store -->
+  <polyline points="24,46 30,40 36,43 44,34" stroke="#10B981" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="39,34 44,34 44,39" stroke="#10B981" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Small dot indicator -->
+  <circle cx="52" cy="16" r="5" fill="#10B981"/>
+
+  <!-- Text: ROHU -->
+  <text x="72" y="48" font-family="'Segoe UI', Arial, sans-serif" font-size="38" font-weight="800" fill="#1E3A8A" letter-spacing="-1">ROHU</text>
+
+  <!-- Text: Contable -->
+  <text x="72" y="65" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="500" fill="#10B981" letter-spacing="3">CONTABLE</text>
+
+  <!-- Underline accent -->
+  <rect x="72" y="69" width="80" height="2.5" rx="1" fill="url(#accent)"/>
+</svg>

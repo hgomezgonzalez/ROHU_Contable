@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# Environment
+.env
+.env.local
+
+# Testing
+htmlcov/
+.coverage
+coverage.xml
+test-results.xml
+.pytest_cache/
+
+# Screenshots
+Captura de pantalla*
+*.png
+!app/static/img/*.png
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Heroku
+*.log

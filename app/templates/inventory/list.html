@@ -1,0 +1,454 @@
+{% extends "base.html" %}
+{% set active_page = 'inventory' %}
+{% block title %}Inventario — ROHU Contable{% endblock %}
+{% block header_title %}Inventario{% endblock %}
+
+{% block head %}
+<style>
+  .quick-form { display:grid; gap:8px; }
+  .quick-form .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .quick-form .row-2 { grid-template-columns:1fr 1fr; }
+  .iva-selector { display:flex; gap:4px; }
+  .iva-btn { padding:6px 12px; border:2px solid var(--border); border-radius:6px; background:white; cursor:pointer; font-size:13px; font-weight:600; }
+  .iva-btn.selected { border-color:var(--primary); background:#EFF6FF; color:var(--primary); }
+  .toast { position:fixed; top:20px; right:20px; background:var(--success); color:white; padding:12px 20px; border-radius:8px; z-index:999; font-weight:600; animation:slideIn 0.3s; }
+  @keyframes slideIn { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+  .mode-toggle { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .shortcut-hint { font-size:12px; color:var(--text-light); background:var(--bg); padding:2px 6px; border-radius:4px; font-family:monospace; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Productos</h1>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <span class="shortcut-hint">Ctrl+N: Nuevo</span>
+    <button class="btn btn-outline" onclick="openOCRModal()">Importar Factura</button>
+    <button class="btn btn-primary" onclick="openCreate()" id="btn-new">+ Nuevo Producto</button>
+  </div>
+</div>
+
+<div style="display:flex; gap:8px; margin-bottom:16px;">
+  <input type="text" id="search" class="form-control search-input" placeholder="Buscar producto..." style="flex:1;" oninput="loadProducts()">
+  <label style="display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer;">
+    <input type="checkbox" id="low-stock-filter" onchange="loadProducts()"> Stock bajo
+  </label>
+  <label style="display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer;">
+    <input type="checkbox" id="no-qr-filter" onchange="loadProducts()"> Sin QR
+  </label>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Producto</th><th>SKU</th><th>QR/Barras</th><th>Precio Vta</th><th>Costo</th><th>Stock</th><th>Mín</th><th>IVA</th><th>Estado</th><th>Acciones</th></tr>
+      </thead>
+      <tbody id="products-table"><tr><td colspan="10">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ CREATE MODAL (Optimized Quick Entry) ═══ -->
+<div id="create-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:560px; max-height:90vh; overflow-y:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h3>Nuevo Producto</h3>
+      <div class="mode-toggle">
+        <label style="cursor:pointer;"><input type="checkbox" id="continuous-mode" checked> Modo continuo</label>
+        <span class="shortcut-hint">Enter=Guardar+Siguiente</span>
+      </div>
+    </div>
+    <div id="create-toast"></div>
+    <form id="create-form" class="quick-form">
+      <!-- Row 1: Barcode (pistol scanner target) -->
+      <div class="form-group" style="margin-bottom:4px;">
+        <label>Código QR / Barras <span class="shortcut-hint">Escanee con pistola</span></label>
+        <input type="text" name="qr_code" id="c-qr" class="form-control" placeholder="Escanee con pistola o escriba..." autofocus>
+      </div>
+      <!-- Row 2: Name -->
+      <div class="form-group" style="margin-bottom:4px;">
+        <label>Nombre del producto *</label>
+        <input type="text" name="name" id="c-name" class="form-control" required placeholder="Ej: Tornillo 1/4 x 1 pulgada">
+      </div>
+      <!-- Row 3: Prices -->
+      <div class="row row-2" style="margin-bottom:4px;">
+        <div class="form-group"><label>Precio venta *</label><input type="number" name="sale_price" id="c-sale" class="form-control" required min="0" placeholder="$"></div>
+        <div class="form-group"><label>Precio compra</label><input type="number" name="purchase_price" id="c-purchase" class="form-control" min="0" value="0" placeholder="$"></div>
+      </div>
+      <!-- Row 4: Stock + IVA -->
+      <div class="row" style="margin-bottom:4px;">
+        <div class="form-group"><label>Stock inicial</label><input type="number" name="initial_stock" id="c-stock" class="form-control" min="0" value="0"></div>
+        <div class="form-group">
+          <label>IVA</label>
+          <div class="iva-selector">
+            <button type="button" class="iva-btn selected" onclick="setIva(this,'iva_19')">19%</button>
+            <button type="button" class="iva-btn" onclick="setIva(this,'iva_5')">5%</button>
+            <button type="button" class="iva-btn" onclick="setIva(this,'exempt')">0%</button>
+          </div>
+          <input type="hidden" name="tax_type" id="c-tax" value="iva_19">
+        </div>
+        <div class="form-group"><label>Stock mínimo</label><input type="number" name="stock_minimum" id="c-min" class="form-control" min="0" value="5"></div>
+      </div>
+      <!-- Row 5: SKU + Barcode alt -->
+      <div class="row row-2" style="margin-bottom:4px;">
+        <div class="form-group"><label>SKU <span style="color:var(--text-light)">(auto si vacío)</span></label><input type="text" name="sku" id="c-sku" class="form-control" placeholder="Auto-generado"></div>
+        <div class="form-group"><label>Código barras</label><input type="text" name="barcode" id="c-barcode" class="form-control"></div>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+        <button type="button" class="btn btn-outline" onclick="closeModal('create-modal')">Cerrar <span class="shortcut-hint">Esc</span></button>
+        <button type="submit" class="btn btn-success">Guardar <span class="shortcut-hint">Enter</span></button>
+      </div>
+    </form>
+    <div id="last-saved" style="margin-top:8px; font-size:12px; color:var(--text-light);"></div>
+  </div>
+</div>
+
+<!-- ═══ EDIT MODAL ═══ -->
+<div id="edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:520px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:12px;">Editar Producto</h3>
+    <div id="edit-error" class="alert alert-danger" style="display:none;"></div>
+    <form id="edit-form">
+      <input type="hidden" id="edit-id">
+      <div class="form-group"><label>Nombre *</label><input type="text" id="e-name" class="form-control" required></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Precio venta</label><input type="number" id="e-sale_price" class="form-control" min="0"></div>
+        <div class="form-group"><label>Precio compra</label><input type="number" id="e-purchase_price" class="form-control" min="0"></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+        <div class="form-group"><label>QR / Barras</label><input type="text" id="e-qr_code" class="form-control" placeholder="Escanee con pistola"></div>
+        <div class="form-group"><label>Código barras</label><input type="text" id="e-barcode" class="form-control"></div>
+        <div class="form-group"><label>SKU</label><input type="text" id="e-sku" class="form-control"></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Stock mínimo</label><input type="number" id="e-stock_minimum" class="form-control" min="0"></div>
+        <div class="form-group">
+          <label>IVA</label>
+          <select id="e-tax_type" class="form-control">
+            <option value="iva_19">19%</option><option value="iva_5">5%</option>
+            <option value="exempt">Exento</option><option value="excluded">Excluido</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Stock actual</label>
+          <div id="e-stock-display" style="padding:10px; background:var(--bg); border-radius:6px; font-weight:700; text-align:center;">—</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeModal('edit-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const TAX = {iva_19:'19%', iva_5:'5%', exempt:'Exento', excluded:'Excl.'};
+  let savedCount = 0;
+
+  function openCreate() { document.getElementById('create-modal').style.display = 'flex'; setTimeout(() => document.getElementById('c-qr').focus(), 100); }
+  function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+  function setIva(btn, val) {
+    document.querySelectorAll('.iva-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    document.getElementById('c-tax').value = val;
+  }
+
+  function showToast(msg) {
+    const el = document.createElement('div');
+    el.className = 'toast'; el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2000);
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'n') { e.preventDefault(); openCreate(); }
+    if (e.key === 'Escape') { closeModal('create-modal'); closeModal('edit-modal'); }
+  });
+
+  // Pistol scanner: Enter in QR field moves to name, not submit
+  document.getElementById('c-qr').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('c-name').focus(); }
+  });
+
+  async function loadProducts() {
+    const q = document.getElementById('search').value;
+    const low = document.getElementById('low-stock-filter').checked;
+    const noQR = document.getElementById('no-qr-filter').checked;
+    const resp = await fetch(`/api/v1/inventory/products?q=${encodeURIComponent(q)}&per_page=50${low?'&low_stock=true':''}`, {headers, cache:'no-store'});
+    if (resp.status === 401) { window.location.href = '/app/login'; return; }
+    let {data} = await resp.json();
+    if (noQR) data = data.filter(p => !p.qr_code);
+    const tbody = document.getElementById('products-table');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-light)">Sin productos que coincidan con los filtros</td></tr>'; return; }
+    tbody.innerHTML = data.map(p => `
+      <tr>
+        <td><strong>${p.name}</strong></td>
+        <td style="font-size:12px;">${p.sku||'—'}</td>
+        <td style="font-size:12px;">${p.qr_code?'<span class="badge badge-info">'+p.qr_code+'</span>':'<span style="color:#94A3B8">Sin QR</span>'}</td>
+        <td>${COP(p.sale_price)}</td>
+        <td style="color:var(--text-light)">${COP(p.cost_average)}</td>
+        <td><strong>${p.stock_current}</strong></td>
+        <td>${p.stock_minimum}</td>
+        <td><span class="badge">${TAX[p.tax_type]||p.tax_type}</span></td>
+        <td>${p.is_low_stock?'<span class="badge badge-danger">Bajo</span>':'<span class="badge badge-success">OK</span>'}</td>
+        <td>
+          <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick='openEdit(${JSON.stringify(p).replace(/'/g,"&#39;")})'>Editar</button>
+          <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick='quickStock("${p.id}","${p.name}",${p.stock_current})'>+Stock</button>
+          <button class="btn btn-danger" style="padding:6px 12px;font-size:12px;" onclick='deleteProduct("${p.id}","${p.name}")'>Eliminar</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // Create product (continuous mode)
+  document.getElementById('create-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const data = Object.fromEntries(form);
+    data.sale_price = parseFloat(data.sale_price);
+    data.purchase_price = parseFloat(data.purchase_price||0);
+    data.initial_stock = parseFloat(data.initial_stock||0);
+    data.stock_minimum = parseFloat(data.stock_minimum||0);
+    if (!data.qr_code) delete data.qr_code;
+    if (!data.barcode) delete data.barcode;
+    if (!data.sku) delete data.sku;
+
+    const resp = await fetch('/api/v1/inventory/products', {method:'POST', headers, body:JSON.stringify(data)});
+    const r = await resp.json();
+    if (r.success) {
+      savedCount++;
+      showToast(`${r.data.name} guardado (#${savedCount})`);
+      document.getElementById('last-saved').textContent = `Último: ${r.data.name} | Stock: ${r.data.stock_current} | ${COP(r.data.sale_price)}`;
+
+      if (document.getElementById('continuous-mode').checked) {
+        // Clear form but keep defaults
+        document.getElementById('c-qr').value = '';
+        document.getElementById('c-name').value = '';
+        document.getElementById('c-sale').value = '';
+        document.getElementById('c-purchase').value = '0';
+        document.getElementById('c-stock').value = '0';
+        document.getElementById('c-sku').value = '';
+        document.getElementById('c-barcode').value = '';
+        document.getElementById('c-qr').focus();
+      } else {
+        closeModal('create-modal'); e.target.reset();
+      }
+      loadProducts();
+    } else {
+      rohuAlert('Error: ' + r.error.message, 'error');
+    }
+  });
+
+  // Edit product
+  function openEdit(p) {
+    document.getElementById('edit-id').value = p.id;
+    document.getElementById('e-name').value = p.name;
+    document.getElementById('e-sale_price').value = p.sale_price;
+    document.getElementById('e-purchase_price').value = p.purchase_price;
+    document.getElementById('e-qr_code').value = p.qr_code||'';
+    document.getElementById('e-barcode').value = p.barcode||'';
+    document.getElementById('e-sku').value = p.sku||'';
+    document.getElementById('e-stock_minimum').value = p.stock_minimum;
+    document.getElementById('e-tax_type').value = p.tax_type;
+    document.getElementById('e-stock-display').textContent = p.stock_current;
+    document.getElementById('edit-error').style.display = 'none';
+    document.getElementById('edit-modal').style.display = 'flex';
+  }
+
+  document.getElementById('edit-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = document.getElementById('edit-id').value;
+    const data = {
+      name: document.getElementById('e-name').value,
+      sale_price: parseFloat(document.getElementById('e-sale_price').value) || 0,
+      purchase_price: parseFloat(document.getElementById('e-purchase_price').value) || 0,
+      qr_code: document.getElementById('e-qr_code').value||null,
+      barcode: document.getElementById('e-barcode').value||null,
+      sku: document.getElementById('e-sku').value||null,
+      stock_minimum: parseFloat(document.getElementById('e-stock_minimum').value) || 0,
+      tax_type: document.getElementById('e-tax_type').value,
+    };
+    const resp = await fetch(`/api/v1/inventory/products/${id}`, {method:'PATCH', headers, body:JSON.stringify(data)});
+    const r = await resp.json();
+    if (r.success) { closeModal('edit-modal'); loadProducts(); showToast('Producto actualizado'); }
+    else { document.getElementById('edit-error').textContent=r.error.message; document.getElementById('edit-error').style.display='block'; }
+  });
+
+  // Quick stock adjustment
+  let _stockBusy = false;
+  async function quickStock(productId, name, current) {
+    if (_stockBusy) return;
+    const qty = await rohuPrompt(`Agregar stock a "<strong>${name}</strong>"<br>Stock actual: <strong>${current}</strong><br><br>Cantidad a agregar:`, '0');
+    if (!qty || isNaN(qty) || parseFloat(qty) <= 0) return;
+    _stockBusy = true;
+    try {
+      // Read fresh stock from server to avoid race condition
+      const freshResp = await fetch(`/api/v1/inventory/products/${productId}`, {headers, cache:'no-store'});
+      const freshData = await freshResp.json();
+      const freshStock = freshData.success ? freshData.data.stock_current : current;
+      const newQty = freshStock + parseFloat(qty);
+      const resp = await fetch(`/api/v1/inventory/stock/${productId}/adjust`, {
+        method:'POST', headers, body:JSON.stringify({new_quantity:newQty, reason:'Carga manual de inventario'})
+      });
+      const r = await resp.json();
+      if (r.success) { loadProducts(); rohuAlert(`+${qty} unidades agregadas a ${name}`, 'success'); }
+      else { rohuAlert('Error: '+r.error.message, 'error'); }
+    } finally { _stockBusy = false; }
+  }
+
+  async function deleteProduct(id, name) {
+    const ok = await rohuConfirm(`¿Eliminar el producto "<strong>${name}</strong>"? Esta acción no se puede deshacer.`);
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/inventory/products/${id}`, {
+      method: 'PATCH', headers, body: JSON.stringify({is_active: false})
+    });
+    const r = await resp.json();
+    if (r.success) { loadProducts(); rohuAlert(`Producto "${name}" eliminado`, 'info'); }
+    else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  // ── OCR Import ─────────────────────────────────────────────────
+  function openOCRModal() {
+    document.getElementById('ocr-modal').style.display = 'flex';
+    document.getElementById('ocr-results').innerHTML = '';
+    document.getElementById('ocr-file').value = '';
+  }
+
+  async function processOCR() {
+    const fileInput = document.getElementById('ocr-file');
+    if (!fileInput.files.length) { rohuAlert('Seleccione una imagen de factura', 'warning'); return; }
+
+    const formData = new FormData();
+    formData.append('image', fileInput.files[0]);
+
+    // Show progress indicator inside modal
+    const resultsEl = document.getElementById('ocr-results');
+    resultsEl.innerHTML = `
+      <div style="text-align:center; padding:40px 20px;">
+        <div style="display:inline-block; width:40px; height:40px; border:4px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+        <div style="margin-top:12px; font-weight:600; color:var(--primary);">Procesando imagen...</div>
+        <div style="margin-top:4px; font-size:13px; color:var(--text-light);">Extrayendo productos con OCR. Esto puede tardar unos segundos.</div>
+      </div>
+      <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+    `;
+
+    try {
+      const resp = await fetch('/api/v1/inventory/import/ocr', {
+        method: 'POST',
+        headers: {'Authorization': 'Bearer ' + token},
+        body: formData,
+      });
+      const r = await resp.json();
+
+      if (!r.success) {
+        resultsEl.innerHTML = `<div class="alert alert-danger">Error procesando imagen: ${r.error?.message || 'Error desconocido'}</div>`;
+        return;
+      }
+
+    if (r.success && r.data.length) {
+      document.getElementById('ocr-results').innerHTML = `
+        <div style="margin-bottom:8px; font-weight:600;">${r.count} producto(s) detectados — revise y confirme:</div>
+        <table style="width:100%;font-size:13px;">
+          <thead><tr><th>Nombre</th><th>Cantidad</th><th>Costo Unit.</th><th>Precio Venta</th><th></th></tr></thead>
+          <tbody>${r.data.map((item, i) => `<tr>
+            <td><input type="text" id="ocr-name-${i}" value="${item.name}" class="form-control" style="font-size:14px;"></td>
+            <td><input type="number" id="ocr-qty-${i}" value="${item.quantity}" min="0" class="form-control" style="width:80px;font-size:14px;"></td>
+            <td><input type="number" id="ocr-cost-${i}" value="${item.unit_cost}" min="0" class="form-control" style="width:100px;font-size:14px;"></td>
+            <td><input type="number" id="ocr-price-${i}" value="${Math.round(item.unit_cost * 1.3)}" min="0" class="form-control" style="width:100px;font-size:14px;"></td>
+            <td><input type="checkbox" id="ocr-check-${i}" checked></td>
+          </tr>`).join('')}</tbody>
+        </table>
+        <div style="display:flex; gap:8px; margin-top:12px; align-items:center;">
+          <button class="btn btn-primary" onclick="confirmOCR(${r.data.length})">Crear Productos Seleccionados</button>
+          <button class="btn btn-outline" onclick="addManualRow(${r.data.length})">+ Agregar fila manual</button>
+        </div>
+        ${r.data[0]?.raw_text ? `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:var(--text-light);">Ver texto extraído por OCR</summary><pre style="font-size:11px;background:var(--bg);padding:8px;border-radius:4px;max-height:150px;overflow:auto;">${r.data[0].raw_text}</pre></details>` : ''}
+      `;
+    } else {
+      resultsEl.innerHTML = `<div class="alert alert-warning">
+        No se detectaron productos automáticamente.
+        <br><small>La imagen puede no tener formato tabular claro. Puede agregar productos manualmente.</small>
+      </div>
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="addManualRow(0)">+ Agregar producto manualmente</button>`;
+    }
+    } catch (e) {
+      resultsEl.innerHTML = `<div class="alert alert-danger">Error: ${e.message || 'No se pudo procesar la imagen. Verifique que Tesseract OCR esté instalado.'}</div>`;
+    }
+  }
+
+  let _ocrRowCount = 0;
+  function addManualRow(startFrom) {
+    const i = startFrom + _ocrRowCount++;
+    const tbody = document.querySelector('#ocr-results tbody') || document.getElementById('ocr-results');
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><input type="text" id="ocr-name-${i}" value="" class="form-control" style="font-size:14px;" placeholder="Nombre producto"></td>
+      <td><input type="number" id="ocr-qty-${i}" value="1" min="0" class="form-control" style="width:80px;font-size:14px;"></td>
+      <td><input type="number" id="ocr-cost-${i}" value="0" min="0" class="form-control" style="width:100px;font-size:14px;"></td>
+      <td><input type="number" id="ocr-price-${i}" value="0" min="0" class="form-control" style="width:100px;font-size:14px;"></td>
+      <td><input type="checkbox" id="ocr-check-${i}" checked></td>`;
+    if (tbody.tagName === 'TBODY') { tbody.appendChild(row); }
+    else {
+      // No table exists yet — create one
+      tbody.innerHTML += `<table style="width:100%;font-size:13px;margin-top:8px;">
+        <thead><tr><th>Nombre</th><th>Cant</th><th>Costo</th><th>Precio Vta</th><th></th></tr></thead>
+        <tbody><tr>${row.innerHTML}</tr></tbody></table>
+        <button class="btn btn-outline" style="margin-top:6px;" onclick="addManualRow(${i+1})">+ Otra fila</button>
+        <button class="btn btn-primary" style="margin-top:6px;margin-left:8px;" onclick="confirmOCR(${i+1})">Crear Productos</button>`;
+    }
+    // Update confirm button count
+    const btn = document.querySelector('[onclick^="confirmOCR"]');
+    if (btn) btn.setAttribute('onclick', `confirmOCR(${i+1})`);
+  }
+
+  async function confirmOCR(count) {
+    const items = [];
+    for (let i = 0; i < count; i++) {
+      if (!document.getElementById(`ocr-check-${i}`).checked) continue;
+      items.push({
+        name: document.getElementById(`ocr-name-${i}`).value,
+        quantity: parseFloat(document.getElementById(`ocr-qty-${i}`).value) || 0,
+        unit_cost: parseFloat(document.getElementById(`ocr-cost-${i}`).value) || 0,
+        sale_price: parseFloat(document.getElementById(`ocr-price-${i}`).value) || 0,
+      });
+    }
+    if (!items.length) { rohuAlert('Seleccione al menos un producto', 'warning'); return; }
+
+    const resp = await fetch('/api/v1/inventory/import/confirm', {
+      method:'POST', headers, body: JSON.stringify({items})
+    });
+    const r = await resp.json();
+    if (r.success) {
+      document.getElementById('ocr-modal').style.display = 'none';
+      loadProducts();
+      rohuAlert(`${r.created_count} producto(s) creados exitosamente`, 'success');
+    } else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  loadProducts();
+</script>
+
+<!-- OCR Import Modal -->
+<div id="ocr-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:700px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:16px;">Importar Productos desde Factura</h3>
+    <div class="form-group">
+      <label>Foto de la factura</label>
+      <input type="file" id="ocr-file" class="form-control" accept="image/*" capture="environment">
+    </div>
+    <button class="btn btn-primary" onclick="processOCR()" style="margin-bottom:16px;">Procesar Imagen</button>
+    <div id="ocr-results"></div>
+    <div style="margin-top:12px;">
+      <button class="btn btn-outline" onclick="document.getElementById('ocr-modal').style.display='none'">Cerrar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

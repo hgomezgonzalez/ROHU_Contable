@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% set active_page = 'financial' %}
+{% block title %}Estados Financieros — ROHU Contable{% endblock %}
+{% block header_title %}Estados Financieros{% endblock %}
+
+{% block head %}
+<style>
+  @media print {
+    .sidebar, .header, .no-print { display: none !important; }
+    .main-content { margin-left: 0 !important; }
+    .card { box-shadow: none; border: 1px solid #ccc; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header no-print">
+  <h1 class="page-title">Estados Financieros</h1>
+  <div style="display:flex; gap:8px;">
+    <button class="btn btn-outline" onclick="window.print()">Imprimir</button>
+  </div>
+</div>
+
+<div class="alert alert-warning no-print">
+  Estos estados financieros son generados automáticamente como soporte.
+  No reemplazan los estados financieros certificados por un contador público.
+</div>
+
+<!-- Balance de Prueba -->
+<div class="card" style="margin-bottom:16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <div class="card-title" style="margin:0;">Balance de Prueba</div>
+    <a href="/api/v1/reports/trial-balance/export" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Cuenta</th><th>Nombre</th><th style="text-align:right">Débito</th><th style="text-align:right">Crédito</th><th style="text-align:right">Saldo</th></tr></thead>
+      <tbody id="balance-table"><tr><td colspan="5">Cargando...</td></tr></tbody>
+      <tfoot id="balance-footer"></tfoot>
+    </table>
+  </div>
+</div>
+
+<!-- Estado de Resultados -->
+<div class="card" style="margin-bottom:16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <div class="card-title" style="margin:0;">Estado de Resultados</div>
+    <a href="/api/v1/reports/profit-loss?format=csv" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
+  </div>
+  <div id="pl-table">Cargando...</div>
+</div>
+
+<!-- Inventario Valorizado -->
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <div class="card-title" style="margin:0;">Inventario Valorizado</div>
+    <a href="/api/v1/reports/inventory?format=csv" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Producto</th><th>Stock</th><th style="text-align:right">Costo Prom.</th><th style="text-align:right">Valor Costo</th><th style="text-align:right">Valor Venta</th></tr></thead>
+      <tbody id="inv-table"><tr><td colspan="5">Cargando...</td></tr></tbody>
+      <tfoot id="inv-footer"></tfoot>
+    </table>
+  </div>
+</div>
+
+<div style="margin-top:16px; font-size:12px; color:var(--text-light); text-align:center;">
+  ROHU Contable — Generado el <span id="gen-date"></span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 2});
+
+  document.getElementById('gen-date').textContent = new Date().toLocaleString('es-CO');
+
+  // Fix export links to include auth
+  document.querySelectorAll('a[href*="/api/"]').forEach(a => {
+    a.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const resp = await fetch(a.href, {headers});
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = a.href.split('/').pop().split('?')[0] + '.csv';
+      link.click(); URL.revokeObjectURL(url);
+    });
+  });
+
+  async function load() {
+    // Balance
+    const bResp = await fetch('/api/v1/accounting/trial-balance', {headers});
+    if (bResp.status === 401) { window.location.href = '/app/login'; return; }
+    const {data: bal} = await bResp.json();
+
+    document.getElementById('balance-table').innerHTML = bal.accounts.map(a => `
+      <tr>
+        <td><strong>${a.puc_code}</strong></td><td>${a.name}</td>
+        <td style="text-align:right">${a.total_debit > 0 ? COP(a.total_debit) : ''}</td>
+        <td style="text-align:right">${a.total_credit > 0 ? COP(a.total_credit) : ''}</td>
+        <td style="text-align:right;font-weight:700;color:${a.balance>=0?'var(--text)':'var(--danger)'};">${COP(a.balance)}</td>
+      </tr>
+    `).join('');
+    document.getElementById('balance-footer').innerHTML = `
+      <tr style="font-weight:700;background:var(--bg);"><td colspan="2">TOTALES</td>
+        <td style="text-align:right">${COP(bal.total_debit)}</td>
+        <td style="text-align:right">${COP(bal.total_credit)}</td>
+        <td style="text-align:right">${bal.is_balanced ? '<span class="badge badge-success">Cuadrado</span>' : '<span class="badge badge-danger">Descuadre</span>'}</td>
+      </tr>`;
+
+    // P&L
+    const pResp = await fetch('/api/v1/reports/profit-loss', {headers});
+    const {data: pl} = await pResp.json();
+    document.getElementById('pl-table').innerHTML = `
+      <table>
+        <tr><td><strong>Ingresos operacionales</strong></td><td style="text-align:right;color:var(--secondary);">${COP(pl.income.total)}</td></tr>
+        ${pl.income.items.map(i => `<tr><td style="padding-left:24px;color:var(--text-light);">${i.puc_code} ${i.name}</td><td style="text-align:right">${COP(i.balance)}</td></tr>`).join('')}
+        <tr><td><strong>(-) Costo de ventas</strong></td><td style="text-align:right;color:var(--danger);">(${COP(pl.cost_of_sales.total)})</td></tr>
+        ${pl.cost_of_sales.items.map(i => `<tr><td style="padding-left:24px;color:var(--text-light);">${i.puc_code} ${i.name}</td><td style="text-align:right">${COP(i.balance)}</td></tr>`).join('')}
+        <tr style="border-top:2px solid var(--primary);"><td><strong>= UTILIDAD BRUTA</strong></td><td style="text-align:right"><strong>${COP(pl.gross_profit)}</strong> (${pl.gross_margin_pct}%)</td></tr>
+        <tr><td><strong>(-) Gastos operacionales</strong></td><td style="text-align:right">(${COP(pl.expenses.total)})</td></tr>
+        ${pl.expenses.items.map(i => `<tr><td style="padding-left:24px;color:var(--text-light);">${i.puc_code} ${i.name}</td><td style="text-align:right">${COP(i.balance)}</td></tr>`).join('')}
+        <tr style="border-top:3px solid var(--primary);font-size:18px;">
+          <td><strong>= UTILIDAD NETA</strong></td>
+          <td style="text-align:right;color:${pl.net_profit>=0?'var(--success)':'var(--danger)'};">
+            <strong>${COP(pl.net_profit)}</strong> (${pl.net_margin_pct}%)
+          </td>
+        </tr>
+      </table>`;
+
+    // Inventory
+    const iResp = await fetch('/api/v1/reports/inventory', {headers});
+    const {data: inv} = await iResp.json();
+    document.getElementById('inv-table').innerHTML = inv.items.map(i => `
+      <tr><td>${i.name}</td><td>${i.stock} ${i.unit}</td>
+        <td style="text-align:right">${COP(i.cost_average)}</td>
+        <td style="text-align:right">${COP(i.value_at_cost)}</td>
+        <td style="text-align:right">${COP(i.value_at_sale)}</td></tr>
+    `).join('');
+    document.getElementById('inv-footer').innerHTML = `
+      <tr style="font-weight:700;background:var(--bg);">
+        <td colspan="3">TOTALES</td>
+        <td style="text-align:right">${COP(inv.total_value_at_cost)}</td>
+        <td style="text-align:right">${COP(inv.total_value_at_sale)}</td>
+      </tr>`;
+  }
+  load();
+</script>
+{% endblock %}

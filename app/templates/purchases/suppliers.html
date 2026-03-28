@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% set active_page = 'suppliers' %}
+{% block title %}Proveedores — ROHU Contable{% endblock %}
+{% block header_title %}Proveedores{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Proveedores</h1>
+  <button class="btn btn-primary" onclick="openCreate()">+ Nuevo Proveedor</button>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <input type="text" id="search" class="search-input" placeholder="Buscar por nombre o NIT..." oninput="loadSuppliers()">
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Nombre</th><th>NIT</th><th>Contacto</th><th>Teléfono</th><th>Ciudad</th><th>Días crédito</th><th>Acciones</th></tr></thead>
+      <tbody id="supp-table"><tr><td colspan="7">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div id="supp-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:500px; max-height:90vh; overflow-y:auto;">
+    <h3 id="supp-modal-title" style="margin-bottom:16px;">Nuevo Proveedor</h3>
+    <form id="supp-form">
+      <div class="form-group"><label>Nombre *</label><input type="text" id="s-name" class="form-control" required></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>NIT</label><input type="text" id="s-taxid" class="form-control"></div>
+        <div class="form-group"><label>Contacto</label><input type="text" id="s-contact" class="form-control"></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Teléfono</label><input type="text" id="s-phone" class="form-control"></div>
+        <div class="form-group"><label>Email</label><input type="email" id="s-email" class="form-control"></div>
+      </div>
+      <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Dirección</label><input type="text" id="s-address" class="form-control"></div>
+        <div class="form-group"><label>Ciudad</label><input type="text" id="s-city" class="form-control"></div>
+        <div class="form-group"><label>Días crédito</label><input type="number" id="s-days" class="form-control" value="30" min="0"></div>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="supp-submit">Crear</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  let editingId = null;
+
+  function closeModal() { document.getElementById('supp-modal').style.display = 'none'; editingId = null; }
+
+  async function loadSuppliers() {
+    try {
+      const resp = await fetch('/api/v1/purchases/suppliers', {headers});
+      if (resp.status === 401) { window.location.href = '/app/login'; return; }
+      const {data} = await resp.json();
+      const q = (document.getElementById('search').value || '').toLowerCase();
+      const filtered = q ? data.filter(s => s.name.toLowerCase().includes(q) || (s.tax_id||'').includes(q)) : data;
+      const tbody = document.getElementById('supp-table');
+      if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-light)">Sin proveedores</td></tr>'; return; }
+      tbody.innerHTML = filtered.map(s => `<tr>
+        <td><strong>${s.name}</strong></td>
+        <td>${s.tax_id || '-'}</td>
+        <td>${s.contact_name || '-'}</td>
+        <td>${s.phone || '-'}</td>
+        <td>${s.city || '-'}</td>
+        <td>${s.payment_terms_days || 0} días</td>
+        <td>
+          <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="openEdit('${s.id}')">Editar</button>
+          <a href="/app/purchases" class="btn btn-outline" style="padding:6px 12px;font-size:12px;">Compras</a>
+        </td>
+      </tr>`).join('');
+    } catch (e) { console.error(e); }
+  }
+
+  function openCreate() {
+    editingId = null;
+    document.getElementById('supp-modal-title').textContent = 'Nuevo Proveedor';
+    document.getElementById('supp-submit').textContent = 'Crear';
+    document.getElementById('supp-form').reset();
+    document.getElementById('supp-modal').style.display = 'flex';
+  }
+
+  async function openEdit(id) {
+    editingId = id;
+    // Fetch supplier data to populate form
+    try {
+      const resp = await fetch('/api/v1/purchases/suppliers', {headers});
+      const {data} = await resp.json();
+      const s = data.find(x => x.id === id);
+      if (s) {
+        document.getElementById('s-name').value = s.name || '';
+        document.getElementById('s-taxid').value = s.tax_id || '';
+        document.getElementById('s-contact').value = s.contact_name || '';
+        document.getElementById('s-phone').value = s.phone || '';
+        document.getElementById('s-email').value = s.email || '';
+        document.getElementById('s-address').value = s.address || '';
+        document.getElementById('s-city').value = s.city || '';
+        document.getElementById('s-days').value = s.payment_terms_days || 30;
+      }
+    } catch(e) {}
+    document.getElementById('supp-modal-title').textContent = 'Editar Proveedor';
+    document.getElementById('supp-submit').textContent = 'Guardar';
+    document.getElementById('supp-modal').style.display = 'flex';
+  }
+
+  document.getElementById('supp-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const body = {
+      name: document.getElementById('s-name').value,
+      tax_id: document.getElementById('s-taxid').value || null,
+      contact_name: document.getElementById('s-contact').value || null,
+      phone: document.getElementById('s-phone').value || null,
+      email: document.getElementById('s-email').value || null,
+      address: document.getElementById('s-address').value || null,
+      city: document.getElementById('s-city').value || null,
+      payment_terms_days: parseInt(document.getElementById('s-days').value) || 30,
+    };
+    const url = editingId ? `/api/v1/purchases/suppliers/${editingId}` : '/api/v1/purchases/suppliers';
+    const method = editingId ? 'PATCH' : 'POST';
+    const resp = await fetch(url, {method, headers, body: JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) { closeModal(); loadSuppliers(); rohuAlert(editingId ? 'Proveedor actualizado' : 'Proveedor creado', 'success'); }
+    else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  });
+
+  loadSuppliers();
+</script>
+{% endblock %}

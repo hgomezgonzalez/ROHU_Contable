@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% set active_page = 'dian' %}
+{% block title %}Soporte DIAN — ROHU Contable{% endblock %}
+{% block header_title %}Soporte Tributario DIAN{% endblock %}
+
+{% block head %}
+<script src="/static/js/chart.min.js"></script>
+<style>
+  @media print { .sidebar,.header,.no-print{display:none!important} .main-content{margin-left:0!important} }
+  .form-card { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:12px; }
+  .form-number { font-size:24px; font-weight:700; color:var(--primary); }
+  .form-name { font-size:14px; font-weight:600; }
+  .form-period { font-size:12px; color:var(--text-light); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header no-print">
+  <h1 class="page-title">Soporte Tributario</h1>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <select id="sel-year" class="form-control" style="width:auto;" onchange="loadAll()">
+      <option value="2026" selected>2026</option><option value="2025">2025</option>
+    </select>
+    <select id="sel-month" class="form-control" style="width:auto;" onchange="loadAll()">
+      <option value="1">Ene</option><option value="2">Feb</option><option value="3" selected>Mar</option>
+      <option value="4">Abr</option><option value="5">May</option><option value="6">Jun</option>
+      <option value="7">Jul</option><option value="8">Ago</option><option value="9">Sep</option>
+      <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dic</option>
+    </select>
+    <button class="btn btn-outline no-print" onclick="window.print()">Imprimir</button>
+  </div>
+</div>
+
+<div class="alert alert-warning no-print">
+  <strong>Soporte informativo.</strong> No constituye declaración tributaria. Consulte con su contador público para diligenciar los formularios DIAN.
+</div>
+
+<!-- Formularios DIAN aplicables -->
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-title">Formularios DIAN Aplicables</div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px,1fr)); gap:12px;">
+    <div class="form-card">
+      <div class="form-number">300</div>
+      <div class="form-name">Declaración de IVA</div>
+      <div class="form-period">Bimestral / Cuatrimestral</div>
+      <div style="font-size:12px; margin-top:4px;">Solo si es responsable de IVA (Régimen Común)</div>
+    </div>
+    <div class="form-card">
+      <div class="form-number">350</div>
+      <div class="form-name">Declaración de Retención en la Fuente</div>
+      <div class="form-period">Mensual</div>
+      <div style="font-size:12px; margin-top:4px;">Solo si practica retenciones (SAS Régimen Común)</div>
+    </div>
+    <div class="form-card">
+      <div class="form-number">110 / 210</div>
+      <div class="form-name">Declaración de Renta</div>
+      <div class="form-period">Anual</div>
+      <div style="font-size:12px; margin-top:4px;">110 para SAS, 210 para Persona Natural</div>
+    </div>
+    <div class="form-card">
+      <div class="form-number">490</div>
+      <div class="form-name">Declaración ICA</div>
+      <div class="form-period">Bimestral / Anual (según municipio)</div>
+      <div style="font-size:12px; margin-top:4px;">Impuesto de Industria y Comercio municipal</div>
+    </div>
+  </div>
+</div>
+
+<!-- IVA Mensual (Form 300) -->
+<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px;">
+  <div class="card">
+    <div class="card-title">IVA Generado (Ventas)</div>
+    <div class="card-value" id="iva-gen" style="color:var(--danger);">—</div>
+    <div style="font-size:12px; color:var(--text-light);">PUC 2408 — Para Form 300 casilla 43</div>
+  </div>
+  <div class="card">
+    <div class="card-title">IVA Descontable (Compras)</div>
+    <div class="card-value" id="iva-ded" style="color:var(--secondary);">—</div>
+    <div style="font-size:12px; color:var(--text-light);">PUC 2370 — Para Form 300 casilla 54</div>
+  </div>
+  <div class="card">
+    <div class="card-title">IVA Neto</div>
+    <div class="card-value" id="iva-net">—</div>
+    <div id="iva-status" style="font-size:12px;"></div>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+  <div class="card">
+    <div class="card-title">IVA del Período (Form 300)</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-iva')" title="Expandir">⛶</button><canvas id="chart-iva" height="70"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Ventas vs Compras del Período</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-ops')" title="Expandir">⛶</button><canvas id="chart-ops" height="70"></canvas></div>
+  </div>
+</div>
+
+<!-- Detalle ventas y compras -->
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+  <div class="card">
+    <div class="card-title">Ventas del Período (Base para Form 300)</div>
+    <table>
+      <tr><td>Número de ventas</td><td style="text-align:right" id="s-count">—</td></tr>
+      <tr><td>Base gravable (19%)</td><td style="text-align:right" id="s-base">—</td></tr>
+      <tr><td>IVA facturado</td><td style="text-align:right" id="s-iva">—</td></tr>
+      <tr style="font-weight:700"><td>Total ventas</td><td style="text-align:right" id="s-total">—</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <div class="card-title">Compras del Período (Base para Form 300)</div>
+    <table>
+      <tr><td>Compras recibidas</td><td style="text-align:right" id="p-count">—</td></tr>
+      <tr><td>Base gravable</td><td style="text-align:right" id="p-base">—</td></tr>
+      <tr><td>IVA en compras</td><td style="text-align:right" id="p-iva">—</td></tr>
+      <tr style="font-weight:700"><td>Total compras</td><td style="text-align:right" id="p-total">—</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- Resumen Fiscal Anual (Form 110/210) -->
+<div class="card" style="margin-bottom:16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <div class="card-title" style="margin:0;">Resumen Fiscal Anual <span id="tax-year"></span> (Form 110/210)</div>
+    <a href="#" id="export-tax" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
+  </div>
+  <div id="renta-threshold-msg"></div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+    <div>
+      <h4 style="margin-bottom:8px;">Ingresos y Gastos</h4>
+      <table>
+        <tr><td>Ingresos brutos (PUC 4135)</td><td style="text-align:right" id="t-ing-brutos">—</td></tr>
+        <tr><td>(-) Devoluciones (PUC 4175)</td><td style="text-align:right" id="t-ing-dev">—</td></tr>
+        <tr style="font-weight:600"><td>= Ingresos netos</td><td style="text-align:right" id="t-ing-netos">—</td></tr>
+        <tr><td>(-) Costo de ventas (PUC 6135)</td><td style="text-align:right" id="t-costos">—</td></tr>
+        <tr><td>(-) Gastos operacionales</td><td style="text-align:right" id="t-gastos">—</td></tr>
+        <tr style="font-weight:700;font-size:16px;border-top:2px solid var(--primary)"><td>= RENTA LÍQUIDA</td><td style="text-align:right" id="t-renta">—</td></tr>
+      </table>
+    </div>
+    <div>
+      <h4 style="margin-bottom:8px;">Patrimonio al cierre</h4>
+      <table>
+        <tr><td>Activos (efectivo+inventario+cartera)</td><td style="text-align:right" id="t-activos">—</td></tr>
+        <tr><td>(-) Pasivos (proveedores+impuestos)</td><td style="text-align:right" id="t-pasivos">—</td></tr>
+        <tr style="font-weight:700;border-top:2px solid var(--primary)"><td>= Patrimonio líquido</td><td style="text-align:right" id="t-patrimonio">—</td></tr>
+      </table>
+      <h4 style="margin:12px 0 8px;">IVA Anual</h4>
+      <table>
+        <tr><td>IVA generado total</td><td style="text-align:right" id="t-iva-gen">—</td></tr>
+        <tr><td>IVA descontable total</td><td style="text-align:right" id="t-iva-ded">—</td></tr>
+        <tr style="font-weight:600"><td>IVA neto del año</td><td style="text-align:right" id="t-iva-net">—</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<p style="font-size:12px; color:var(--text-light); text-align:center;">
+  ROHU Contable — Soporte informativo. Los formularios DIAN deben ser diligenciados y presentados por un contador público certificado.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  let chartIva, chartOps;
+
+  async function loadAll() {
+    const year = document.getElementById('sel-year').value;
+    const month = document.getElementById('sel-month').value;
+
+    // IVA mensual
+    let iva = null;
+    try {
+    const r1 = await fetch(`/api/v1/reports/dian/iva?year=${year}&month=${month}`, {headers});
+    if (r1.status === 401) { window.location.href='/app/login'; return; }
+    const resp1 = await r1.json();
+    iva = resp1.data;
+    } catch(e1) { console.error('IVA error:', e1); }
+
+    if (iva) {
+    try {
+
+    document.getElementById('iva-gen').textContent = COP(iva.iva_generated);
+    document.getElementById('iva-ded').textContent = COP(iva.iva_deductible);
+    document.getElementById('iva-net').textContent = COP(Math.abs(iva.iva_net_payable));
+    document.getElementById('iva-net').style.color = iva.iva_net_payable >= 0 ? 'var(--danger)' : 'var(--secondary)';
+    document.getElementById('iva-status').innerHTML = iva.iva_balance === 'a_pagar'
+      ? '<span class="badge badge-danger">A pagar — Form 300</span>'
+      : '<span class="badge badge-success">Saldo a favor</span>';
+
+    document.getElementById('s-count').textContent = iva.sales.count;
+    document.getElementById('s-base').textContent = COP(iva.sales.taxable_base);
+    document.getElementById('s-iva').textContent = COP(iva.sales.iva);
+    document.getElementById('s-total').textContent = COP(iva.sales.total);
+    document.getElementById('p-count').textContent = iva.purchases.count;
+    document.getElementById('p-base').textContent = COP(iva.purchases.taxable_base);
+    document.getElementById('p-iva').textContent = COP(iva.purchases.iva);
+    document.getElementById('p-total').textContent = COP(iva.purchases.total);
+
+    if (chartIva) chartIva.destroy();
+    chartIva = new Chart(document.getElementById('chart-iva'), {
+      type:'bar', data:{labels:['IVA Generado','IVA Descontable','Neto'],
+        datasets:[{data:[iva.iva_generated,iva.iva_deductible,Math.abs(iva.iva_net_payable)],
+          backgroundColor:['#EF4444','#10B981',iva.iva_net_payable>=0?'#F59E0B':'#06B6D4']}]},
+      options:{responsive:true, maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{display:false},grid:{display:false}},x:{ticks:{font:{size:11}},grid:{display:false}}}}
+    });
+    if (chartOps) chartOps.destroy();
+    chartOps = new Chart(document.getElementById('chart-ops'), {
+      type:'doughnut', data:{labels:['Ventas','Compras'],
+        datasets:[{data:[iva.sales.total,iva.purchases.total],backgroundColor:['#1E3A8A','#10B981']}]},
+      options:{responsive:true, maintainAspectRatio:false,plugins:{legend:{display:false}}}
+    });
+
+    } catch(e2) { console.error('IVA charts error:', e2); }
+    } // end if(iva)
+
+    // Tax summary anual (independent block)
+    try {
+    const r2 = await fetch(`/api/v1/reports/tax-summary?year=${year}`, {headers});
+    const resp2 = await r2.json();
+    const tax = resp2.data;
+    document.getElementById('tax-year').textContent = tax.year;
+    // Threshold check — Colombia 2026: ~$69.7M ingresos brutos for renta obligation
+    const RENTA_THRESHOLD = 69700000;
+    const thresholdEl = document.getElementById('renta-threshold-msg');
+    if (tax.ingresos.brutos < RENTA_THRESHOLD) {
+      thresholdEl.innerHTML = `<div class="alert" style="background:#DBEAFE; border:1px solid var(--info); font-size:13px; margin-bottom:12px;">
+        <strong>Información:</strong> Con ingresos brutos de ${COP(tax.ingresos.brutos)}, su negocio probablemente <strong>no está obligado a declarar renta</strong> (umbral ~${COP(RENTA_THRESHOLD)}).
+        Este resumen es informativo — consulte con su contador para confirmación.
+      </div>`;
+    } else {
+      thresholdEl.innerHTML = `<div class="alert alert-warning" style="font-size:13px; margin-bottom:12px;">
+        <strong>Atención:</strong> Con ingresos de ${COP(tax.ingresos.brutos)}, su negocio supera el umbral de declaración de renta.
+        Consulte con su contador para la presentación del Formulario ${tax.ingresos.brutos > 0 ? '110/210' : ''}.
+      </div>`;
+    }
+    document.getElementById('t-ing-brutos').textContent = COP(tax.ingresos.brutos);
+    document.getElementById('t-ing-dev').textContent = '(' + COP(tax.ingresos.devoluciones) + ')';
+    document.getElementById('t-ing-netos').textContent = COP(tax.ingresos.netos);
+    document.getElementById('t-costos').textContent = '(' + COP(tax.costos.ventas) + ')';
+    document.getElementById('t-gastos').textContent = '(' + COP(tax.gastos.operacionales) + ')';
+    document.getElementById('t-renta').textContent = COP(tax.renta_liquida);
+    document.getElementById('t-renta').style.color = tax.renta_liquida >= 0 ? 'var(--success)' : 'var(--danger)';
+    document.getElementById('t-activos').textContent = COP(tax.patrimonio.activos);
+    document.getElementById('t-pasivos').textContent = '(' + COP(tax.patrimonio.pasivos) + ')';
+    document.getElementById('t-patrimonio').textContent = COP(tax.patrimonio.liquido);
+    document.getElementById('t-iva-gen').textContent = COP(tax.iva.generado);
+    document.getElementById('t-iva-ded').textContent = COP(tax.iva.descontable);
+    document.getElementById('t-iva-net').textContent = COP(tax.iva.neto);
+
+    // Export link
+    document.getElementById('export-tax').href = `/api/v1/reports/tax-summary?year=${year}&format=csv`;
+    document.getElementById('export-tax').onclick = async (e) => {
+      e.preventDefault();
+      const r = await fetch(e.target.href, {headers});
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download=`resumen_fiscal_${year}.csv`; a.click();
+    };
+    } catch (err) {
+      console.error('Tax summary error:', err);
+      const thEl = document.getElementById('renta-threshold-msg');
+      if (thEl) thEl.innerHTML = `<div class="alert alert-danger">Error cargando resumen fiscal: ${err.message}</div>`;
+    }
+  }
+
+  loadAll();
+</script>
+{% endblock %}

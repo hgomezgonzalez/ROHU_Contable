@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% set active_page = 'customers' %}
+{% block title %}Clientes — ROHU Contable{% endblock %}
+{% block header_title %}Clientes{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Clientes</h1>
+  <button class="btn btn-primary" onclick="openCreate()">+ Nuevo Cliente</button>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <input type="text" id="search" class="search-input" placeholder="Buscar por nombre, NIT o teléfono..." oninput="loadCustomers()">
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Nombre</th><th>NIT/CC</th><th>Teléfono</th><th>Email</th><th>Ciudad</th><th>Límite crédito</th><th>Acciones</th></tr></thead>
+      <tbody id="cust-table"><tr><td colspan="7">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div id="cust-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:500px;">
+    <h3 id="cust-modal-title" style="margin-bottom:16px;">Nuevo Cliente</h3>
+    <form id="cust-form">
+      <div class="form-group"><label>Nombre *</label><input type="text" id="c-name" class="form-control" required></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>NIT / CC</label><input type="text" id="c-taxid" class="form-control"></div>
+        <div class="form-group"><label>Tipo doc.</label>
+          <select id="c-taxtype" class="form-control"><option value="CC">CC</option><option value="NIT">NIT</option><option value="CE">CE</option><option value="PAS">Pasaporte</option></select>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Teléfono</label><input type="text" id="c-phone" class="form-control"></div>
+        <div class="form-group"><label>Email</label><input type="email" id="c-email" class="form-control"></div>
+      </div>
+      <div style="display:grid; grid-template-columns:2fr 1fr; gap:8px;">
+        <div class="form-group"><label>Dirección</label><input type="text" id="c-address" class="form-control"></div>
+        <div class="form-group"><label>Ciudad</label><input type="text" id="c-city" class="form-control"></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Límite crédito</label><input type="number" id="c-limit" class="form-control" step="1000" min="0" value="0"></div>
+        <div class="form-group"><label>Días crédito</label><input type="number" id="c-days" class="form-control" min="0" value="0"></div>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="cust-submit-btn">Crear</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  let editingId = null;
+
+  function closeModal() { document.getElementById('cust-modal').style.display = 'none'; editingId = null; }
+
+  async function loadCustomers() {
+    const q = document.getElementById('search').value;
+    const resp = await fetch('/api/v1/customers?q=' + encodeURIComponent(q), {headers});
+    if (resp.status === 401) { window.location.href = '/app/login'; return; }
+    const {data} = await resp.json();
+    const tbody = document.getElementById('cust-table');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-light)">Sin clientes registrados</td></tr>'; return; }
+    tbody.innerHTML = data.map(c => `<tr>
+      <td><strong>${c.name}</strong></td>
+      <td>${c.tax_id || '-'}</td>
+      <td>${c.phone || '-'}</td>
+      <td>${c.email || '-'}</td>
+      <td>${c.city || '-'}</td>
+      <td>${COP(c.credit_limit)}</td>
+      <td><button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="openEdit('${c.id}')">Editar</button></td>
+    </tr>`).join('');
+  }
+
+  function openCreate() {
+    editingId = null;
+    document.getElementById('cust-modal-title').textContent = 'Nuevo Cliente';
+    document.getElementById('cust-submit-btn').textContent = 'Crear';
+    document.getElementById('cust-form').reset();
+    document.getElementById('cust-modal').style.display = 'flex';
+  }
+
+  async function openEdit(id) {
+    editingId = id;
+    const resp = await fetch(`/api/v1/customers/${id}`, {headers});
+    const {data} = await resp.json();
+    document.getElementById('cust-modal-title').textContent = 'Editar Cliente';
+    document.getElementById('cust-submit-btn').textContent = 'Guardar';
+    document.getElementById('c-name').value = data.name;
+    document.getElementById('c-taxid').value = data.tax_id || '';
+    document.getElementById('c-taxtype').value = data.tax_id_type || 'CC';
+    document.getElementById('c-phone').value = data.phone || '';
+    document.getElementById('c-email').value = data.email || '';
+    document.getElementById('c-address').value = data.address || '';
+    document.getElementById('c-city').value = data.city || '';
+    document.getElementById('c-limit').value = data.credit_limit || 0;
+    document.getElementById('c-days').value = data.credit_days || 0;
+    document.getElementById('cust-modal').style.display = 'flex';
+  }
+
+  document.getElementById('cust-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const body = {
+      name: document.getElementById('c-name').value,
+      tax_id: document.getElementById('c-taxid').value || null,
+      tax_id_type: document.getElementById('c-taxtype').value,
+      phone: document.getElementById('c-phone').value || null,
+      email: document.getElementById('c-email').value || null,
+      address: document.getElementById('c-address').value || null,
+      city: document.getElementById('c-city').value || null,
+      credit_limit: parseFloat(document.getElementById('c-limit').value) || 0,
+      credit_days: parseInt(document.getElementById('c-days').value) || 0,
+    };
+
+    const url = editingId ? `/api/v1/customers/${editingId}` : '/api/v1/customers';
+    const method = editingId ? 'PATCH' : 'POST';
+    const resp = await fetch(url, {method, headers, body: JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) {
+      closeModal();
+      loadCustomers();
+      rohuAlert(editingId ? 'Cliente actualizado' : 'Cliente creado', 'success');
+    } else {
+      rohuAlert(r.error.message, 'error');
+    }
+  });
+
+  loadCustomers();
+</script>
+{% endblock %}

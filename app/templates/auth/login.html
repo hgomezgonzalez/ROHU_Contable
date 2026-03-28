@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iniciar Sesión — ROHU Contable</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/rohu.css') }}">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="{{ url_for('static', filename='img/logo-rohu.svg') }}" alt="ROHU Contable" style="height:60px; width:auto; margin-bottom:8px;">
+        <p>Tu negocio bajo control, tus ventas en crecimiento</p>
+      </div>
+
+      <div id="error-msg" class="alert alert-danger" style="display:none;"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="email">Correo electrónico</label>
+          <input type="email" id="email" class="form-control" placeholder="usuario@ejemplo.com" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="password">Contraseña</label>
+          <input type="password" id="password" class="form-control" placeholder="Tu contraseña" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%; margin-top:8px;">
+          Iniciar Sesión
+        </button>
+      </form>
+
+      <p style="text-align:center; margin-top:20px; font-size:13px; color:var(--text-light);">
+        Este sistema no constituye software de facturación electrónica DIAN.
+        <br>Los reportes son de soporte; consulte a su contador.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('error-msg');
+      errEl.style.display = 'none';
+
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const resp = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({email, password}),
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+          localStorage.setItem('access_token', data.data.access_token);
+          localStorage.setItem('refresh_token', data.data.refresh_token);
+          // Fetch full profile with permissions
+          const meResp = await fetch('/api/v1/auth/me', {
+            headers: {'Authorization': 'Bearer ' + data.data.access_token}
+          });
+          const meData = await meResp.json();
+          if (meData.success) {
+            const userWithPerms = {...meData.data.user, permissions: meData.data.permissions};
+            localStorage.setItem('user', JSON.stringify(userWithPerms));
+            if (meData.data.tenant) localStorage.setItem('tenant', JSON.stringify(meData.data.tenant));
+          } else {
+            localStorage.setItem('user', JSON.stringify(data.data.user));
+          }
+          window.location.href = '/app/dashboard';
+        } else {
+          errEl.textContent = data.error.message;
+          errEl.style.display = 'block';
+        }
+      } catch (err) {
+        errEl.textContent = 'Error de conexión. Verifique su internet.';
+        errEl.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,453 @@
+{% extends "base.html" %}
+{% set active_page = 'admin_settings' %}
+{% block title %}Mi Negocio — ROHU Contable{% endblock %}
+{% block header_title %}Configuración del Negocio{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Datos del Negocio</h1>
+</div>
+
+<div id="save-alert" class="alert alert-success" style="display:none;">Datos guardados exitosamente.</div>
+
+<form id="tenant-form">
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+    <!-- Left Column -->
+    <div class="card">
+      <div class="card-title">Información General</div>
+      <div class="form-group">
+        <label>Nombre del negocio *</label>
+        <input type="text" name="name" class="form-control" required id="f-name">
+      </div>
+      <div class="form-group">
+        <label>Nombre comercial</label>
+        <input type="text" name="trade_name" class="form-control" id="f-trade_name">
+      </div>
+      <div style="display:grid; grid-template-columns:2fr 1fr; gap:8px;">
+        <div class="form-group">
+          <label>NIT *</label>
+          <input type="text" name="tax_id" class="form-control" required id="f-tax_id" placeholder="900123456">
+        </div>
+        <div class="form-group">
+          <label>DV</label>
+          <input type="text" name="tax_id_check_digit" class="form-control" id="f-tax_id_check_digit" maxlength="1" placeholder="7">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Régimen fiscal *</label>
+        <select name="fiscal_regime" class="form-control" id="f-fiscal_regime">
+          <option value="simplified">Régimen Simplificado (No responsable IVA)</option>
+          <option value="common">Régimen Común (Responsable IVA)</option>
+          <option value="simple">Régimen Simple de Tributación</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="card">
+      <div class="card-title">Contacto y Ubicación</div>
+      <div class="form-group">
+        <label>Correo electrónico *</label>
+        <input type="email" name="email" class="form-control" required id="f-email">
+      </div>
+      <div class="form-group">
+        <label>Teléfono</label>
+        <input type="text" name="phone" class="form-control" id="f-phone">
+      </div>
+      <div class="form-group">
+        <label>Dirección</label>
+        <input type="text" name="address" class="form-control" id="f-address">
+      </div>
+      <div class="form-group">
+        <label>Ciudad</label>
+        <input type="text" name="city" class="form-control" id="f-city">
+      </div>
+      <div class="form-group">
+        <label>Zona horaria</label>
+        <select name="timezone" class="form-control" id="f-timezone">
+          <option value="America/Bogota">Colombia (America/Bogota)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logo & Favicon -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">Logo e Ícono del Navegador</div>
+    <p style="font-size:12px; color:var(--text-light); margin-bottom:12px;">
+      Pegue la URL de una imagen (PNG, JPG o SVG). Puede usar servicios gratuitos como
+      <a href="https://imgbb.com/" target="_blank">imgbb.com</a> o
+      <a href="https://postimages.org/" target="_blank">postimages.org</a> para subir su imagen y obtener la URL.
+    </p>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div class="form-group">
+        <label>URL del Logo (sidebar, login, recibos)</label>
+        <input type="url" name="logo_url" class="form-control" id="f-logo_url"
+               placeholder="https://ejemplo.com/mi-logo.png" oninput="updateLogoPreview()">
+        <div id="logo-preview" style="margin-top:8px; text-align:center; min-height:50px;">
+          <img id="logo-preview-img" style="max-height:50px; max-width:200px; display:none;">
+          <span id="logo-preview-text" style="font-size:12px; color:var(--text-light);">Sin logo personalizado (se usa logo ROHU por defecto)</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>URL del Favicon (ícono pestaña del navegador)</label>
+        <input type="url" name="favicon_url" class="form-control" id="f-favicon_url"
+               placeholder="https://ejemplo.com/mi-icono.png" oninput="updateFaviconPreview()">
+        <div id="favicon-preview" style="margin-top:8px; text-align:center;">
+          <img id="favicon-preview-img" style="width:32px; height:32px; display:none; border:1px solid var(--border); border-radius:4px;">
+          <span id="favicon-preview-text" style="font-size:12px; color:var(--text-light);">Sin favicon personalizado (se usa ícono ROHU por defecto)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Facturación Electrónica DIAN -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">Facturación Electrónica DIAN</div>
+    <p style="font-size:12px; color:var(--text-light); margin-bottom:12px;">
+      Para emitir facturas electrónicas necesita un Proveedor Tecnológico Autorizado (PTA) por la DIAN.
+      Proveedores recomendados: <strong>Factus</strong>, <strong>COLFACTURA</strong>, <strong>Siigo</strong>.
+    </p>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div class="form-group">
+        <label>Proveedor Tecnológico (PTA)</label>
+        <select name="pta_provider" class="form-control" id="f-pta_provider">
+          <option value="">Sin configurar</option>
+          <option value="factus">Factus</option>
+          <option value="colfactura">COLFACTURA</option>
+          <option value="siigo">Siigo</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>API Key del PTA</label>
+        <input type="password" name="pta_api_key" class="form-control" id="f-pta_api_key"
+               placeholder="Proporcionada por el PTA">
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div class="form-group">
+        <label>Número de resolución DIAN</label>
+        <input type="text" name="dian_resolution_number" class="form-control" id="f-dian_resolution_number"
+               placeholder="Ej: 18764065429000">
+      </div>
+      <div class="form-group">
+        <label>Prefijo de facturación</label>
+        <input type="text" name="dian_resolution_prefix" class="form-control" id="f-dian_resolution_prefix"
+               placeholder="Ej: FE" value="FE">
+      </div>
+    </div>
+    <div id="dian-status" style="padding:8px 12px; border-radius:6px; font-size:13px; margin-top:4px;"></div>
+  </div>
+
+  <!-- Notificaciones Email (SMTP) -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">Notificaciones por Email (SMTP)</div>
+    <div class="alert" style="background:#DBEAFE; border:1px solid var(--info); font-size:13px; margin-bottom:12px;">
+      Configure un servidor SMTP para enviar notificaciones de cobro por email. Puede usar Gmail, Outlook o cualquier proveedor SMTP.
+    </div>
+    <div style="display:grid; grid-template-columns:2fr 1fr; gap:12px;">
+      <div class="form-group">
+        <label>Servidor SMTP</label>
+        <input type="text" name="smtp_host" class="form-control" id="f-smtp_host" placeholder="Ej: smtp.gmail.com">
+      </div>
+      <div class="form-group">
+        <label>Puerto</label>
+        <input type="number" name="smtp_port" class="form-control" id="f-smtp_port" placeholder="587" value="587">
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div class="form-group">
+        <label>Usuario SMTP</label>
+        <input type="text" name="smtp_user" class="form-control" id="f-smtp_user" placeholder="tu@gmail.com">
+      </div>
+      <div class="form-group">
+        <label>Contraseña SMTP</label>
+        <input type="password" name="smtp_password" class="form-control" id="f-smtp_password" placeholder="Contraseña o App Password">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Email remitente</label>
+      <input type="email" name="smtp_from_email" class="form-control" id="f-smtp_from_email" placeholder="notificaciones@minegocio.com (o el mismo del usuario SMTP)">
+    </div>
+  </div>
+
+  <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+    <button type="submit" class="btn btn-primary btn-lg">Guardar Cambios</button>
+  </div>
+</form>
+
+<!-- Health Check Visual -->
+<div class="card" style="margin-top:24px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:8px;">
+    <div>
+      <div class="card-title" style="margin:0;">Estado del Sistema</div>
+      <div id="app-version" style="font-size:12px; color:var(--text-light);"></div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-outline" onclick="testWhatsApp()">Probar WhatsApp</button>
+      <button class="btn btn-outline" onclick="testSMTP()" id="btn-smtp-test">Probar Email</button>
+      <button class="btn btn-primary" onclick="runHealthCheck()" id="btn-health">Verificar Conectividad</button>
+    </div>
+  </div>
+  <div id="health-grid" class="kpi-grid" style="gap:12px;">
+    <div style="text-align:center; color:var(--text-light); padding:20px; grid-column:1/-1;">
+      Haga clic en "Verificar Conectividad" para comprobar todos los servicios
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:24px;">
+  <div class="card-title">Vista previa del encabezado de factura</div>
+  <div id="invoice-preview" style="border:2px dashed var(--border); padding:20px; text-align:center; border-radius:8px; background:#FAFAFA;">
+    <div id="prev-name" style="font-size:18px; font-weight:700;"></div>
+    <div id="prev-nit" style="font-size:13px; color:var(--text-light);"></div>
+    <div id="prev-address" style="font-size:13px; color:var(--text-light);"></div>
+    <div id="prev-phone" style="font-size:13px; color:var(--text-light);"></div>
+  </div>
+</div>
+
+<!-- Danger Zone -->
+<div class="card" style="margin-top:24px; border-color:var(--danger);">
+  <div class="card-title" style="color:var(--danger);">Zona de Peligro</div>
+  <p style="font-size:13px; color:var(--text-light); margin-bottom:12px;">
+    Reiniciar elimina TODAS las ventas, compras, asientos contables y movimientos de inventario.
+    Los productos, usuarios y configuración se conservan. Stock se pone en 0.
+  </p>
+  <button class="btn btn-danger" onclick="resetAllData()">Reiniciar Todos los Datos</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+
+  async function loadTenant() {
+    const resp = await fetch('/api/v1/auth/tenant', {headers});
+    if (resp.status === 401 || resp.status === 403) { window.location.href = '/app/login'; return; }
+    const {data} = await resp.json();
+
+    const fields = ['name','trade_name','tax_id','tax_id_check_digit','fiscal_regime','email','phone','address','city','timezone','logo_url','favicon_url','pta_provider','dian_resolution_number','dian_resolution_prefix','smtp_host','smtp_port','smtp_user','smtp_password','smtp_from_email'];
+    // Masked fields (passwords/keys) — don't load "***" into inputs
+    const maskedFields = ['pta_api_key', 'smtp_password'];
+    fields.forEach(f => {
+      const el = document.getElementById('f-' + f);
+      if (el && data[f]) {
+        if (maskedFields.includes(f) && data[f] === '***') {
+          el.value = ''; // Leave empty — user enters new value only if changing
+          el.placeholder = '(configurado — deje vacío para no cambiar)';
+        } else {
+          el.value = data[f];
+        }
+      }
+    });
+    updatePreview();
+  }
+
+  function updatePreview() {
+    document.getElementById('prev-name').textContent = document.getElementById('f-name').value || 'Nombre del Negocio';
+    const nit = document.getElementById('f-tax_id').value;
+    const dv = document.getElementById('f-tax_id_check_digit').value;
+    document.getElementById('prev-nit').textContent = nit ? `NIT: ${nit}${dv ? '-' + dv : ''}` : '';
+    document.getElementById('prev-address').textContent = [
+      document.getElementById('f-address').value,
+      document.getElementById('f-city').value
+    ].filter(Boolean).join(', ');
+    document.getElementById('prev-phone').textContent = document.getElementById('f-phone').value ? 'Tel: ' + document.getElementById('f-phone').value : '';
+  }
+
+  document.querySelectorAll('#tenant-form input, #tenant-form select').forEach(el => {
+    el.addEventListener('input', updatePreview);
+  });
+
+  document.getElementById('tenant-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const data = Object.fromEntries(form);
+    // Don't send masked passwords if user didn't change them
+    ['pta_api_key', 'smtp_password'].forEach(f => {
+      if (!data[f] || data[f] === '***') delete data[f];
+    });
+
+    const resp = await fetch('/api/v1/auth/tenant', {
+      method: 'PATCH', headers, body: JSON.stringify(data),
+    });
+    const result = await resp.json();
+    if (result.success) {
+      document.getElementById('save-alert').style.display = 'block';
+      setTimeout(() => document.getElementById('save-alert').style.display = 'none', 3000);
+      // Update localStorage
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      user.tenant_name = data.name;
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('tenant', JSON.stringify(result.data));
+    } else {
+      rohuAlert('Error: ' + result.error.message, 'error');
+    }
+  });
+
+  function updateLogoPreview() {
+    const url = document.getElementById('f-logo_url').value;
+    const img = document.getElementById('logo-preview-img');
+    const txt = document.getElementById('logo-preview-text');
+    if (url) { img.src = url; img.style.display = 'inline'; txt.style.display = 'none'; img.onerror = () => { img.style.display='none'; txt.style.display='inline'; txt.textContent='URL no válida'; }; }
+    else { img.style.display = 'none'; txt.style.display = 'inline'; txt.textContent = 'Sin logo personalizado'; }
+  }
+
+  function updateFaviconPreview() {
+    const url = document.getElementById('f-favicon_url').value;
+    const img = document.getElementById('favicon-preview-img');
+    const txt = document.getElementById('favicon-preview-text');
+    if (url) { img.src = url; img.style.display = 'inline'; txt.style.display = 'none'; img.onerror = () => { img.style.display='none'; txt.style.display='inline'; txt.textContent='URL no válida'; }; }
+    else { img.style.display = 'none'; txt.style.display = 'inline'; txt.textContent = 'Sin favicon personalizado'; }
+  }
+
+  // ── Health Check Visual ────────────────────────────────────────
+  const SERVICE_META = {
+    database:      {icon: '🗄️', label: 'Base de Datos', desc: 'PostgreSQL'},
+    db_schema:     {icon: '📋', label: 'Esquema BD', desc: 'Tablas y tenants'},
+    puc:           {icon: '📊', label: 'Plan de Cuentas', desc: 'PUC Colombia'},
+    rbac:          {icon: '🔐', label: 'Roles y Permisos', desc: 'RBAC'},
+    smtp:          {icon: '📧', label: 'Email (SMTP)', desc: 'Notificaciones'},
+    factura_electronica: {icon: '🧾', label: 'Factura Electrónica', desc: 'DIAN Colombia (PTA)'},
+    whatsapp:          {icon: '💬', label: 'WhatsApp', desc: 'Notificaciones a clientes'},
+    ocr_tesseract: {icon: '📷', label: 'OCR Tesseract', desc: 'Lectura de facturas'},
+    static_files:  {icon: '📁', label: 'Archivos Estáticos', desc: 'CSS, JS, PWA'},
+    pwa_offline:   {icon: '📶', label: 'Modo Offline', desc: 'Ventas sin conexión'},
+  };
+
+  // Load version on init
+  fetch('/health').then(r=>r.json()).then(d => {
+    const el = document.getElementById('app-version');
+    const deployDate = d.deployed_at ? new Date(d.deployed_at).toLocaleString('es-CO') : '—';
+    el.innerHTML = `Versión <strong>${d.version || '?'}</strong> — Desplegado: ${deployDate}`;
+  }).catch(() => {});
+
+  async function testWhatsApp() {
+    const phone = await rohuPrompt('Ingrese un número de celular para probar WhatsApp:', '3101234567', '', 'tel');
+    if (!phone || phone.replace(/\D/g, '').length < 10) {
+      if (phone !== null) rohuAlert('Ingrese un número válido de 10 dígitos', 'warning');
+      return;
+    }
+    const cleanPhone = phone.replace(/\D/g, '');
+    const tenant = JSON.parse(localStorage.getItem('tenant') || '{}');
+    const msg = encodeURIComponent(`Hola! Esta es una prueba de WhatsApp desde ${tenant.name || 'ROHU Contable'}. Si recibes este mensaje, las notificaciones están funcionando correctamente.`);
+    const url = `https://wa.me/57${cleanPhone}?text=${msg}`;
+    window.open(url, '_blank');
+    rohuAlert('Se abrió WhatsApp con el mensaje de prueba. Si la ventana de chat se abrió correctamente, WhatsApp está funcionando.', 'success');
+  }
+
+  async function testSMTP() {
+    const btn = document.getElementById('btn-smtp-test');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+    try {
+      const resp = await fetch('/api/v1/auth/tenant/test-smtp', {method:'POST', headers, body:'{}'});
+      const r = await resp.json();
+      if (r.success) {
+        rohuAlert(`Correo de prueba enviado a ${r.data.to}. Revise su bandeja de entrada.`, 'success');
+      } else {
+        rohuAlert(`Error SMTP: ${r.error?.message || 'Fallo el envío'}`, 'error');
+      }
+    } catch (e) {
+      rohuAlert('Error de conexión al probar SMTP', 'error');
+    }
+    btn.disabled = false; btn.textContent = 'Probar Email';
+  }
+
+  async function runHealthCheck() {
+    const btn = document.getElementById('btn-health');
+    const grid = document.getElementById('health-grid');
+    btn.disabled = true; btn.textContent = 'Verificando...';
+
+    grid.innerHTML = `<div style="text-align:center; padding:20px; grid-column:1/-1;">
+      <div style="display:inline-block;width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+      <div style="margin-top:8px;">Verificando servicios...</div>
+      <style>@keyframes spin{to{transform:rotate(360deg);}}</style>
+    </div>`;
+
+    try {
+      const resp = await fetch('/health/full');
+      const data = await resp.json();
+
+      let html = '';
+      for (const [key, check] of Object.entries(data.checks)) {
+        const meta = SERVICE_META[key] || {icon:'⚙️', label:key, desc:''};
+        const isOk = check.status === 'ok';
+        const isWarn = check.status === 'warning' || check.status === 'not_configured';
+        const color = isOk ? 'var(--success)' : isWarn ? 'var(--warning)' : 'var(--danger)';
+        const bg = isOk ? '#D1FAE5' : isWarn ? '#FEF3C7' : '#FEE2E2';
+        const statusText = isOk ? 'Conectado' : isWarn ? 'Advertencia' : 'Error';
+
+        // Detail info
+        let detail = '';
+        if (check.response_ms) detail = `${check.response_ms}ms`;
+        if (check.accounts) detail = `${check.accounts} cuentas`;
+        if (check.roles) detail = `${check.roles} roles, ${check.permissions} permisos`;
+        if (check.tenants) detail = `${check.tenants} empresas`;
+        if (check.tenants_with_smtp !== undefined) detail = check.tenants_with_smtp > 0 ? 'Configurado' : 'Sin configurar';
+        if (check.provider) detail = `${check.provider} — ${check.note || ''}`;
+        if (check.version) detail = check.version;
+        if (check.error) detail = check.error;
+
+        html += `<div style="background:${bg}; border:1px solid ${color}; border-radius:12px; padding:16px; text-align:center;">
+          <div style="font-size:28px; margin-bottom:4px;">${meta.icon}</div>
+          <div style="font-weight:600; font-size:14px;">${meta.label}</div>
+          <div style="font-size:12px; color:var(--text-light); margin-bottom:8px;">${meta.desc}</div>
+          <div style="display:inline-block; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600; background:${color}; color:white;">${statusText}</div>
+          ${detail ? `<div style="font-size:11px; color:var(--text-light); margin-top:6px;">${detail}</div>` : ''}
+        </div>`;
+      }
+
+      // Overall status banner with version
+      const overall = data.status === 'ok';
+      const deployDate = data.deployed_at ? new Date(data.deployed_at).toLocaleString('es-CO') : '—';
+      grid.innerHTML = `
+        <div style="grid-column:1/-1; padding:12px 16px; border-radius:8px; text-align:center; background:${overall?'#D1FAE5':'#FEE2E2'}; color:${overall?'var(--success)':'var(--danger)'}; margin-bottom:4px;">
+          <div style="font-weight:600;">${overall ? '✅ Todos los servicios funcionando correctamente' : '❌ Algunos servicios tienen problemas'}</div>
+          <div style="font-size:12px; margin-top:4px; opacity:0.8;">v${data.version || '?'} — Desplegado: ${deployDate}</div>
+        </div>
+        ${html}`;
+
+    } catch (e) {
+      grid.innerHTML = `<div class="alert alert-danger" style="grid-column:1/-1;">Error verificando servicios: ${e.message}</div>`;
+    }
+
+    btn.disabled = false; btn.textContent = 'Verificar Conectividad';
+  }
+
+  loadTenant();
+  // After loading, update previews and DIAN status
+  setTimeout(() => {
+    updateLogoPreview(); updateFaviconPreview();
+    const pta = document.getElementById('f-pta_provider').value;
+    const status = document.getElementById('dian-status');
+    if (pta) {
+      status.innerHTML = '<span class="badge badge-success">Configurado</span> Proveedor: ' + pta;
+      status.style.background = '#DCFCE7';
+    } else {
+      status.innerHTML = '<span class="badge badge-warning">No configurado</span> Configure un PTA para emitir facturas electrónicas.';
+      status.style.background = '#FEF3C7';
+    }
+  }, 500);
+
+  // Reset data
+  async function resetAllData() {
+    const ok1 = await rohuConfirm('¿ESTÁ SEGURO?<br><br>Esto eliminará <strong>TODAS</strong> las ventas, compras, asientos contables y movimientos de inventario.<br><br>Los productos y usuarios se conservan.', 'Sí, continuar', 'warning');
+    if (!ok1) return;
+    const word = await rohuPrompt('Escriba <strong>REINICIAR</strong> para confirmar:', 'REINICIAR');
+    if (word !== 'REINICIAR') { await rohuAlert('Operación cancelada.', 'info'); return; }
+
+    const resp = await fetch('/api/v1/auth/tenant/reset', {
+      method: 'POST', headers, body: JSON.stringify({confirm: 'REINICIAR'}),
+    });
+    const r = await resp.json();
+    if (r.success) {
+      await rohuAlert('Datos reiniciados exitosamente.<br>Productos conservados: <strong>' + r.data.products_preserved + '</strong>', 'success');
+      window.location.reload();
+    } else {
+      rohuAlert('Error: ' + r.error.message, 'error');
+    }
+  }
+</script>
+{% endblock %}

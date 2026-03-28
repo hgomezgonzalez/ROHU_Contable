@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% set active_page = 'reports' %}
+{% block title %}Reportes — ROHU Contable{% endblock %}
+{% block header_title %}Reportes{% endblock %}
+
+{% block head %}
+<script src="/static/js/chart.min.js"></script>
+<style>
+  .filter-bar { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+  .filter-btn { padding:6px 14px; border:1px solid var(--border); border-radius:20px; background:white; cursor:pointer; font-size:13px; font-weight:500; transition:all 0.2s; }
+  .filter-btn:hover, .filter-btn.active { background:var(--primary); color:white; border-color:var(--primary); }
+  .tab-bar { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:16px; }
+  .tab-btn { padding:10px 20px; border:none; background:none; cursor:pointer; font-size:14px; font-weight:500; color:var(--text-light); border-bottom:2px solid transparent; margin-bottom:-2px; }
+  .tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+  @media print { .sidebar,.header,.no-print{display:none!important} .main-content{margin-left:0!important} }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header no-print">
+  <h1 class="page-title">Reportes</h1>
+  <button class="btn btn-outline" onclick="window.print()">Imprimir</button>
+</div>
+
+<!-- Date Filter Bar -->
+<div class="filter-bar no-print">
+  <span style="font-size:13px; font-weight:600; color:var(--text-light); margin-right:8px;">Período:</span>
+  <button class="filter-btn active" onclick="setFilter('today', this)">Hoy</button>
+  <button class="filter-btn" onclick="setFilter('week', this)">Esta semana</button>
+  <button class="filter-btn" onclick="setFilter('month', this)">Este mes</button>
+  <button class="filter-btn" onclick="setFilter('year', this)">Este año</button>
+  <span style="margin:0 8px; color:var(--border);">|</span>
+  <input type="date" id="date-from" class="form-control" style="width:auto; padding:5px 8px; font-size:13px;" onchange="loadCustom()">
+  <span style="font-size:13px;">a</span>
+  <input type="date" id="date-to" class="form-control" style="width:auto; padding:5px 8px; font-size:13px;" onchange="loadCustom()">
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar no-print">
+  <button class="tab-btn active" onclick="showTab('ventas', this)">Ventas</button>
+  <button class="tab-btn" onclick="showTab('productos', this)">Top Productos</button>
+  <button class="tab-btn" onclick="showTab('pl', this)">P&L</button>
+  <button class="tab-btn" onclick="showTab('inventario', this)">Inventario</button>
+  <button class="tab-btn" onclick="showTab('transacciones', this)">Transacciones</button>
+</div>
+
+<!-- Tab: Ventas -->
+<div id="tab-ventas" class="tab-panel active">
+  <div class="kpi-grid">
+    <div class="card"><div class="card-title">Ventas</div><div class="card-value" id="r-sales-count">—</div></div>
+    <div class="card"><div class="card-title">Ingresos</div><div class="card-value positive" id="r-revenue">—</div></div>
+    <div class="card"><div class="card-title">Ticket Promedio</div><div class="card-value" id="r-avg">—</div></div>
+    <div class="card"><div class="card-title">IVA</div><div class="card-value" id="r-tax">—</div></div>
+  </div>
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div class="card-title" style="margin:0;">Tendencia de Ventas</div>
+      <a href="#" id="export-sales" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
+    </div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-sales-trend')" title="Expandir">⛶</button><canvas id="chart-sales-trend" height="70"></canvas></div>
+  </div>
+</div>
+
+<!-- Tab: Top Productos -->
+<div id="tab-productos" class="tab-panel">
+  <div class="card">
+    <div class="card-title">Productos Más Vendidos</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-top-prods')" title="Expandir">⛶</button><canvas id="chart-top-prods" height="70"></canvas></div>
+    <div class="table-wrap" style="margin-top:12px;">
+      <table><thead><tr><th>#</th><th>Producto</th><th>Uds.</th><th>Ingresos</th><th># Ventas</th></tr></thead>
+      <tbody id="top-prods-table"><tr><td colspan="5">Cargando...</td></tr></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: P&L -->
+<div id="tab-pl" class="tab-panel">
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+    <div class="card">
+      <div class="card-title">Estado de Resultados</div>
+      <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-pl')" title="Expandir">⛶</button><canvas id="chart-pl" height="70"></canvas></div>
+    </div>
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div class="card-title" style="margin:0;">Detalle</div>
+        <a href="#" id="export-pl" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
+      </div>
+      <div id="pl-detail">Cargando...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Inventario -->
+<div id="tab-inventario" class="tab-panel">
+  <div class="kpi-grid">
+    <div class="card"><div class="card-title">Valor Costo</div><div class="card-value" id="inv-cost">—</div></div>
+    <div class="card"><div class="card-title">Valor Venta</div><div class="card-value positive" id="inv-sale">—</div></div>
+    <div class="card"><div class="card-title">Margen</div><div class="card-value positive" id="inv-margin">—</div></div>
+    <div class="card"><div class="card-title">Stock Bajo</div><div class="card-value" id="inv-low" style="color:var(--danger);">—</div></div>
+  </div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+    <div class="card">
+      <div class="card-title">Distribución por Valor</div>
+      <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-inv')" title="Expandir">⛶</button><canvas id="chart-inv" height="70"></canvas></div>
+    </div>
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div class="card-title" style="margin:0;">Detalle</div>
+        <a href="#" id="export-inv" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Producto</th><th>Stock</th><th>Valor</th><th>Estado</th></tr></thead>
+        <tbody id="inv-table"><tr><td colspan="4">Cargando...</td></tr></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Transacciones -->
+<div id="tab-transacciones" class="tab-panel">
+  <div class="card">
+    <div class="card-title">Historial de Transacciones</div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Factura</th><th>Fecha</th><th>Items</th><th>Total</th><th>Pago</th><th>Estado</th></tr></thead>
+      <tbody id="txn-table"><tr><td colspan="6">Cargando...</td></tr></tbody></table>
+    </div>
+    <div id="txn-pagination" style="margin-top:8px; text-align:center;"></div>
+  </div>
+</div>
+
+<p style="margin-top:16px; font-size:12px; color:var(--text-light); text-align:center;" class="no-print">
+  Reportes de soporte informativo. No reemplazan asesoría contable profesional.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const COLORS = ['#1E3A8A','#10B981','#06B6D4','#F59E0B','#EF4444','#8B5CF6','#EC4899','#14B8A6','#F97316','#6366F1'];
+  const PAY = {cash:'Efectivo',card:'Tarjeta',transfer:'Transfer.',nequi:'Nequi',daviplata:'Daviplata'};
+
+  let chartTrend, chartTopP, chartPL, chartInv;
+  let dateFrom, dateTo;
+
+  // Use local date (Colombia), not UTC
+  function today() { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+  function addDays(d, n) { const r=new Date(d+'T12:00:00'); r.setDate(r.getDate()+n); return `${r.getFullYear()}-${String(r.getMonth()+1).padStart(2,'0')}-${String(r.getDate()).padStart(2,'0')}`; }
+  function startOfWeek(d) { const r=new Date(d+'T12:00:00'); r.setDate(r.getDate()-((r.getDay()+6)%7)); return `${r.getFullYear()}-${String(r.getMonth()+1).padStart(2,'0')}-${String(r.getDate()).padStart(2,'0')}`; }
+  function startOfMonth(d) { return d.substring(0,8)+'01'; }
+  function startOfYear(d) { return d.substring(0,4)+'-01-01'; }
+
+  function setFilter(period, btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const t = today();
+    if (period === 'today') { dateFrom = t; dateTo = t; }
+    else if (period === 'week') { dateFrom = startOfWeek(t); dateTo = t; }
+    else if (period === 'month') { dateFrom = startOfMonth(t); dateTo = t; }
+    else if (period === 'year') { dateFrom = startOfYear(t); dateTo = t; }
+    document.getElementById('date-from').value = dateFrom;
+    document.getElementById('date-to').value = dateTo;
+    loadAll();
+  }
+
+  function loadCustom() {
+    dateFrom = document.getElementById('date-from').value;
+    dateTo = document.getElementById('date-to').value;
+    if (dateFrom && dateTo) { document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active')); loadAll(); }
+  }
+
+  function showTab(name, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  async function loadAll() {
+    if (!dateFrom || !dateTo) return;
+
+    // Sales report
+    const sr = await fetch(`/api/v1/reports/sales?date_from=${dateFrom}&date_to=${dateTo}&group_by=day`, {headers}).then(r=>r.json());
+    const sd = sr.data;
+    document.getElementById('r-sales-count').textContent = sd.summary.total_sales;
+    document.getElementById('r-revenue').textContent = COP(sd.summary.total_revenue);
+    document.getElementById('r-avg').textContent = COP(sd.summary.avg_ticket);
+    const totalTax = sd.periods.reduce((s,p) => s + p.tax, 0);
+    document.getElementById('r-tax').textContent = COP(totalTax);
+
+    // Sales trend line chart
+    if (chartTrend) chartTrend.destroy();
+    chartTrend = new Chart(document.getElementById('chart-sales-trend'), {
+      type: 'line',
+      data: {
+        labels: sd.periods.map(p => p.period),
+        datasets: [{label:'Ventas ($)', data: sd.periods.map(p => p.total), borderColor:'#1E3A8A', backgroundColor:'#1E3A8A20', fill:true, tension:0.4, pointRadius:4, pointBackgroundColor:'#1E3A8A'}]
+      },
+      options: {responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{display:false}, grid:{display:false}}, x:{ticks:{display:false}, grid:{display:false}}}, elements:{point:{radius:1}}}
+    });
+
+    // Top products
+    const tp = await fetch(`/api/v1/reports/sales-by-product?date_from=${dateFrom}&date_to=${dateTo}`, {headers}).then(r=>r.json());
+    const tpd = tp.data.slice(0, 10);
+    if (chartTopP) chartTopP.destroy();
+    chartTopP = new Chart(document.getElementById('chart-top-prods'), {
+      type: 'bar',
+      data: {labels: tpd.map(p => p.product_name.substring(0,20)), datasets:[{label:'Ingresos', data: tpd.map(p => p.total), backgroundColor: COLORS}]},
+      options: {indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{display:false}, grid:{display:false}}, y:{ticks:{font:{size:11}}, grid:{display:false}}}}
+    });
+    document.getElementById('top-prods-table').innerHTML = tpd.length === 0
+      ? '<tr><td colspan="5" style="color:var(--text-light)">Sin ventas en este período</td></tr>'
+      : tpd.map((p,i) => `<tr><td>${i+1}</td><td>${p.product_name}</td><td>${p.quantity_sold}</td><td>${COP(p.total)}</td><td>${p.num_sales}</td></tr>`).join('');
+
+    // P&L
+    const pl = await fetch('/api/v1/reports/profit-loss', {headers}).then(r=>r.json());
+    const pld = pl.data;
+    if (chartPL) chartPL.destroy();
+    chartPL = new Chart(document.getElementById('chart-pl'), {
+      type: 'bar',
+      data: {labels:['Ingresos','Costo','Ut. Bruta','Gastos','Ut. Neta'],
+        datasets:[{data:[pld.income.total,pld.cost_of_sales.total,pld.gross_profit,pld.expenses.total,pld.net_profit],
+          backgroundColor:['#10B981','#EF4444','#06B6D4','#F59E0B',pld.net_profit>=0?'#22C55E':'#EF4444']}]},
+      options:{indexAxis:'y',responsive:true, maintainAspectRatio:false,plugins:{legend:{display:false}}, scales:{x:{ticks:{display:false},grid:{display:false}},y:{ticks:{font:{size:11}},grid:{display:false}}}}
+    });
+    document.getElementById('pl-detail').innerHTML = `<table>
+      <tr><td><strong>Ingresos</strong></td><td style="text-align:right;color:var(--secondary)">${COP(pld.income.total)}</td></tr>
+      <tr><td>(-) Costo ventas</td><td style="text-align:right;color:var(--danger)">(${COP(pld.cost_of_sales.total)})</td></tr>
+      <tr style="border-top:2px solid var(--primary)"><td><strong>Utilidad Bruta</strong></td><td style="text-align:right"><strong>${COP(pld.gross_profit)}</strong> (${pld.gross_margin_pct}%)</td></tr>
+      <tr><td>(-) Gastos</td><td style="text-align:right">(${COP(pld.expenses.total)})</td></tr>
+      <tr style="border-top:2px solid var(--primary);font-size:18px"><td><strong>Utilidad Neta</strong></td><td style="text-align:right;color:${pld.net_profit>=0?'var(--success)':'var(--danger)'}"><strong>${COP(pld.net_profit)}</strong> (${pld.net_margin_pct}%)</td></tr>
+    </table>`;
+
+    // Inventory
+    const inv = await fetch('/api/v1/reports/inventory', {headers}).then(r=>r.json());
+    const id = inv.data;
+    document.getElementById('inv-cost').textContent = COP(id.total_value_at_cost);
+    document.getElementById('inv-sale').textContent = COP(id.total_value_at_sale);
+    document.getElementById('inv-margin').textContent = COP(id.potential_margin);
+    document.getElementById('inv-low').textContent = id.low_stock_count;
+    if (chartInv) chartInv.destroy();
+    if (id.items.length > 0) {
+      chartInv = new Chart(document.getElementById('chart-inv'), {
+        type:'doughnut', data:{labels:id.items.map(i=>i.name.substring(0,20)),
+          datasets:[{data:id.items.map(i=>i.value_at_cost), backgroundColor:COLORS}]},
+        options:{responsive:true, maintainAspectRatio:false,plugins:{legend:{display:false}}}
+      });
+    }
+    document.getElementById('inv-table').innerHTML = id.items.map(i => `
+      <tr><td>${i.name}</td><td>${i.stock} ${i.unit}</td><td>${COP(i.value_at_cost)}</td>
+      <td>${i.is_low_stock?'<span class="badge badge-danger">Bajo</span>':'<span class="badge badge-success">OK</span>'}</td></tr>
+    `).join('');
+
+    // Transactions
+    const txn = await fetch(`/api/v1/reports/transactions?date_from=${dateFrom}&date_to=${dateTo}&per_page=50`, {headers}).then(r=>r.json());
+    document.getElementById('txn-table').innerHTML = txn.data.length === 0
+      ? '<tr><td colspan="6" style="color:var(--text-light)">Sin transacciones en este período</td></tr>'
+      : txn.data.map(t => `
+        <tr>
+          <td><strong>${t.invoice_number}</strong></td>
+          <td>${new Date(t.date).toLocaleString('es-CO')}</td>
+          <td>${t.items_count}</td>
+          <td>${COP(t.total)}</td>
+          <td>${PAY[t.payment_method]||t.payment_method||'—'}</td>
+          <td><span class="badge ${t.status==='completed'?'badge-success':'badge-danger'}">${t.status==='completed'?'OK':'Anulada'}</span></td>
+        </tr>
+      `).join('');
+
+    // Export links
+    document.getElementById('export-sales').onclick = async e => { e.preventDefault();
+      const r = await fetch(`/api/v1/reports/sales-by-product?date_from=${dateFrom}&date_to=${dateTo}&format=csv`, {headers});
+      const b = await r.blob(); const u = URL.createObjectURL(b);
+      const a = document.createElement('a'); a.href=u; a.download='ventas_por_producto.csv'; a.click();
+    };
+    document.getElementById('export-pl').onclick = async e => { e.preventDefault();
+      const r = await fetch('/api/v1/reports/profit-loss?format=csv', {headers});
+      const b = await r.blob(); const u = URL.createObjectURL(b);
+      const a = document.createElement('a'); a.href=u; a.download='estado_resultados.csv'; a.click();
+    };
+    document.getElementById('export-inv').onclick = async e => { e.preventDefault();
+      const r = await fetch('/api/v1/reports/inventory?format=csv', {headers});
+      const b = await r.blob(); const u = URL.createObjectURL(b);
+      const a = document.createElement('a'); a.href=u; a.download='inventario.csv'; a.click();
+    };
+  }
+
+  // Init with "Today"
+  setFilter('today', document.querySelector('.filter-btn'));
+</script>
+{% endblock %}

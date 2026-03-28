@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% set active_page = 'campaigns' %}
+{% block title %}Campañas de Cobro — ROHU Contable{% endblock %}
+{% block header_title %}Campañas de Cobro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Campañas de Cobro de Cartera</h1>
+  <button class="btn btn-primary" onclick="openCreateModal()">+ Nueva Campaña</button>
+</div>
+
+<div id="campaigns-list">
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Campaña</th><th>Nombre</th><th>Clientes</th><th>Monto</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+        <tbody id="campaigns-table"><tr><td colspan="7">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Campaign Detail -->
+<div id="campaign-detail" style="display:none;">
+  <div class="card" style="margin-bottom:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <h3 id="detail-title">Campaña</h3>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="closeCampaignDetail()">Volver</button>
+        <button class="btn btn-success" id="btn-execute" onclick="executeCampaign()" style="display:none;">Activar Campaña</button>
+        <button class="btn btn-outline" id="btn-pdf" onclick="exportPDF()" style="display:none;">Exportar PDF</button>
+        <button class="btn btn-primary" id="btn-notify" onclick="sendNotifications()" style="display:none;">Enviar Notificaciones Email</button>
+        <button class="btn btn-outline" id="btn-complete" onclick="completeCampaign()" style="display:none;">Marcar Completada</button>
+        <button class="btn btn-danger" id="btn-cancel" onclick="cancelCampaign()" style="display:none;">Cancelar Campaña</button>
+      </div>
+    </div>
+    <div id="detail-summary" class="kpi-grid" style="margin-top:12px;"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Gestión de Cobros</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Cliente</th><th>Monto</th><th>Mora</th><th>Contacto</th><th>Estado</th><th>Promesa pago</th><th>Acciones</th></tr></thead>
+        <tbody id="items-table"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Create Modal with Preview -->
+<div id="create-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:600px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:16px;">Nueva Campaña de Cobro</h3>
+    <div class="form-group"><label>Nombre *</label><input type="text" id="c-name" class="form-control" required placeholder="Ej: Cobro Marzo 2026"></div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+      <div class="form-group"><label>Días mora mínimos</label><input type="number" id="c-days" class="form-control" value="1" min="1"></div>
+      <div class="form-group"><label>Monto mínimo ($)</label><input type="number" id="c-amount" class="form-control" value="0" min="0" step="1000"></div>
+    </div>
+    <button class="btn btn-outline" onclick="previewCampaign()" style="margin-bottom:12px;">Vista previa de clientes</button>
+    <div id="preview-result" style="margin-bottom:12px;"></div>
+    <div class="form-group"><label>Mensaje de cobro</label>
+      <textarea id="c-message" class="form-control" rows="3" placeholder="Estimado(a) {nombre}, le recordamos su saldo pendiente de ${monto} con {dias} días de mora..."></textarea>
+      <small style="color:var(--text-light);">Variables: {nombre}, {monto}, {dias}, {negocio}</small>
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="document.getElementById('create-modal').style.display='none'">Cancelar</button>
+      <button class="btn btn-primary" id="btn-create-campaign" onclick="createCampaign()">Crear Campaña</button>
+    </div>
+  </div>
+</div>
+
+<!-- Note Modal -->
+<div id="note-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:210; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:400px;">
+    <h3 style="margin-bottom:12px;">Nota de Gestión</h3>
+    <textarea id="note-text" class="form-control" rows="3" placeholder="Ej: Cliente prometió pagar el viernes"></textarea>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+      <button class="btn btn-outline" onclick="document.getElementById('note-modal').style.display='none'">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveNote()">Guardar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const STATUS = {draft:'Borrador',active:'Activa',completed:'Completada',cancelled:'Cancelada'};
+  const STATUS_CL = {draft:'badge-warning',active:'badge-success',completed:'badge-info',cancelled:'badge-danger'};
+  const CONTACT_STATUS = {pending:'Pendiente',contacted:'Contactado',promised:'Prometió pago',paid:'Pagó',failed:'No contactado'};
+  const CONTACT_CL = {pending:'',contacted:'background:#DBEAFE;',promised:'background:#FEF3C7;',paid:'background:#D1FAE5;',failed:'background:#FEE2E2;'};
+
+  let currentCampaignId = null;
+  let currentNoteItemId = null;
+
+  // ── Campaign List ─────────────────────────────────────────────
+  async function loadCampaigns() {
+    try {
+      const resp = await fetch('/api/v1/customers/campaigns', {headers});
+      if (resp.status === 401) { window.location.href = '/app/login'; return; }
+      const {data} = await resp.json();
+      const tbody = document.getElementById('campaigns-table');
+      if (!data.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-light)">Sin campañas. Cree una para empezar a cobrar cartera vencida.</td></tr>'; return; }
+      tbody.innerHTML = data.map(c => `<tr>
+        <td><strong>${c.campaign_number}</strong></td>
+        <td>${c.name}</td>
+        <td>${c.total_customers}</td>
+        <td>${COP(c.total_amount_targeted)}</td>
+        <td><span class="badge ${STATUS_CL[c.status]||''}">${STATUS[c.status]||c.status}</span></td>
+        <td>${new Date(c.created_at).toLocaleDateString('es-CO')}</td>
+        <td><button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="openCampaign('${c.id}')">Gestionar</button></td>
+      </tr>`).join('');
+    } catch (e) { console.error(e); }
+  }
+
+  // ── Preview ───────────────────────────────────────────────────
+  async function previewCampaign() {
+    const body = {
+      min_days_overdue: parseInt(document.getElementById('c-days').value) || 1,
+      min_amount_due: parseFloat(document.getElementById('c-amount').value) || 0,
+    };
+    const resp = await fetch('/api/v1/customers/campaigns/preview', {method:'POST', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    const el = document.getElementById('preview-result');
+    if (r.success && r.data.length) {
+      el.innerHTML = `<div class="alert" style="background:#D1FAE5; border:1px solid var(--success); padding:12px; border-radius:8px;">
+        <strong>${r.total_customers} cliente(s)</strong> con deuda total de <strong>${COP(r.total_amount)}</strong>
+        <div class="table-wrap" style="margin-top:8px; max-height:200px; overflow-y:auto;">
+          <table style="font-size:13px;">
+            <thead><tr><th>Cliente</th><th>Facturas</th><th>Deuda</th><th>Max mora</th></tr></thead>
+            <tbody>${r.data.map(c => `<tr><td>${c.name}</td><td>${c.invoices}</td><td>${COP(c.total_due)}</td><td>${c.max_days}d</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+    } else {
+      el.innerHTML = '<div class="alert alert-warning">No hay clientes con saldo vencido que cumplan los filtros. Verifique que tenga ventas a crédito pendientes.</div>';
+    }
+  }
+
+  // ── Create Campaign ───────────────────────────────────────────
+  async function createCampaign() {
+    const name = document.getElementById('c-name').value.trim();
+    if (!name) { rohuAlert('Ingrese nombre de la campaña', 'warning'); return; }
+    const body = {
+      name,
+      min_days_overdue: parseInt(document.getElementById('c-days').value) || 1,
+      min_amount_due: parseFloat(document.getElementById('c-amount').value) || 0,
+      message_template: document.getElementById('c-message').value || null,
+    };
+    const resp = await fetch('/api/v1/customers/campaigns', {method:'POST', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) {
+      document.getElementById('create-modal').style.display = 'none';
+      loadCampaigns();
+      if (r.data.total_customers > 0) {
+        rohuAlert(`Campaña creada: ${r.data.total_customers} clientes, ${COP(r.data.total_amount_targeted)} en cartera`, 'success');
+      } else {
+        rohuAlert('Campaña creada pero sin clientes. Verifique filtros o ventas a crédito.', 'warning');
+      }
+    } else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  function openCreateModal() {
+    document.getElementById('c-name').value = '';
+    document.getElementById('c-days').value = '1';
+    document.getElementById('c-amount').value = '0';
+    document.getElementById('c-message').value = '';
+    document.getElementById('preview-result').innerHTML = '';
+    document.getElementById('create-modal').style.display = 'flex';
+  }
+
+  // ── Campaign Detail ───────────────────────────────────────────
+  async function openCampaign(id) {
+    currentCampaignId = id;
+    const resp = await fetch(`/api/v1/customers/campaigns/${id}`, {headers});
+    const {data} = await resp.json();
+
+    document.getElementById('detail-title').textContent = `${data.campaign_number} — ${data.name}`;
+
+    // Show/hide action buttons based on status
+    document.getElementById('btn-execute').style.display = data.status === 'draft' ? '' : 'none';
+    document.getElementById('btn-pdf').style.display = data.status === 'active' ? '' : 'none';
+    document.getElementById('btn-notify').style.display = data.status === 'active' ? '' : 'none';
+    document.getElementById('btn-complete').style.display = data.status === 'active' ? '' : 'none';
+    document.getElementById('btn-cancel').style.display = (data.status === 'draft' || data.status === 'active') ? '' : 'none';
+
+    // KPIs
+    const ss = data.status_summary || {};
+    const contacted = (ss.contacted||0) + (ss.promised||0) + (ss.paid||0) + (ss.failed||0);
+    document.getElementById('detail-summary').innerHTML = `
+      <div class="card"><div class="card-title">Clientes</div><div class="card-value">${data.total_customers}</div></div>
+      <div class="card"><div class="card-title">Por cobrar</div><div class="card-value" style="color:var(--danger)">${COP(data.total_amount_targeted)}</div></div>
+      <div class="card"><div class="card-title">Gestionados</div><div class="card-value" style="color:var(--info)">${contacted}/${data.items.length}</div></div>
+      <div class="card"><div class="card-title">Cobrado</div><div class="card-value" style="color:var(--success)">${COP(data.total_collected||0)}</div></div>
+      <div class="card"><div class="card-title">Efectividad</div><div class="card-value" style="color:${(data.effectiveness_pct||0)>50?'var(--success)':'var(--warning)'};">${data.effectiveness_pct||0}%</div></div>
+    `;
+
+    // Items table — generate messages client-side if backend didn't have them
+    const tbody = document.getElementById('items-table');
+    window._campaignMessages = {};
+    const tenant = JSON.parse(localStorage.getItem('tenant') || '{}');
+    const tpl = data.message_template || 'Estimado(a) {nombre}, tiene un saldo pendiente de ${monto} con {dias} días de mora. — {negocio}';
+
+    tbody.innerHTML = data.items.map(i => {
+      let itemMsg = i.rendered_message;
+      if (!itemMsg && data.status === 'active') {
+        // Client-side fallback: generate message from template
+        itemMsg = tpl.replace('{nombre}', i.customer_name || 'Cliente')
+                     .replace('{monto}', Number(i.amount_due).toLocaleString('es-CO'))
+                     .replace('{dias}', String(i.days_overdue))
+                     .replace('{negocio}', tenant.name || 'Nuestro negocio');
+      }
+      window._campaignMessages[i.id] = itemMsg || '';
+      const phone = (i.customer_phone||'').replace(/\D/g,'');
+      const msg = encodeURIComponent(itemMsg||'');
+      const whatsappUrl = phone ? `https://wa.me/57${phone}?text=${msg}` : '';
+
+      return `<tr style="${CONTACT_CL[i.contact_status]||''}">
+        <td>
+          <strong>${i.customer_name||'—'}</strong>
+          ${i.customer_phone ? `<br><span style="font-size:12px;color:var(--text-light);">${i.customer_phone}</span>` : ''}
+        </td>
+        <td style="font-weight:600;">${COP(i.amount_due)}</td>
+        <td style="color:${i.days_overdue>60?'var(--danger)':i.days_overdue>30?'var(--warning)':'var(--text)'}; font-weight:600;">${i.days_overdue}d</td>
+        <td>
+          <select onchange="updateItem('${id}','${i.id}','contact_method',this.value)" class="form-control" style="padding:4px 8px;">
+            <option value="phone_call" ${i.contact_method==='phone_call'?'selected':''}>Llamada</option>
+            <option value="whatsapp" ${i.contact_method==='whatsapp'?'selected':''}>WhatsApp</option>
+            <option value="sms" ${i.contact_method==='sms'?'selected':''}>SMS</option>
+            <option value="email" ${i.contact_method==='email'?'selected':''}>Email</option>
+          </select>
+          ${whatsappUrl ? `<a href="${whatsappUrl}" target="_blank" style="font-size:14px; margin-left:4px;" title="Abrir WhatsApp">📱</a>` : ''}
+        </td>
+        <td>
+          <select onchange="updateItem('${id}','${i.id}','contact_status',this.value)" class="form-control" style="padding:4px 8px;">
+            ${Object.entries(CONTACT_STATUS).map(([k,v])=>`<option value="${k}" ${i.contact_status===k?'selected':''}>${v}</option>`).join('')}
+          </select>
+        </td>
+        <td><input type="date" value="${i.promise_date ? i.promise_date.substring(0,10) : ''}"
+          onchange="updateItem('${id}','${i.id}','promise_date',this.value)" class="form-control" style="padding:4px 8px;"></td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-outline" style="padding:4px 8px;font-size:12px;" onclick="openNote('${id}','${i.id}')">Nota</button>
+          ${i.rendered_message ? `<button class="btn btn-outline" style="padding:4px 8px;font-size:12px;" onclick="printLetter('${i.id}')">Carta</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('campaigns-list').style.display = 'none';
+    document.getElementById('campaign-detail').style.display = 'block';
+  }
+
+  function closeCampaignDetail() {
+    document.getElementById('campaign-detail').style.display = 'none';
+    document.getElementById('campaigns-list').style.display = '';
+    loadCampaigns();
+  }
+
+  // ── Item Updates ──────────────────────────────────────────────
+  async function updateItem(campId, itemId, field, value) {
+    const body = {}; body[field] = value;
+    await fetch(`/api/v1/customers/campaigns/${campId}/items/${itemId}`, {method:'PATCH', headers, body:JSON.stringify(body)});
+  }
+
+  // ── Notes (modal instead of browser prompt) ───────────────────
+  function openNote(campId, itemId) {
+    currentNoteItemId = {campId, itemId};
+    document.getElementById('note-text').value = '';
+    document.getElementById('note-modal').style.display = 'flex';
+  }
+
+  async function saveNote() {
+    const text = document.getElementById('note-text').value.trim();
+    if (!text) return;
+    await updateItem(currentNoteItemId.campId, currentNoteItemId.itemId, 'notes', text);
+    document.getElementById('note-modal').style.display = 'none';
+    rohuAlert('Nota guardada', 'success');
+  }
+
+  // ── Actions ───────────────────────────────────────────────────
+  async function executeCampaign() {
+    const ok = await rohuConfirm('¿Activar esta campaña? Se generarán los mensajes personalizados de cobro para cada cliente.');
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/customers/campaigns/${currentCampaignId}/execute`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { rohuAlert('Campaña activada. Mensajes generados.', 'success'); openCampaign(currentCampaignId); }
+    else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  async function completeCampaign() {
+    const ok = await rohuConfirm('¿Marcar esta campaña como completada?');
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/customers/campaigns/${currentCampaignId}/complete`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { rohuAlert('Campaña completada', 'success'); openCampaign(currentCampaignId); }
+    else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  async function cancelCampaign() {
+    const ok = await rohuConfirm('¿Cancelar esta campaña? No se podrán gestionar más cobros.');
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/customers/campaigns/${currentCampaignId}/cancel`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { rohuAlert('Campaña cancelada', 'info'); openCampaign(currentCampaignId); }
+    else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  // ── Export PDF (print window) ─────────────────────────────────
+  function exportPDF() {
+    const msgs = Object.values(window._campaignMessages || {}).filter(m => m);
+    if (!msgs.length) {
+      const keys = Object.keys(window._campaignMessages || {});
+      if (keys.length === 0) {
+        rohuAlert('Esta campaña no tiene clientes. Debe tener ventas a crédito vencidas para generar cobros.', 'warning');
+      } else {
+        rohuAlert('Los mensajes no se generaron. Active la campaña primero con el botón "Activar Campaña".', 'warning');
+      }
+      return;
+    }
+    const title = document.getElementById('detail-title').textContent;
+    const tenant = JSON.parse(localStorage.getItem('tenant') || '{}');
+    const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
+      <style>body{font-family:Arial,sans-serif;padding:20px;} .msg{border:1px solid #ddd;padding:20px;margin:16px 0;border-radius:8px;page-break-inside:avoid;}
+      .header{border-bottom:2px solid #1E3A8A;padding-bottom:12px;margin-bottom:20px;}
+      h1{font-size:20px;color:#1E3A8A;margin:0;} .sub{font-size:13px;color:#666;}
+      @media print{.no-print{display:none!important;}}</style></head><body>
+      <div class="header"><h1>${tenant.name || 'ROHU Contable'}</h1><div class="sub">NIT: ${tenant.tax_id||''} | ${tenant.city||''} | Tel: ${tenant.phone||''}</div>
+      <div class="sub" style="margin-top:4px;">Campaña: ${title} — ${new Date().toLocaleDateString('es-CO')}</div></div>
+      <button class="no-print" onclick="window.print()" style="padding:10px 20px; margin-bottom:16px; font-size:14px;">Imprimir / Guardar como PDF</button>
+      ${msgs.map(m => `<div class="msg">${m.replace(/\n/g,'<br>')}</div>`).join('')}
+    </body></html>`);
+    w.document.close();
+  }
+
+  // ── Print Individual Letter ───────────────────────────────────
+  function printLetter(itemId) {
+    const msg = window._campaignMessages[itemId];
+    if (!msg) return;
+    const tenant = JSON.parse(localStorage.getItem('tenant') || '{}');
+    const w = window.open('', '_blank');
+    w.document.write(`<!DOCTYPE html><html><head><title>Carta de Cobro</title>
+      <style>body{font-family:Arial,sans-serif;padding:40px;max-width:700px;margin:auto;}
+      .header{text-align:center;border-bottom:2px solid #1E3A8A;padding-bottom:16px;margin-bottom:24px;}
+      h1{font-size:20px;color:#1E3A8A;margin:4px 0;} .sub{font-size:12px;color:#666;}
+      .body{font-size:14px;line-height:1.8;margin:24px 0;} .firma{margin-top:60px;border-top:1px solid #333;width:200px;padding-top:8px;font-size:13px;}
+      @media print{button{display:none!important;}}</style></head><body>
+      <div class="header"><h1>${tenant.name || 'Mi Negocio'}</h1><div class="sub">NIT: ${tenant.tax_id||''} | ${tenant.address||''}, ${tenant.city||''}</div>
+      <div class="sub">Tel: ${tenant.phone||''} | ${tenant.email||''}</div></div>
+      <div style="text-align:right; font-size:13px; color:#666;">Fecha: ${new Date().toLocaleDateString('es-CO')}</div>
+      <div class="body">${msg.replace(/\n/g,'<br>')}</div>
+      <div class="firma">${tenant.name || 'Firma autorizada'}</div>
+      <button onclick="window.print()" style="margin-top:24px; padding:10px 20px;">Imprimir</button>
+    </body></html>`);
+    w.document.close();
+  }
+
+  // ── Send Email Notifications ───────────────────────────────────
+  async function sendNotifications() {
+    const ok = await rohuConfirm('¿Enviar notificaciones por email a todos los clientes con correo registrado?');
+    if (!ok) return;
+    rohuAlert('Enviando notificaciones...', 'info');
+    try {
+      const resp = await fetch(`/api/v1/customers/campaigns/${currentCampaignId}/send-notifications`, {method:'POST', headers, body:'{}'});
+      const r = await resp.json();
+      if (r.success) {
+        const d = r.data;
+        if (d.error) {
+          rohuAlert(d.error, 'warning');
+        } else {
+          rohuAlert(`Enviados: ${d.sent} | Fallidos: ${d.failed} | Sin email: ${d.no_email}`, d.sent > 0 ? 'success' : 'warning');
+          openCampaign(currentCampaignId);
+        }
+      } else {
+        rohuAlert(r.error?.message || 'Error enviando notificaciones', 'error');
+      }
+    } catch (e) { rohuAlert('Error de conexión', 'error'); }
+  }
+
+  loadCampaigns();
+</script>
+{% endblock %}

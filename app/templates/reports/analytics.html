@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% set active_page = 'analytics' %}
+{% block title %}Análisis — ROHU Contable{% endblock %}
+{% block header_title %}Análisis para Decisiones{% endblock %}
+
+{% block head %}
+<script src="/static/js/chart.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Análisis de Negocio</h1>
+</div>
+
+<!-- Row 0: Profit Trend -->
+<div class="card" style="margin-bottom:16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div class="card-title" style="margin:0;">Utilidad Bruta por Período</div>
+    <div style="display:flex; gap:6px;">
+      <button class="btn btn-outline" style="padding:4px 12px;font-size:12px;" onclick="loadProfitTrend('daily')">Diario</button>
+      <button class="btn btn-outline" style="padding:4px 12px;font-size:12px;" onclick="loadProfitTrend('monthly')">Mensual</button>
+    </div>
+  </div>
+  <div id="profit-summary" class="kpi-grid" style="margin-bottom:12px;"></div>
+  <div class="chart-wrap" style="height:180px;"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-profit')" title="Expandir">⛶</button><canvas id="chart-profit" height="100"></canvas></div>
+</div>
+
+<!-- Row 1: Cash Flow + CxC vs CxP -->
+<div class="grid-2-1">
+  <div class="card">
+    <div class="card-title">Flujo de Caja (últimos 30 días)</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-cashflow')" title="Expandir">⛶</button><canvas id="chart-cashflow" height="70"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">CxC vs CxP</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-cxc-cxp')" title="Expandir">⛶</button><canvas id="chart-cxc-cxp" height="70"></canvas></div>
+    <div id="cxc-cxp-detail" style="font-size:12px; margin-top:8px;"></div>
+  </div>
+</div>
+
+<!-- Row 2: Margins + Expenses Trend -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Margen por Producto (Top 10)</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-margins')" title="Expandir">⛶</button><canvas id="chart-margins" height="70"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Tendencia de Gastos (6 meses)</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-expenses')" title="Expandir">⛶</button><canvas id="chart-expenses" height="70"></canvas></div>
+  </div>
+</div>
+
+<!-- Row 3: Inventory Rotation -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Productos Más Vendidos (30 días)</div>
+    <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-fast')" title="Expandir">⛶</button><canvas id="chart-fast" height="70"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Inventario Sin Movimiento (+30 días)</div>
+    <div id="dead-stock-value" style="font-size:22px; font-weight:700; color:var(--danger); margin-bottom:8px;">—</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Producto</th><th>Stock</th><th>Valor ($)</th></tr></thead>
+        <tbody id="dead-table"><tr><td colspan="3">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const COLORS = ['#1E3A8A','#10B981','#06B6D4','#F59E0B','#8B5CF6','#EF4444','#EC4899','#14B8A6','#F97316','#6366F1'];
+  const miniOpts = {responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}};
+
+  let charts = {};
+
+  // ── Profit Trend ─────────────────────────────────────────────
+  async function loadProfitTrend(period) {
+    period = period || 'daily';
+    try {
+      const resp = await fetch(`/api/v1/reports/analytics/profit-trend?period=${period}`, {headers});
+      const r = await resp.json();
+      if (!r.success) return;
+      const d = r.data;
+
+      // Summary KPIs
+      document.getElementById('profit-summary').innerHTML = `
+        <div class="card"><div class="card-title">Ventas netas (sin IVA)</div><div class="card-value">${COP(d.totals.revenue)}</div></div>
+        <div class="card"><div class="card-title">Costo mercancía</div><div class="card-value" style="color:var(--danger)">${COP(d.totals.cost)}</div></div>
+        <div class="card" style="border-left:3px solid var(--success);"><div class="card-title">Utilidad bruta total</div><div class="card-value" style="color:var(--success)">${COP(d.totals.profit)}</div></div>
+        <div class="card"><div class="card-title">Margen promedio</div><div class="card-value" style="color:${d.totals.margin_pct>30?'var(--success)':d.totals.margin_pct>15?'var(--warning)':'var(--danger)'};">${d.totals.margin_pct}%</div></div>
+      `;
+
+      // Chart
+      if (charts.profit) charts.profit.destroy();
+      const labels = d.data.map(p => period === 'monthly' ? p.period : p.period.substring(5));
+      charts.profit = new Chart(document.getElementById('chart-profit'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {label: 'Ventas', data: d.data.map(p => p.revenue), backgroundColor: '#1E3A8A40', borderColor: '#1E3A8A', borderWidth: 1},
+            {label: 'Costo', data: d.data.map(p => p.cost), backgroundColor: '#EF444440', borderColor: '#EF4444', borderWidth: 1},
+            {label: 'Utilidad', data: d.data.map(p => p.profit), backgroundColor: '#10B98180', borderColor: '#10B981', borderWidth: 2},
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {legend: {display: true, position: 'top', labels: {boxWidth: 12, font: {size: 11}}}},
+          scales: {y: {beginAtZero: true}, x: {ticks: {font: {size: 10}}}},
+        }
+      });
+    } catch (e) { console.error('Profit trend error:', e); }
+  }
+
+  async function loadAnalytics() {
+    try {
+      // Cash Flow
+      const cf = await fetch('/api/v1/reports/analytics/cash-flow?days=30', {headers}).then(r=>r.json());
+      if (cf.success) {
+        if (charts.cashflow) charts.cashflow.destroy();
+        charts.cashflow = new Chart(document.getElementById('chart-cashflow'), {
+          type: 'line',
+          data: {
+            labels: cf.data.map(d => d.date.substring(5)),
+            datasets: [
+              {label:'Ingresos', data: cf.data.map(d=>d.inflows), borderColor:'#10B981', backgroundColor:'#10B98120', fill:true, tension:0.3},
+              {label:'Egresos', data: cf.data.map(d=>d.outflows), borderColor:'#EF4444', backgroundColor:'#EF444420', fill:true, tension:0.3},
+            ]
+          },
+          options: {...miniOpts, scales:{y:{ticks:{display:false},grid:{display:false}}, x:{ticks:{display:false},grid:{display:false}}}, elements:{point:{radius:0}}}
+        });
+      }
+
+      // CxC vs CxP
+      const rp = await fetch('/api/v1/reports/analytics/receivables-payables', {headers}).then(r=>r.json());
+      if (rp.success) {
+        if (charts.cxc) charts.cxc.destroy();
+        charts.cxc = new Chart(document.getElementById('chart-cxc-cxp'), {
+          type: 'bar',
+          data: {labels:['Por Cobrar','Por Pagar'], datasets:[{data:[rp.data.cxc, rp.data.cxp], backgroundColor:['#10B981','#EF4444']}]},
+          options: {...miniOpts, scales:{y:{ticks:{display:false},grid:{display:false}}, x:{grid:{display:false}}}}
+        });
+        document.getElementById('cxc-cxp-detail').innerHTML = `
+          <div>CxC: <strong style="color:var(--success)">${COP(rp.data.cxc)}</strong></div>
+          <div>CxP: <strong style="color:var(--danger)">${COP(rp.data.cxp)}</strong></div>
+          <div>Posición neta: <strong style="color:${rp.data.net_position>=0?'var(--success)':'var(--danger)'}">${COP(rp.data.net_position)}</strong></div>`;
+      }
+
+      // Margins
+      const mg = await fetch('/api/v1/reports/analytics/margins', {headers}).then(r=>r.json());
+      if (mg.success && mg.data.length) {
+        if (charts.margins) charts.margins.destroy();
+        charts.margins = new Chart(document.getElementById('chart-margins'), {
+          type: 'bar',
+          data: {labels: mg.data.map(p=>p.name.substring(0,18)), datasets:[{label:'Margen %', data: mg.data.map(p=>p.margin_pct), backgroundColor: mg.data.map((_,i)=>COLORS[i%COLORS.length])}]},
+          options: {indexAxis:'y', ...miniOpts, scales:{x:{ticks:{display:false},grid:{display:false}}, y:{ticks:{font:{size:11}},grid:{display:false}}}}
+        });
+      }
+
+      // Expenses trend
+      const ex = await fetch('/api/v1/reports/analytics/expenses-trend?months=6', {headers}).then(r=>r.json());
+      if (ex.success && ex.data.length) {
+        const allCats = new Set();
+        ex.data.forEach(m => Object.keys(m.categories).forEach(c => allCats.add(c)));
+        const catArr = [...allCats].slice(0, 6);
+
+        if (charts.expenses) charts.expenses.destroy();
+        charts.expenses = new Chart(document.getElementById('chart-expenses'), {
+          type: 'bar',
+          data: {
+            labels: ex.data.map(m => m.period),
+            datasets: catArr.map((cat, i) => ({
+              label: cat.substring(0, 15), data: ex.data.map(m => m.categories[cat] || 0),
+              backgroundColor: COLORS[i % COLORS.length],
+            }))
+          },
+          options: {...miniOpts, scales:{x:{stacked:true,grid:{display:false}}, y:{stacked:true,ticks:{display:false},grid:{display:false}}}}
+        });
+      }
+
+      // Inventory rotation
+      const ir = await fetch('/api/v1/reports/analytics/inventory-rotation', {headers}).then(r=>r.json());
+      if (ir.success) {
+        // Fast movers
+        if (ir.data.fast_movers.length) {
+          if (charts.fast) charts.fast.destroy();
+          charts.fast = new Chart(document.getElementById('chart-fast'), {
+            type: 'bar',
+            data: {labels: ir.data.fast_movers.map(p=>p.name.substring(0,18)), datasets:[{label:'Uds', data: ir.data.fast_movers.map(p=>p.qty_sold), backgroundColor: COLORS}]},
+            options: {indexAxis:'y', ...miniOpts, scales:{x:{ticks:{display:false},grid:{display:false}}, y:{ticks:{font:{size:11}},grid:{display:false}}}}
+          });
+        }
+
+        // Dead stock
+        document.getElementById('dead-stock-value').textContent = COP(ir.data.dead_stock_total_value) + ' en stock muerto';
+        const tbody = document.getElementById('dead-table');
+        tbody.innerHTML = ir.data.dead_stock.length
+          ? ir.data.dead_stock.map(p => `<tr><td>${p.name}</td><td>${p.stock}</td><td>${COP(p.value)}</td></tr>`).join('')
+          : '<tr><td colspan="3" style="color:var(--success)">Sin stock muerto</td></tr>';
+      }
+
+    } catch (err) { console.error('Analytics error:', err); }
+  }
+
+  loadProfitTrend('daily');
+  loadAnalytics();
+</script>
+{% endblock %}

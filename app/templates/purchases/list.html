@@ -1,0 +1,573 @@
+{% extends "base.html" %}
+{% set active_page = 'purchases' %}
+{% block title %}Compras — ROHU Contable{% endblock %}
+{% block header_title %}Compras y Proveedores{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Compras y Proveedores</h1>
+  <div style="display:flex; gap:8px;">
+    <button class="btn btn-outline" onclick="openSupplierModal()">+ Proveedor</button>
+    <button class="btn btn-primary" onclick="openPOModal()">+ Nueva Orden de Compra</button>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div style="display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid var(--border);">
+  <button class="btn btn-outline tab-btn active" onclick="switchTab('orders')" id="tab-orders" style="border-radius:8px 8px 0 0; border-bottom:none;">Órdenes</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('payments')" id="tab-payments" style="border-radius:8px 8px 0 0; border-bottom:none;">Pagos</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('notes')" id="tab-notes" style="border-radius:8px 8px 0 0; border-bottom:none;">NC / ND</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('statement')" id="tab-statement" style="border-radius:8px 8px 0 0; border-bottom:none;">Estado de Cuenta</button>
+</div>
+
+<!-- Tab: Orders -->
+<div id="panel-orders" class="tab-panel">
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>OC #</th><th>Proveedor</th><th>Items</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+        <tbody id="po-table"><tr><td colspan="7">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Payments -->
+<div id="panel-payments" class="tab-panel" style="display:none;">
+  <div style="display:flex; gap:8px; margin-bottom:12px;">
+    <select id="pay-supplier-filter" class="form-control" style="max-width:300px;" onchange="loadPayments()">
+      <option value="">Todos los proveedores</option>
+    </select>
+    <button class="btn btn-primary" onclick="openPaymentModal()">+ Registrar Pago</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Pago #</th><th>Proveedor</th><th>Monto</th><th>Método</th><th>Referencia</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+        <tbody id="pay-table"><tr><td colspan="8">Seleccione un proveedor</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: NC/ND -->
+<div id="panel-notes" class="tab-panel" style="display:none;">
+  <div style="display:flex; gap:8px; margin-bottom:12px;">
+    <button class="btn btn-primary" onclick="openNCModal()">+ NC Compra (Devolución)</button>
+    <button class="btn btn-outline" onclick="openNDModal()">+ ND Compra (Cargo)</button>
+  </div>
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Notas Crédito de Compra</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>NC #</th><th>Proveedor</th><th>Razón</th><th>Total</th><th>Fecha</th></tr></thead>
+        <tbody id="cn-table"><tr><td colspan="5">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Notas Débito de Compra</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ND #</th><th>Proveedor</th><th>Razón</th><th>Monto</th><th>Fecha</th></tr></thead>
+        <tbody id="dn-table"><tr><td colspan="5">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- NC Compra Modal -->
+<div id="nc-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:550px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:16px;">Nota Crédito de Compra (Devolución a Proveedor)</h3>
+    <form id="nc-form">
+      <div class="form-group"><label>Orden de Compra recibida *</label>
+        <select id="nc-po" class="form-control" required onchange="loadNCItems()"><option value="">Seleccione OC...</option></select>
+      </div>
+      <div class="form-group"><label>Razón *</label><input type="text" id="nc-reason" class="form-control" required placeholder="Ej: Producto defectuoso"></div>
+      <div id="nc-items-list" style="margin:12px 0;"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button type="button" class="btn btn-outline" onclick="closeM('nc-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear NC Compra</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ND Compra Modal -->
+<div id="nd-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:420px;">
+    <h3 style="margin-bottom:16px;">Nota Débito de Compra (Cargo del Proveedor)</h3>
+    <form id="nd-form">
+      <div class="form-group"><label>Proveedor *</label>
+        <select id="nd-supplier" class="form-control" required><option value="">Seleccione...</option></select>
+      </div>
+      <div class="form-group"><label>Razón *</label><input type="text" id="nd-reason" class="form-control" required placeholder="Ej: Flete, intereses"></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Monto *</label><input type="number" id="nd-amount" class="form-control" step="100" min="1" required></div>
+        <div class="form-group"><label>IVA</label><input type="number" id="nd-tax" class="form-control" step="100" min="0" value="0"></div>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeM('nd-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear ND Compra</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Tab: Statement -->
+<div id="panel-statement" class="tab-panel" style="display:none;">
+  <div style="display:flex; gap:8px; margin-bottom:12px;">
+    <select id="stmt-supplier" class="form-control" style="max-width:300px;" onchange="loadStatement()">
+      <option value="">Seleccione proveedor...</option>
+    </select>
+  </div>
+  <div id="stmt-summary" class="kpi-grid" style="margin-bottom:16px;"></div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Concepto</th><th>Debe</th><th>Haber</th><th>Saldo</th></tr></thead>
+        <tbody id="stmt-table"><tr><td colspan="4">Seleccione un proveedor</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Supplier Modal -->
+<div id="supplier-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:450px;">
+    <h3 style="margin-bottom:16px;">Nuevo Proveedor</h3>
+    <form id="supplier-form">
+      <div class="form-group"><label>Nombre *</label><input type="text" id="s-name" class="form-control" required></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>NIT</label><input type="text" id="s-taxid" class="form-control"></div>
+        <div class="form-group"><label>Teléfono</label><input type="text" id="s-phone" class="form-control"></div>
+      </div>
+      <div class="form-group"><label>Email</label><input type="email" id="s-email" class="form-control"></div>
+      <div class="form-group"><label>Ciudad</label><input type="text" id="s-city" class="form-control"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeM('supplier-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- PO Create Modal -->
+<div id="po-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:600px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:16px;">Nueva Orden de Compra</h3>
+    <form id="po-form">
+      <div style="display:grid; grid-template-columns:2fr 1fr; gap:8px; margin-bottom:12px;">
+        <div class="form-group">
+          <label>Proveedor *</label>
+          <select id="po-supplier" class="form-control" required><option value="">Seleccione...</option></select>
+        </div>
+        <div class="form-group">
+          <label>Tipo pago</label>
+          <select id="po-paytype" class="form-control"><option value="cash">Contado</option><option value="credit">Crédito</option></select>
+        </div>
+      </div>
+
+      <div class="card-title">Productos</div>
+      <div id="po-items-list"></div>
+      <div style="display:grid; grid-template-columns:3fr 1fr 1fr auto; gap:8px; margin-bottom:12px;">
+        <select id="po-prod" class="form-control"><option value="">Seleccionar producto...</option></select>
+        <input type="number" id="po-qty" class="form-control" placeholder="Cant." min="1" value="1">
+        <input type="number" id="po-cost" class="form-control" placeholder="Costo $" min="0">
+        <button type="button" class="btn btn-success" onclick="addPOItem()" style="padding:8px 12px;">+</button>
+      </div>
+
+      <div style="text-align:right; font-size:16px; font-weight:700; margin-bottom:12px;">
+        Total: <span id="po-total">$0</span>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button type="button" class="btn btn-outline" onclick="closeM('po-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear OC</button>
+      </div>
+    </form>
+  </div>
+</div>
+<!-- Payment Modal -->
+<div id="payment-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:450px;">
+    <h3 style="margin-bottom:16px;">Registrar Pago a Proveedor</h3>
+    <form id="payment-form">
+      <div class="form-group"><label>Proveedor *</label>
+        <select id="pay-supplier" class="form-control" required><option value="">Seleccione...</option></select>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Monto *</label><input type="number" id="pay-amount" class="form-control" step="0.01" min="0.01" required></div>
+        <div class="form-group"><label>Método</label>
+          <select id="pay-method" class="form-control">
+            <option value="cash">Efectivo</option><option value="transfer">Transferencia</option>
+            <option value="check">Cheque</option><option value="nequi">Nequi</option><option value="daviplata">Daviplata</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Referencia</label><input type="text" id="pay-ref" class="form-control" placeholder="# transferencia, cheque, etc."></div>
+      <div class="form-group"><label>Notas</label><input type="text" id="pay-notes" class="form-control"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeM('payment-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar Pago</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const STATUS = {draft:'Borrador',sent:'Enviada',received:'Recibida',partially_received:'Parcial',cancelled:'Cancelada'};
+  const STATUS_COLORS = {draft:'badge-warning',sent:'badge-info',received:'badge-success',partially_received:'badge-warning',cancelled:'badge-danger'};
+
+  let poItems = [];
+  let productsCache = [];
+
+  function closeM(id) { document.getElementById(id).style.display = 'none'; }
+
+  async function loadOrders() {
+    const resp = await fetch('/api/v1/purchases/orders', {headers});
+    if (resp.status === 401) { window.location.href = '/app/login'; return; }
+    const {data} = await resp.json();
+    const tbody = document.getElementById('po-table');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-light)">Sin órdenes de compra. Cree una con el botón "Nueva Orden".</td></tr>'; return; }
+    tbody.innerHTML = data.map(o => {
+      const actions = [];
+      if (o.status === 'draft') actions.push(`<button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="editPO('${o.id}')">Editar</button>`);
+      if (o.status === 'draft') actions.push(`<button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="sendPO('${o.id}')">Enviar</button>`);
+      if (o.status === 'sent' || o.status === 'partially_received') actions.push(`<button class="btn btn-success" style="padding:6px 12px;font-size:12px;" onclick="receivePO('${o.id}')">Recibir</button>`);
+      if (o.status === 'draft' || o.status === 'sent') actions.push(`<button class="btn btn-danger" style="padding:6px 12px;font-size:12px;" onclick="cancelPO('${o.id}')">Cancelar</button>`);
+      return `<tr>
+        <td><strong>${o.order_number}</strong></td>
+        <td>${o.supplier_name}</td>
+        <td>${o.items_count}</td>
+        <td>${COP(o.total_amount)}</td>
+        <td><span class="badge ${STATUS_COLORS[o.status]||''}">${STATUS[o.status]||o.status}</span></td>
+        <td>${new Date(o.order_date).toLocaleDateString('es-CO')}</td>
+        <td style="white-space:nowrap;">${actions.join(' ')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Supplier
+  function openSupplierModal() { document.getElementById('supplier-modal').style.display = 'flex'; }
+  document.getElementById('supplier-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const body = { name: document.getElementById('s-name').value, tax_id: document.getElementById('s-taxid').value,
+      phone: document.getElementById('s-phone').value, email: document.getElementById('s-email').value, city: document.getElementById('s-city').value };
+    const resp = await fetch('/api/v1/purchases/suppliers', {method:'POST', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) { closeM('supplier-modal'); e.target.reset(); loadSuppliers(); rohuAlert('Proveedor creado', 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  });
+
+  async function loadSuppliers() {
+    const resp = await fetch('/api/v1/purchases/suppliers', {headers});
+    const {data} = await resp.json();
+    const sel = document.getElementById('po-supplier');
+    sel.innerHTML = '<option value="">Seleccione proveedor...</option>' + data.map(s => `<option value="${s.id}">${s.name} (${s.tax_id||''})</option>`).join('');
+  }
+
+  async function loadProducts() {
+    const resp = await fetch('/api/v1/inventory/products?per_page=200', {headers});
+    const {data} = await resp.json();
+    productsCache = data;
+    const sel = document.getElementById('po-prod');
+    sel.innerHTML = '<option value="">Seleccionar producto...</option>' + data.map(p => `<option value="${p.id}" data-cost="${p.purchase_price}">${p.name} (Stock: ${p.stock_current})</option>`).join('');
+  }
+
+  // PO Creation
+  function openPOModal() { poItems = []; renderPOItems(); document.getElementById('po-modal').style.display = 'flex'; loadSuppliers(); loadProducts(); }
+
+  function addPOItem() {
+    const sel = document.getElementById('po-prod');
+    const pid = sel.value;
+    if (!pid) return;
+    const pname = sel.options[sel.selectedIndex].text;
+    const qty = parseFloat(document.getElementById('po-qty').value) || 1;
+    const cost = parseFloat(document.getElementById('po-cost').value) || parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
+    poItems.push({product_id: pid, product_name: pname, quantity: qty, unit_cost: cost, tax_rate: 19});
+    renderPOItems();
+    sel.value = ''; document.getElementById('po-qty').value = '1'; document.getElementById('po-cost').value = '';
+  }
+
+  function removePOItem(i) { poItems.splice(i, 1); renderPOItems(); }
+
+  function renderPOItems() {
+    const el = document.getElementById('po-items-list');
+    let total = 0;
+    if (!poItems.length) { el.innerHTML = '<div style="color:var(--text-light);padding:8px 0;font-size:13px;">Agregue productos abajo</div>'; document.getElementById('po-total').textContent = '$0'; return; }
+    el.innerHTML = '<table style="width:100%;font-size:13px;margin-bottom:8px;"><thead><tr><th>Producto</th><th>Cant.</th><th>Costo</th><th>Subtotal</th><th></th></tr></thead><tbody>' +
+      poItems.map((item, i) => {
+        const sub = item.quantity * item.unit_cost;
+        const tax = sub * 0.19;
+        total += sub + tax;
+        return `<tr><td>${item.product_name.split('(')[0]}</td><td>${item.quantity}</td><td>${COP(item.unit_cost)}</td><td>${COP(sub + tax)}</td><td><button onclick="removePOItem(${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;">×</button></td></tr>`;
+      }).join('') + '</tbody></table>';
+    document.getElementById('po-total').textContent = COP(total);
+  }
+
+  // ── Edit / Create PO (unified handler) ──────────────────
+  let editingPOId = null;
+
+  async function editPO(id) {
+    editingPOId = id;
+    const resp = await fetch(`/api/v1/purchases/orders/${id}`, {headers});
+    const {data: po} = await resp.json();
+    await loadSuppliers();
+    await loadProducts();
+    document.getElementById('po-supplier').value = '';
+    document.getElementById('po-paytype').value = po.payment_type;
+    poItems = po.items.map(i => {
+      const prod = productsCache.find(p => p.name === i.product_name);
+      return { product_id: prod ? prod.id : '', product_name: i.product_name,
+        quantity: i.quantity_ordered, unit_cost: i.unit_cost, tax_rate: i.tax_rate || 19 };
+    });
+    renderPOItems();
+    document.getElementById('po-modal').style.display = 'flex';
+  }
+
+  document.getElementById('po-form').onsubmit = async function(e) {
+    e.preventDefault();
+    if (!poItems.length) { rohuAlert('Agregue al menos un producto', 'warning'); return; }
+    const items = poItems.map(i => ({product_id:i.product_id, quantity:i.quantity, unit_cost:i.unit_cost, tax_rate:i.tax_rate}));
+
+    if (editingPOId) {
+      const body = { payment_type: document.getElementById('po-paytype').value, items };
+      const resp = await fetch(`/api/v1/purchases/orders/${editingPOId}`, {method:'PATCH', headers, body:JSON.stringify(body)});
+      const r = await resp.json();
+      if (r.success) { closeM('po-modal'); editingPOId=null; loadOrders(); rohuAlert(`OC actualizada: ${COP(r.data.total_amount)}`, 'success'); }
+      else { rohuAlert(r.error.message, 'error'); }
+    } else {
+      const supplier = document.getElementById('po-supplier').value;
+      if (!supplier) { rohuAlert('Seleccione un proveedor', 'warning'); return; }
+      const body = { supplier_id:supplier, payment_type:document.getElementById('po-paytype').value, items };
+      const resp = await fetch('/api/v1/purchases/orders', {method:'POST', headers, body:JSON.stringify(body)});
+      const r = await resp.json();
+      if (r.success) { closeM('po-modal'); loadOrders(); rohuAlert(`OC ${r.data.order_number} creada`, 'success'); }
+      else { rohuAlert(r.error.message, 'error'); }
+    }
+  };
+
+  // Actions
+  async function sendPO(id) {
+    const resp = await fetch(`/api/v1/purchases/orders/${id}/send`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { loadOrders(); rohuAlert('OC enviada al proveedor', 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  }
+
+  async function receivePO(id) {
+    const ok = await rohuConfirm('¿Confirma la recepción completa de esta orden?<br><br>El stock se incrementará automáticamente y se generará el asiento contable.');
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/purchases/orders/${id}/receive`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { loadOrders(); rohuAlert('Mercancía recibida. Stock actualizado y asiento contable generado.', 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  }
+
+  async function cancelPO(id) {
+    const ok = await rohuConfirm('¿Cancelar esta orden de compra?', 'Sí, cancelar', 'warning');
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/purchases/orders/${id}/cancel`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { loadOrders(); rohuAlert('OC cancelada', 'info'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  }
+
+  // ── Tab Switching ───────────────────────────────────────────────
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + tab).style.display = 'block';
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'payments') { loadSuppliersForFilter(); loadPayments(); }
+    if (tab === 'notes') { loadCreditNotes(); loadDebitNotes(); }
+    if (tab === 'statement') { loadSuppliersForFilter(); }
+  }
+
+  // ── Payments ──────────────────────────────────────────────────
+  async function loadSuppliersForFilter() {
+    const resp = await fetch('/api/v1/purchases/suppliers', {headers});
+    const {data} = await resp.json();
+    const selectors = ['pay-supplier-filter', 'pay-supplier', 'stmt-supplier', 'nd-supplier'];
+    selectors.forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const first = sel.options[0].text;
+      sel.innerHTML = `<option value="">${first}</option>` + data.map(s => `<option value="${s.id}">${s.name} (${s.tax_id||''})</option>`).join('');
+    });
+  }
+
+  async function loadPayments() {
+    const suppId = document.getElementById('pay-supplier-filter').value;
+    if (!suppId) { document.getElementById('pay-table').innerHTML = '<tr><td colspan="8" style="color:var(--text-light)">Seleccione un proveedor para ver pagos</td></tr>'; return; }
+    const resp = await fetch(`/api/v1/purchases/suppliers/${suppId}/payments`, {headers});
+    const {data} = await resp.json();
+    const tbody = document.getElementById('pay-table');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-light)">Sin pagos registrados</td></tr>'; return; }
+    const METHODS = {cash:'Efectivo',transfer:'Transferencia',check:'Cheque',nequi:'Nequi',daviplata:'Daviplata'};
+    tbody.innerHTML = data.map(p => `<tr>
+      <td><strong>${p.payment_number}</strong></td>
+      <td>${p.supplier_name||''}</td>
+      <td>${COP(p.amount)}</td>
+      <td>${METHODS[p.payment_method]||p.payment_method}</td>
+      <td>${p.reference||'-'}</td>
+      <td><span class="badge ${p.status==='completed'?'badge-success':'badge-danger'}">${p.status==='completed'?'Activo':'Anulado'}</span></td>
+      <td>${new Date(p.payment_date).toLocaleDateString('es-CO')}</td>
+      <td>${p.status==='completed'?`<button class="btn btn-danger" style="padding:6px 12px;font-size:12px;" onclick="voidPayment('${p.id}')">Anular</button>`:''}</td>
+    </tr>`).join('');
+  }
+
+  function openPaymentModal() { loadSuppliersForFilter(); document.getElementById('payment-modal').style.display = 'flex'; }
+
+  document.getElementById('payment-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const suppId = document.getElementById('pay-supplier').value;
+    if (!suppId) { rohuAlert('Seleccione un proveedor', 'warning'); return; }
+    const body = {
+      amount: parseFloat(document.getElementById('pay-amount').value),
+      payment_method: document.getElementById('pay-method').value,
+      reference: document.getElementById('pay-ref').value,
+      notes: document.getElementById('pay-notes').value,
+    };
+    const resp = await fetch(`/api/v1/purchases/suppliers/${suppId}/payments`, {method:'POST', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) { closeM('payment-modal'); e.target.reset(); loadPayments(); rohuAlert(`Pago ${r.data.payment_number} registrado`, 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  });
+
+  async function voidPayment(id) {
+    const ok = await rohuConfirm('¿Anular este pago? Se generará un asiento contable de reversa.');
+    if (!ok) return;
+    const resp = await fetch(`/api/v1/purchases/payments/${id}/void`, {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { loadPayments(); rohuAlert('Pago anulado', 'info'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  }
+
+  // ── NC Compra Modal ────────────────────────────────────────────
+  let ncPOData = null;
+
+  async function openNCModal() {
+    // Load received POs
+    const resp = await fetch('/api/v1/purchases/orders?status=received&per_page=50', {headers});
+    const {data} = await resp.json();
+    const sel = document.getElementById('nc-po');
+    sel.innerHTML = '<option value="">Seleccione OC recibida...</option>' +
+      data.map(o => `<option value="${o.id}" data-supplier="${o.supplier_name}">${o.order_number} - ${o.supplier_name} (${COP(o.total_amount)})</option>`).join('');
+    document.getElementById('nc-items-list').innerHTML = '';
+    document.getElementById('nc-modal').style.display = 'flex';
+  }
+
+  async function loadNCItems() {
+    const poId = document.getElementById('nc-po').value;
+    if (!poId) { document.getElementById('nc-items-list').innerHTML = ''; return; }
+    const resp = await fetch(`/api/v1/purchases/orders/${poId}`, {headers});
+    const {data} = await resp.json();
+    ncPOData = data;
+    document.getElementById('nc-items-list').innerHTML = `<table style="width:100%;font-size:13px;">
+      <thead><tr><th></th><th>Producto</th><th>Recibidos</th><th>Devolver</th><th>Costo</th></tr></thead>
+      <tbody>${data.items.map((item, i) => `<tr>
+        <td><input type="checkbox" id="nc-chk-${i}" checked></td>
+        <td>${item.product_name}</td>
+        <td>${item.quantity_received}</td>
+        <td><input type="number" id="nc-qty-${i}" value="${item.quantity_received}" min="1" max="${item.quantity_received}" class="form-control" style="width:70px;"></td>
+        <td>${COP(item.unit_cost)}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+
+  document.getElementById('nc-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const poId = document.getElementById('nc-po').value;
+    if (!poId || !ncPOData) return;
+    const reason = document.getElementById('nc-reason').value.trim();
+    if (!reason) { rohuAlert('Ingrese la razón', 'warning'); return; }
+
+    const items = [];
+    ncPOData.items.forEach((item, i) => {
+      if (document.getElementById(`nc-chk-${i}`).checked) {
+        const qty = parseFloat(document.getElementById(`nc-qty-${i}`).value);
+        if (qty > 0) items.push({ product_id: item.product_id || item.id, quantity: qty, unit_cost: item.unit_cost, tax_rate: item.tax_rate || 19 });
+      }
+    });
+    if (!items.length) { rohuAlert('Seleccione al menos un producto', 'warning'); return; }
+
+    const resp = await fetch(`/api/v1/purchases/orders/${poId}/credit-note`, {method:'POST', headers, body:JSON.stringify({reason, items})});
+    const r = await resp.json();
+    if (r.success) { closeM('nc-modal'); e.target.reset(); loadCreditNotes(); rohuAlert(`NC ${r.data.note_number} creada`, 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  });
+
+  // ── ND Compra Modal ───────────────────────────────────────────
+  async function openNDModal() {
+    await loadSuppliersForFilter();
+    document.getElementById('nd-modal').style.display = 'flex';
+  }
+
+  document.getElementById('nd-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const suppId = document.getElementById('nd-supplier').value;
+    if (!suppId) { rohuAlert('Seleccione un proveedor', 'warning'); return; }
+    const body = {
+      reason: document.getElementById('nd-reason').value,
+      amount: parseFloat(document.getElementById('nd-amount').value),
+      tax_amount: parseFloat(document.getElementById('nd-tax').value) || 0,
+    };
+    const resp = await fetch(`/api/v1/purchases/suppliers/${suppId}/debit-notes`, {method:'POST', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) { closeM('nd-modal'); e.target.reset(); loadDebitNotes(); rohuAlert(`ND ${r.data.note_number} creada`, 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  });
+
+  async function loadDebitNotes() {
+    const resp = await fetch('/api/v1/purchases/debit-notes', {headers});
+    const {data} = await resp.json();
+    const tbody = document.getElementById('dn-table');
+    if (!data || !data.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-light)">Sin notas débito</td></tr>'; return; }
+    tbody.innerHTML = data.map(dn => `<tr>
+      <td><strong>${dn.note_number}</strong></td>
+      <td>${dn.supplier_name||''}</td>
+      <td>${dn.reason}</td>
+      <td>${COP(dn.total_amount)}</td>
+      <td>${new Date(dn.created_at).toLocaleDateString('es-CO')}</td>
+    </tr>`).join('');
+  }
+
+  // ── Credit Notes ──────────────────────────────────────────────
+  async function loadCreditNotes() {
+    const resp = await fetch('/api/v1/purchases/credit-notes', {headers});
+    const {data} = await resp.json();
+    const tbody = document.getElementById('cn-table');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-light)">Sin notas crédito</td></tr>'; return; }
+    tbody.innerHTML = data.map(cn => `<tr>
+      <td><strong>${cn.note_number}</strong></td>
+      <td>${cn.supplier_name||''}</td>
+      <td>${cn.reason}</td>
+      <td>${COP(cn.total_amount)}</td>
+      <td>${new Date(cn.created_at).toLocaleDateString('es-CO')}</td>
+    </tr>`).join('');
+  }
+
+  // ── Statement ─────────────────────────────────────────────────
+  async function loadStatement() {
+    const suppId = document.getElementById('stmt-supplier').value;
+    if (!suppId) return;
+    const resp = await fetch(`/api/v1/purchases/suppliers/${suppId}/balance`, {headers});
+    const {data} = await resp.json();
+    document.getElementById('stmt-summary').innerHTML = `
+      <div class="card"><div class="card-title">Compras a crédito</div><div class="card-value">${COP(data.total_purchases)}</div></div>
+      <div class="card"><div class="card-title">Pagos realizados</div><div class="card-value" style="color:var(--success)">${COP(data.total_payments)}</div></div>
+      <div class="card"><div class="card-title">Notas crédito</div><div class="card-value" style="color:var(--info)">${COP(data.total_credit_notes)}</div></div>
+      <div class="card"><div class="card-title">Saldo pendiente</div><div class="card-value" style="color:${data.balance>0?'var(--danger)':'var(--success)'};">${COP(data.balance)}</div></div>
+    `;
+  }
+
+  loadOrders();
+</script>
+{% endblock %}

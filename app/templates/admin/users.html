@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% set active_page = 'admin_users' %}
+{% block title %}Usuarios y Roles — ROHU Contable{% endblock %}
+{% block header_title %}Usuarios y Roles{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Usuarios y Roles</h1>
+</div>
+
+<!-- Tabs -->
+<div style="display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid var(--border);">
+  <button class="btn btn-outline tab-btn active" onclick="switchTab('users')" id="tab-users" style="border-radius:8px 8px 0 0; border-bottom:none;">Usuarios</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('roles')" id="tab-roles" style="border-radius:8px 8px 0 0; border-bottom:none;">Roles y Permisos</button>
+</div>
+
+<!-- Tab: Users -->
+<div id="panel-users" class="tab-panel">
+  <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+    <button class="btn btn-primary" onclick="openModal('create-modal')">+ Nuevo Usuario</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody id="users-table"><tr><td colspan="5">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Roles & Permissions -->
+<div id="panel-roles" class="tab-panel" style="display:none;">
+  <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+    <button class="btn btn-outline" onclick="resetDefaults()">Restaurar Permisos por Defecto</button>
+    <button class="btn btn-primary" onclick="openCreateRole()">+ Nuevo Rol Personalizado</button>
+  </div>
+  <div id="roles-list">Cargando roles...</div>
+</div>
+
+<!-- Create User Modal -->
+<div id="create-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:450px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:16px;">Crear Usuario</h3>
+    <div id="create-error" class="alert alert-danger" style="display:none;"></div>
+    <form id="create-form">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group"><label>Nombre *</label><input type="text" name="first_name" class="form-control" required></div>
+        <div class="form-group"><label>Apellido *</label><input type="text" name="last_name" class="form-control" required></div>
+      </div>
+      <div class="form-group"><label>Email *</label><input type="email" name="email" class="form-control" required></div>
+      <div class="form-group"><label>Contraseña * (min. 8)</label><input type="password" name="password" class="form-control" required minlength="8"></div>
+      <div class="form-group"><label>Rol</label>
+        <select name="role" class="form-control" id="create-role-select"><option value="cashier">Cajero</option></select>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeModal('create-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit User Modal -->
+<div id="edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:450px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:16px;">Editar Usuario</h3>
+    <div id="edit-error" class="alert alert-danger" style="display:none;"></div>
+    <form id="edit-form">
+      <input type="hidden" id="edit-id">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group"><label>Nombre</label><input type="text" id="e-first_name" class="form-control"></div>
+        <div class="form-group"><label>Apellido</label><input type="text" id="e-last_name" class="form-control"></div>
+      </div>
+      <div class="form-group"><label>Email</label><input type="email" id="e-email" class="form-control"></div>
+      <div class="form-group"><label>Rol</label>
+        <select id="e-role" class="form-control"></select>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeModal('edit-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+    <hr style="margin:16px 0;">
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-outline" onclick="resetPassword()" style="flex:1;">Resetear Contraseña</button>
+      <button class="btn btn-danger" id="btn-toggle" onclick="toggleUser()" style="flex:1;">Desactivar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div id="pwd-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:210; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:380px;">
+    <h3 style="margin-bottom:16px;">Nueva Contraseña</h3>
+    <div class="form-group"><label>Contraseña nueva (min. 8)</label><input type="password" id="new-pwd" class="form-control" minlength="8"></div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-outline" onclick="closeModal('pwd-modal')" style="flex:1;">Cancelar</button>
+      <button class="btn btn-primary" onclick="doResetPassword()" style="flex:1;">Cambiar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Role Modal -->
+<div id="role-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:600px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin-bottom:16px;">Nuevo Rol Personalizado</h3>
+    <div class="form-group"><label>Nombre del rol *</label><input type="text" id="role-name" class="form-control" required placeholder="Ej: Supervisor de caja"></div>
+    <div style="margin-bottom:12px; font-size:13px; color:var(--text-light);">Seleccione los módulos que este rol podrá acceder:</div>
+    <div id="role-modules"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="btn btn-outline" onclick="closeModal('role-modal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveNewRole()">Crear Rol</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const ROLE_BADGES = {admin:'badge-info',cashier:'badge-success',accountant:'badge-warning',viewer:'badge-warning'};
+  const ROLE_LABELS = {admin:'Admin',cashier:'Cajero',accountant:'Contador',viewer:'Lectura'};
+  const MODULE_LABELS = {
+    identity:'Administración', pos:'Punto de Venta', inventory:'Inventario', catalog:'Catálogo',
+    purchases:'Compras', accounting:'Contabilidad', reporting:'Reportes', audit:'Auditoría',
+    customers:'Clientes', cash:'Caja y Bancos',
+  };
+  let currentEditId = null;
+  let allRoles = [];
+  let allPermissions = [];
+
+  function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+  function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + tab).style.display = 'block';
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'roles') loadRoles();
+  }
+
+  // ── Users ─────────────────────────────────────────────────────
+  async function loadUsers() {
+    try {
+      const resp = await fetch('/api/v1/auth/users', {headers});
+      if (resp.status === 401 || resp.status === 403) { window.location.href = '/app/login'; return; }
+      const {data} = await resp.json();
+      document.getElementById('users-table').innerHTML = data.map(u => `
+        <tr>
+          <td><strong>${u.full_name}</strong></td>
+          <td>${u.email}</td>
+          <td>${u.roles.map(r => `<span class="badge ${ROLE_BADGES[r]||'badge-info'}">${ROLE_LABELS[r]||r}</span>`).join(' ')}</td>
+          <td>${u.is_active ? '<span class="badge badge-success">Activo</span>' : '<span class="badge badge-danger">Inactivo</span>'}</td>
+          <td><button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick='openEdit(${JSON.stringify(u).replace(/'/g,"&#39;")})'>Editar</button></td>
+        </tr>
+      `).join('');
+    } catch (e) { console.error(e); }
+  }
+
+  async function populateRoleSelects() {
+    try {
+      const resp = await fetch('/api/v1/auth/roles', {headers});
+      const {data} = await resp.json();
+      allRoles = data;
+      const opts = data.map(r => `<option value="${r.name}">${ROLE_LABELS[r.name]||r.name} (${r.permission_count} permisos)</option>`).join('');
+      document.getElementById('create-role-select').innerHTML = opts;
+      document.getElementById('e-role').innerHTML = opts;
+    } catch (e) {
+      // Fallback to hardcoded
+      const opts = '<option value="cashier">Cajero</option><option value="accountant">Contador</option><option value="viewer">Lectura</option><option value="admin">Admin</option>';
+      document.getElementById('create-role-select').innerHTML = opts;
+      document.getElementById('e-role').innerHTML = opts;
+    }
+  }
+
+  function openEdit(user) {
+    currentEditId = user.id;
+    document.getElementById('edit-id').value = user.id;
+    document.getElementById('e-first_name').value = user.first_name;
+    document.getElementById('e-last_name').value = user.last_name;
+    document.getElementById('e-email').value = user.email;
+    document.getElementById('e-role').value = user.roles[0] || 'cashier';
+    document.getElementById('btn-toggle').textContent = user.is_active ? 'Desactivar' : 'Activar';
+    document.getElementById('btn-toggle').className = user.is_active ? 'btn btn-danger' : 'btn btn-success';
+    document.getElementById('edit-error').style.display = 'none';
+    openModal('edit-modal');
+  }
+
+  document.getElementById('create-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const resp = await fetch('/api/v1/auth/users', {method:'POST', headers, body:JSON.stringify(Object.fromEntries(form))});
+    const r = await resp.json();
+    if (r.success) { closeModal('create-modal'); e.target.reset(); loadUsers(); rohuAlert('Usuario creado', 'success'); }
+    else { document.getElementById('create-error').textContent = r.error.message; document.getElementById('create-error').style.display = 'block'; }
+  });
+
+  document.getElementById('edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = { first_name: document.getElementById('e-first_name').value, last_name: document.getElementById('e-last_name').value, email: document.getElementById('e-email').value, role: document.getElementById('e-role').value };
+    const resp = await fetch(`/api/v1/auth/users/${currentEditId}`, {method:'PATCH', headers, body:JSON.stringify(body)});
+    const r = await resp.json();
+    if (r.success) { closeModal('edit-modal'); loadUsers(); rohuAlert('Usuario actualizado', 'success'); }
+    else { document.getElementById('edit-error').textContent = r.error.message; document.getElementById('edit-error').style.display = 'block'; }
+  });
+
+  async function toggleUser() {
+    if (!await rohuConfirm('¿Cambiar estado de este usuario?')) return;
+    await fetch(`/api/v1/auth/users/${currentEditId}/deactivate`, {method:'POST', headers, body:'{}'});
+    closeModal('edit-modal'); loadUsers();
+  }
+
+  function resetPassword() { openModal('pwd-modal'); }
+  async function doResetPassword() {
+    const pwd = document.getElementById('new-pwd').value;
+    if (pwd.length < 8) { rohuAlert('Mínimo 8 caracteres', 'warning'); return; }
+    const resp = await fetch(`/api/v1/auth/users/${currentEditId}/reset-password`, {method:'POST', headers, body:JSON.stringify({password:pwd})});
+    const r = await resp.json();
+    if (r.success) { closeModal('pwd-modal'); rohuAlert('Contraseña cambiada', 'success'); }
+    else { rohuAlert(r.error.message, 'error'); }
+  }
+
+  // ── Roles & Permissions ───────────────────────────────────────
+  async function loadRoles() {
+    try {
+      const [rolesResp, permsResp] = await Promise.all([
+        fetch('/api/v1/auth/roles', {headers}),
+        fetch('/api/v1/auth/permissions', {headers}),
+      ]);
+      const rolesData = await rolesResp.json();
+      const permsData = await permsResp.json();
+      allRoles = rolesData.data || [];
+      allPermissions = permsData.data || [];
+      renderRoles();
+    } catch (e) {
+      document.getElementById('roles-list').innerHTML = '<div class="alert alert-danger">Error cargando roles. Verifique permisos de administrador.</div>';
+    }
+  }
+
+  // Permission labels in Spanish
+  const PERM_LABELS = {
+    'tenants:manage':'Gestionar negocio','users:create':'Crear usuarios','users:read':'Ver usuarios',
+    'users:update':'Editar usuarios','users:delete':'Eliminar usuarios','roles:manage':'Gestionar roles',
+    'sales:create':'Crear ventas','sales:read':'Ver ventas','sales:void':'Anular ventas',
+    'sales:report':'Reportar ventas','cash_sessions:manage':'Gestionar caja','credit_sales:create':'Ventas a crédito',
+    'inventory:read':'Ver inventario','inventory:update':'Actualizar stock','inventory:manage':'Gestionar inventario',
+    'inventory_adjustments:create':'Crear ajustes','inventory_adjustments:approve':'Aprobar ajustes',
+    'products:create':'Crear productos','products:read':'Ver productos','products:update':'Editar productos','products:delete':'Eliminar productos',
+    'purchases:create':'Crear compras','purchases:read':'Ver compras','purchases:approve':'Aprobar compras',
+    'supplier_payments:create':'Registrar pagos','supplier_payments:read':'Ver pagos','supplier_payments:void':'Anular pagos',
+    'purchase_credit_notes:create':'Crear NC compra','purchase_credit_notes:read':'Ver NC compra',
+    'journal_entries:create':'Crear asientos','journal_entries:read':'Ver asientos','journal_entries:close':'Cerrar periodos',
+    'chart_of_accounts:manage':'Gestionar PUC',
+    'reports:read':'Ver reportes','reports:export':'Exportar reportes','audit_logs:read':'Ver auditoría',
+    'customers:create':'Crear clientes','customers:read':'Ver clientes','customers:update':'Editar clientes','customers:delete':'Eliminar clientes',
+    'customer_payments:create':'Registrar abonos','customer_payments:read':'Ver abonos',
+    'cash_receipts:create':'Crear recibos','cash_receipts:read':'Ver recibos','cash_receipts:void':'Anular recibos',
+    'cash_disbursements:create':'Crear egresos','cash_disbursements:read':'Ver egresos','cash_disbursements:void':'Anular egresos','cash_disbursements:approve':'Aprobar egresos',
+    'cash_transfers:create':'Crear traslados','cash_transfers:read':'Ver traslados',
+  };
+
+  function renderRoles() {
+    const el = document.getElementById('roles-list');
+    el.innerHTML = allRoles.map(role => {
+      const rolePermIds = new Set(role.permissions.map(p => p.id));
+      const rolePermKeys = new Set(role.permissions.map(p => p.key));
+      const isAdmin = role.is_system_role && role.name === 'admin';
+
+      const modules = allPermissions.map(group => {
+        const label = MODULE_LABELS[group.module] || group.module;
+        const activeCount = group.permissions.filter(p => rolePermKeys.has(p.key)).length;
+
+        const permsHtml = group.permissions.map(p => {
+          const checked = rolePermKeys.has(p.key);
+          const desc = PERM_LABELS[p.key] || p.key;
+          return `<label style="display:flex; align-items:center; gap:6px; padding:4px 0; cursor:pointer;">
+            <input type="checkbox" ${checked?'checked':''} ${isAdmin?'disabled':''}
+              onchange="togglePerm('${role.id}','${p.id}',this.checked)">
+            <span style="font-size:13px;">${desc}</span>
+          </label>`;
+        }).join('');
+
+        return `<div style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:8px;">
+          <div style="font-weight:600; margin-bottom:6px; display:flex; justify-content:space-between;">
+            <span>${label}</span>
+            <span style="font-size:12px; color:var(--text-light);">${activeCount}/${group.permissions.length}</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 16px;">${permsHtml}</div>
+        </div>`;
+      }).join('');
+
+      return `<div class="card" style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <div>
+            <span class="badge ${ROLE_BADGES[role.name]||'badge-info'}" style="font-size:14px;">${ROLE_LABELS[role.name]||role.name}</span>
+            ${role.is_system_role?'<span style="font-size:12px;color:var(--text-light);margin-left:8px;">Sistema</span>':'<span style="font-size:12px;color:var(--accent);margin-left:8px;">Personalizado</span>'}
+          </div>
+          <span style="font-size:13px; color:var(--text-light);">${role.permission_count} permisos activos</span>
+        </div>
+        ${isAdmin?'<div style="color:var(--text-light);font-size:13px;margin-bottom:8px;">El admin tiene todos los permisos y no se puede modificar.</div>':''}
+        ${modules}
+      </div>`;
+    }).join('');
+  }
+
+  async function togglePerm(roleId, permId, enabled) {
+    const role = allRoles.find(r => r.id === roleId);
+    if (!role) return;
+
+    const currentPermIds = new Set(role.permissions.map(p => p.id));
+    if (enabled) { currentPermIds.add(permId); }
+    else { currentPermIds.delete(permId); }
+
+    try {
+      const resp = await fetch(`/api/v1/auth/roles/${roleId}/permissions`, {
+        method: 'PUT', headers,
+        body: JSON.stringify({ permission_ids: [...currentPermIds] }),
+      });
+      const r = await resp.json();
+      if (r.success) { loadRoles(); }
+      else { rohuAlert(r.error.message, 'error'); loadRoles(); }
+    } catch (e) { rohuAlert('Error actualizando permiso', 'error'); loadRoles(); }
+  }
+
+  // ── Create Custom Role ────────────────────────────────────────
+  function openCreateRole() {
+    if (!allPermissions.length) { loadRoles(); setTimeout(openCreateRole, 500); return; }
+    document.getElementById('role-name').value = '';
+    const el = document.getElementById('role-modules');
+    el.innerHTML = allPermissions.map(group => {
+      const label = MODULE_LABELS[group.module] || group.module;
+      const permsHtml = group.permissions.map(p => {
+        const desc = PERM_LABELS[p.key] || p.key;
+        return `<label style="display:flex; align-items:center; gap:6px; padding:3px 0; cursor:pointer;">
+          <input type="checkbox" data-perm-id="${p.id}">
+          <span style="font-size:13px;">${desc}</span>
+        </label>`;
+      }).join('');
+      return `<div style="border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px;">
+        <div style="font-weight:600; margin-bottom:4px;">${label}</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 12px;">${permsHtml}</div>
+      </div>`;
+    }).join('');
+    openModal('role-modal');
+  }
+
+  async function saveNewRole() {
+    const name = document.getElementById('role-name').value.trim();
+    if (!name) { rohuAlert('Ingrese nombre del rol', 'warning'); return; }
+
+    const permIds = [];
+    document.querySelectorAll('#role-modules input[type=checkbox]:checked').forEach(cb => {
+      if (cb.dataset.permId) permIds.push(cb.dataset.permId);
+    });
+
+    if (!permIds.length) { rohuAlert('Seleccione al menos un permiso', 'warning'); return; }
+
+    const resp = await fetch('/api/v1/auth/roles', {
+      method: 'POST', headers,
+      body: JSON.stringify({ name, permission_ids: permIds }),
+    });
+    const r = await resp.json();
+    if (r.success) {
+      closeModal('role-modal');
+      loadRoles(); populateRoleSelects();
+      rohuAlert(`Rol "${name}" creado con ${permIds.length} permisos`, 'success');
+    } else { rohuAlert(r.error.message, 'error'); }
+  }
+
+  async function resetDefaults() {
+    const ok = await rohuConfirm('¿Restaurar todos los roles del sistema a sus permisos por defecto? Los roles personalizados no se eliminarán.');
+    if (!ok) return;
+    const resp = await fetch('/api/v1/auth/roles/reset-defaults', {method:'POST', headers, body:'{}'});
+    const r = await resp.json();
+    if (r.success) { loadRoles(); populateRoleSelects(); rohuAlert('Permisos restaurados a valores por defecto', 'success'); }
+    else { rohuAlert(r.error?.message || 'Error', 'error'); }
+  }
+
+  // Init
+  loadUsers();
+  populateRoleSelects();
+</script>
+{% endblock %}
