@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% set active_page = 'help' %}
+{% block title %}Ayuda — ROHU Contable{% endblock %}
+{% block header_title %}Centro de Ayuda{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Centro de Ayuda</h1>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <input type="text" id="help-search" class="form-control search-input" placeholder="Buscar en la ayuda..." style="margin-bottom:16px;">
+  <p style="font-size:13px; color:var(--text-light); margin-bottom:16px;">
+    Seleccione un módulo para ver cómo usarlo. También puede presionar <kbd style="background:var(--bg);padding:2px 6px;border-radius:4px;border:1px solid var(--border);font-size:12px;">F1</kbd> desde cualquier pantalla para ver la ayuda contextual.
+  </p>
+
+  <div id="help-modules"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Render all help modules as accordion
+  const container = document.getElementById('help-modules');
+  const sections = {
+    'Principal': ['dashboard', 'pos'],
+    'Gestión': ['inventory', 'purchases', 'suppliers', 'customers', 'campaigns'],
+    'Finanzas': ['cash', 'reports', 'analytics', 'invoicing', 'financial', 'reports_dian', 'accounting'],
+    'Administración': ['admin_settings', 'admin_users'],
+  };
+
+  let html = '';
+  for (const [section, keys] of Object.entries(sections)) {
+    html += `<div class="help-section" style="margin-bottom:16px;">
+      <h3 style="font-size:14px;color:var(--text-light);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">${section}</h3>`;
+    for (const key of keys) {
+      const h = ROHU_HELP[key];
+      if (!h) continue;
+      html += `<details class="help-item" style="margin-bottom:4px;border:1px solid var(--border);border-radius:var(--radius);">
+        <summary style="cursor:pointer;padding:12px 16px;font-weight:600;font-size:14px;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+          <span>${h.title}</span>
+          <span style="font-weight:400;color:var(--text-light);font-size:12px;">${h.tagline}</span>
+        </summary>
+        <div style="padding:12px 16px;border-top:1px solid var(--border);font-size:13px;line-height:1.8;">
+          <strong>Cómo usarlo:</strong>
+          <ol style="padding-left:20px;margin:8px 0;">
+            ${h.steps.map(s => '<li>' + s + '</li>').join('')}
+          </ol>
+          ${h.tip ? '<div style="background:#FEF3C7;padding:8px 12px;border-radius:6px;margin-top:8px;font-size:12px;"><strong>Consejo:</strong> ' + h.tip + '</div>' : ''}
+        </div>
+      </details>`;
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+
+  // Search filter
+  document.getElementById('help-search').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('.help-item').forEach(el => {
+      const text = el.textContent.toLowerCase();
+      el.style.display = text.includes(q) ? '' : 'none';
+    });
+    document.querySelectorAll('.help-section').forEach(sec => {
+      const visible = sec.querySelectorAll('.help-item[style=""], .help-item:not([style])');
+      sec.style.display = visible.length ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}

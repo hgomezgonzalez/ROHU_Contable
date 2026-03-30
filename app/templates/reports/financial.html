@@ -16,7 +16,15 @@
 {% block content %}
 <div class="page-header no-print">
   <h1 class="page-title">Estados Financieros</h1>
-  <div style="display:flex; gap:8px;">
+  <div style="display:flex; gap:8px; align-items:center;">
+    <select id="fin-year" class="form-control" style="width:100px;"></select>
+    <select id="fin-month" class="form-control" style="width:140px;">
+      <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+      <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+      <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+      <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+    </select>
+    <button class="btn btn-primary" onclick="load()" style="white-space:nowrap;">Consultar</button>
     <button class="btn btn-outline" onclick="window.print()">Imprimir</button>
   </div>
 </div>
@@ -76,7 +84,15 @@
   const headers = {'Authorization': 'Bearer ' + token};
   const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 2});
 
-  document.getElementById('gen-date').textContent = new Date().toLocaleString('es-CO');
+  // Init year/month selectors with current date
+  const _now = new Date();
+  const yearSel = document.getElementById('fin-year');
+  for (let y = _now.getFullYear(); y >= _now.getFullYear() - 3; y--) {
+    yearSel.innerHTML += `<option value="${y}">${y}</option>`;
+  }
+  yearSel.value = _now.getFullYear();
+  document.getElementById('fin-month').value = _now.getMonth() + 1;
+  document.getElementById('gen-date').textContent = _now.toLocaleString('es-CO');
 
   // Fix export links to include auth
   document.querySelectorAll('a[href*="/api/"]').forEach(a => {
@@ -92,8 +108,12 @@
   });
 
   async function load() {
+    const year = document.getElementById('fin-year').value;
+    const month = document.getElementById('fin-month').value;
+    const MONTHS = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
     // Balance
-    const bResp = await fetch('/api/v1/accounting/trial-balance', {headers});
+    const bResp = await fetch(`/api/v1/accounting/trial-balance?year=${year}&month=${month}`, {headers});
     if (bResp.status === 401) { window.location.href = '/app/login'; return; }
     const {data: bal} = await bResp.json();
 
@@ -112,8 +132,8 @@
         <td style="text-align:right">${bal.is_balanced ? '<span class="badge badge-success">Cuadrado</span>' : '<span class="badge badge-danger">Descuadre</span>'}</td>
       </tr>`;
 
-    // P&L
-    const pResp = await fetch('/api/v1/reports/profit-loss', {headers});
+    // P&L — accumulated January through selected month
+    const pResp = await fetch(`/api/v1/reports/profit-loss?year=${year}&month=${month}`, {headers});
     const {data: pl} = await pResp.json();
     document.getElementById('pl-table').innerHTML = `
       <table>

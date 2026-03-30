@@ -12,6 +12,18 @@
   <h1 class="page-title">Análisis de Negocio</h1>
 </div>
 
+<!-- Global filter bar -->
+<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px;">
+  <label style="font-size:13px; font-weight:600; color:var(--text-light);">Periodo:</label>
+  <div id="analytics-presets" style="display:flex; gap:6px; overflow-x:auto;">
+    <button class="btn btn-outline analytics-period active" data-days="30" style="padding:4px 14px;font-size:12px;border-radius:20px;white-space:nowrap;">30 días</button>
+    <button class="btn btn-outline analytics-period" data-days="90" style="padding:4px 14px;font-size:12px;border-radius:20px;white-space:nowrap;">90 días</button>
+    <button class="btn btn-outline analytics-period" data-days="180" style="padding:4px 14px;font-size:12px;border-radius:20px;white-space:nowrap;">6 meses</button>
+    <button class="btn btn-outline analytics-period" data-days="365" style="padding:4px 14px;font-size:12px;border-radius:20px;white-space:nowrap;">1 año</button>
+  </div>
+</div>
+<style>.analytics-period.active{background:var(--primary)!important;color:white!important;border-color:var(--primary)!important;}</style>
+
 <!-- Row 0: Profit Trend -->
 <div class="card" style="margin-bottom:16px;">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -83,7 +95,7 @@
   async function loadProfitTrend(period) {
     period = period || 'daily';
     try {
-      const resp = await fetch(`/api/v1/reports/analytics/profit-trend?period=${period}`, {headers});
+      const resp = await fetch(`/api/v1/reports/analytics/profit-trend?period=${period}&days=${currentDays}`, {headers});
       const r = await resp.json();
       if (!r.success) return;
       const d = r.data;
@@ -121,7 +133,7 @@
   async function loadAnalytics() {
     try {
       // Cash Flow
-      const cf = await fetch('/api/v1/reports/analytics/cash-flow?days=30', {headers}).then(r=>r.json());
+      const cf = await fetch(`/api/v1/reports/analytics/cash-flow?days=${currentDays}`, {headers}).then(r=>r.json());
       if (cf.success) {
         if (charts.cashflow) charts.cashflow.destroy();
         charts.cashflow = new Chart(document.getElementById('chart-cashflow'), {
@@ -164,7 +176,8 @@
       }
 
       // Expenses trend
-      const ex = await fetch('/api/v1/reports/analytics/expenses-trend?months=6', {headers}).then(r=>r.json());
+      const months = Math.max(Math.ceil(currentDays / 30), 3);
+      const ex = await fetch(`/api/v1/reports/analytics/expenses-trend?months=${months}`, {headers}).then(r=>r.json());
       if (ex.success && ex.data.length) {
         const allCats = new Set();
         ex.data.forEach(m => Object.keys(m.categories).forEach(c => allCats.add(c)));
@@ -208,7 +221,24 @@
     } catch (err) { console.error('Analytics error:', err); }
   }
 
-  loadProfitTrend('daily');
-  loadAnalytics();
+  let currentDays = 30;
+
+  // Period preset click handlers
+  document.querySelectorAll('.analytics-period').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.analytics-period').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentDays = parseInt(btn.dataset.days);
+      loadAll();
+    });
+  });
+
+  function loadAll() {
+    const period = currentDays > 60 ? 'monthly' : 'daily';
+    loadProfitTrend(period);
+    loadAnalytics();
+  }
+
+  loadAll();
 </script>
 {% endblock %}

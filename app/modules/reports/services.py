@@ -450,9 +450,14 @@ def get_profit_loss(tenant_id: str, year: int = None, month: int = None) -> dict
     )
 
     if year and month:
+        # Accumulated P&L: January through selected month (NIIF standard)
         q = q.join(
             AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id
-        ).filter(AccountingPeriod.year == year, AccountingPeriod.month == month)
+        ).filter(AccountingPeriod.year == year, AccountingPeriod.month <= month)
+    elif year:
+        q = q.join(
+            AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id
+        ).filter(AccountingPeriod.year == year)
 
     q = q.group_by(
         ChartOfAccount.puc_code, ChartOfAccount.name,

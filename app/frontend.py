@@ -98,6 +98,11 @@ def campaigns():
     return render_template("customers/campaigns.html")
 
 
+@frontend_bp.route("/help")
+def help_page():
+    return render_template("help/index.html")
+
+
 @frontend_bp.route("/cobro/carta/<customer_id>")
 def collection_letter(customer_id):
     """Render formal collection letter for a customer (standalone page for printing)."""

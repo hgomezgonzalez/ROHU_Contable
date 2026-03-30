@@ -16,9 +16,10 @@
   </script>
   <script src="{{ url_for('static', filename='js/rohu-modal.js') }}"></script>
   <script src="{{ url_for('static', filename='js/rohu-offline.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/rohu-help.js') }}" defer></script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body data-active-page="{{ active_page|default('dashboard') }}">
   <div class="app-layout">
     <!-- Sidebar -->
     <nav class="sidebar" id="sidebar">
@@ -103,6 +104,7 @@
       <div style="padding:12px 20px; border-top:1px solid rgba(255,255,255,0.1); font-size:12px;">
         <div style="color:rgba(255,255,255,0.6)">{{ tenant_name or 'Mi Negocio' }}</div>
         <div style="color:white;">{{ user_name or 'Usuario' }}</div>
+        <a href="/app/help" style="color:rgba(255,255,255,0.7); text-decoration:none; font-size:12px; display:inline-block; margin-bottom:4px;">Ayuda</a><br>
         <a href="/app/logout" style="color:var(--secondary); text-decoration:none; font-size:13px; padding:6px 0; display:inline-block;">Cerrar sesión</a>
         <div id="app-version-sidebar" style="color:rgba(255,255,255,0.35); font-size:10px; margin-top:6px; font-family:monospace;"></div>
       </div>
@@ -120,6 +122,7 @@
         <h2 class="header-title">{% block header_title %}ROHU Contable{% endblock %}</h2>
         <div class="header-actions">
           <span id="outbox-badge" class="badge badge-warning" style="display:none; margin-right:8px;"></span>
+          <button class="help-btn" onclick="toggleHelp()" title="Ayuda (F1)" aria-label="Abrir ayuda">?</button>
           <span id="connection-status" class="online-badge">En línea</span>
         </div>
       </header>
