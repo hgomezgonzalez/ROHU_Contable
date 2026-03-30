@@ -31,8 +31,8 @@ class BaseConfig:
 
     # Connection pool — critical for production stability
     SQLALCHEMY_ENGINE_OPTIONS = {
-        "pool_size": 5,
-        "max_overflow": 5,
+        "pool_size": 3,
+        "max_overflow": 3,
         "pool_timeout": 20,
         "pool_recycle": 300,    # Recycle connections every 5 min (avoids stale connections)
         "pool_pre_ping": True,  # Verify connection is alive before using (critical for cloud DBs)

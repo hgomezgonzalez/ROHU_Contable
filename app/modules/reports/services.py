@@ -1042,89 +1042,70 @@ def get_expenses_trend(tenant_id: str, months: int = 6) -> list:
 
 
 def get_profit_trend(tenant_id: str, period: str = "daily", days: int = 30) -> list:
-    """Profit trend: revenue, cost, and gross profit by day/week/month."""
-    results = []
+    """Profit trend: revenue, cost, and gross profit by day/week/month. Optimized: 3 queries total."""
     now = datetime.now(BOGOTA_TZ)
+    start = now - timedelta(days=days)
 
     if period == "monthly":
-        # Last 6 months
+        trunc = func.date_trunc("month", func.timezone("America/Bogota", Sale.sale_date))
+        cn_trunc = func.date_trunc("month", func.timezone("America/Bogota", CreditNote.created_at))
+    else:
+        trunc = func.date_trunc("day", func.timezone("America/Bogota", Sale.sale_date))
+        cn_trunc = func.date_trunc("day", func.timezone("America/Bogota", CreditNote.created_at))
+
+    # Query 1: revenue + cost grouped by period (1 query instead of N×2)
+    sales_data = db.session.query(
+        trunc.label("period"),
+        func.coalesce(func.sum(Sale.subtotal), 0).label("revenue"),
+    ).filter(
+        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        Sale.sale_date >= start,
+    ).group_by("period").all()
+
+    cost_data = db.session.query(
+        trunc.label("period"),
+        func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0).label("cost"),
+    ).join(Sale).filter(
+        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        Sale.sale_date >= start,
+    ).group_by("period").all()
+
+    # Query 2: credit notes grouped by period
+    cn_data = db.session.query(
+        cn_trunc.label("period"),
+        func.coalesce(func.sum(CreditNote.subtotal), 0).label("cn_total"),
+    ).filter(
+        CreditNote.tenant_id == tenant_id,
+        CreditNote.created_at >= start,
+    ).group_by("period").all()
+
+    # Merge into dict by period key
+    rev_map = {r.period.strftime("%Y-%m-%d" if period != "monthly" else "%Y-%m"): float(r.revenue) for r in sales_data}
+    cost_map = {r.period.strftime("%Y-%m-%d" if period != "monthly" else "%Y-%m"): float(r.cost) for r in cost_data}
+    cn_map = {r.period.strftime("%Y-%m-%d" if period != "monthly" else "%Y-%m"): float(r.cn_total) for r in cn_data}
+
+    # Build results with all days/months in range
+    results = []
+    if period == "monthly":
         for i in range(5, -1, -1):
             m = now.month - i
             y = now.year
             while m <= 0:
-                m += 12
-                y -= 1
-
-            revenue = db.session.query(
-                func.coalesce(func.sum(Sale.subtotal), 0)
-            ).filter(
-                Sale.tenant_id == tenant_id, Sale.status == "completed",
-                func.extract("year", Sale.sale_date) == y,
-                func.extract("month", Sale.sale_date) == m,
-            ).scalar()
-
-            cost = db.session.query(
-                func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
-            ).join(Sale).filter(
-                Sale.tenant_id == tenant_id, Sale.status == "completed",
-                func.extract("year", Sale.sale_date) == y,
-                func.extract("month", Sale.sale_date) == m,
-            ).scalar()
-
-            # Subtract credit notes (returns)
-            cn_total = db.session.query(
-                func.coalesce(func.sum(CreditNote.subtotal), 0)
-            ).filter(
-                CreditNote.tenant_id == tenant_id,
-                func.extract("year", CreditNote.created_at) == y,
-                func.extract("month", CreditNote.created_at) == m,
-            ).scalar()
-
-            rev = float(revenue) - float(cn_total)
-            cst = float(cost)
-            results.append({
-                "period": f"{y}-{m:02d}",
-                "revenue": rev,
-                "cost": cst,
-                "profit": round(rev - cst, 2),
-                "margin_pct": round((rev - cst) / max(rev, 0.01) * 100, 1),
-            })
+                m += 12; y -= 1
+            key = f"{y}-{m:02d}"
+            rev = rev_map.get(key, 0) - cn_map.get(key, 0)
+            cst = cost_map.get(key, 0)
+            results.append({"period": key, "revenue": rev, "cost": cst,
+                            "profit": round(rev - cst, 2),
+                            "margin_pct": round((rev - cst) / max(rev, 0.01) * 100, 1)})
     else:
-        # Daily (last N days)
         for i in range(days - 1, -1, -1):
-            day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
-
-            revenue = db.session.query(
-                func.coalesce(func.sum(Sale.subtotal), 0)
-            ).filter(
-                Sale.tenant_id == tenant_id, Sale.status == "completed",
-                _date_in_bogota(Sale.sale_date) == day,
-            ).scalar()
-
-            cost = db.session.query(
-                func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
-            ).join(Sale).filter(
-                Sale.tenant_id == tenant_id, Sale.status == "completed",
-                _date_in_bogota(Sale.sale_date) == day,
-            ).scalar()
-
-            # Subtract credit notes (returns)
-            cn_total = db.session.query(
-                func.coalesce(func.sum(CreditNote.subtotal), 0)
-            ).filter(
-                CreditNote.tenant_id == tenant_id,
-                _date_in_bogota(CreditNote.created_at) == day,
-            ).scalar()
-
-            rev = float(revenue) - float(cn_total)
-            cst = float(cost)
-            results.append({
-                "period": day,
-                "revenue": rev,
-                "cost": cst,
-                "profit": round(rev - cst, 2),
-                "margin_pct": round((rev - cst) / max(rev, 0.01) * 100, 1),
-            })
+            key = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+            rev = rev_map.get(key, 0) - cn_map.get(key, 0)
+            cst = cost_map.get(key, 0)
+            results.append({"period": key, "revenue": rev, "cost": cst,
+                            "profit": round(rev - cst, 2),
+                            "margin_pct": round((rev - cst) / max(rev, 0.01) * 100, 1)})
 
     total_rev = sum(r["revenue"] for r in results)
     total_cost = sum(r["cost"] for r in results)
@@ -1134,67 +1115,68 @@ def get_profit_trend(tenant_id: str, period: str = "daily", days: int = 30) -> l
         "period_type": period,
         "data": results,
         "totals": {
-            "revenue": total_rev,
-            "cost": total_cost,
-            "profit": total_profit,
+            "revenue": total_rev, "cost": total_cost, "profit": total_profit,
             "margin_pct": round(total_profit / max(total_rev, 0.01) * 100, 1),
         }
     }
 
 
 def get_cash_flow(tenant_id: str, days: int = 30) -> list:
-    """Daily cash flow: inflows vs outflows for the last N days."""
+    """Daily cash flow: inflows vs outflows. Optimized: 4 queries total (was 120)."""
     from app.modules.cash.models import CashReceipt, CashDisbursement
 
-    results = []
     now = datetime.now(BOGOTA_TZ)
+    start = now - timedelta(days=days)
+    day_trunc_cr = func.date_trunc("day", func.timezone("America/Bogota", CashReceipt.receipt_date))
+    day_trunc_cd = func.date_trunc("day", func.timezone("America/Bogota", CashDisbursement.disbursement_date))
+    day_trunc_sale = func.date_trunc("day", func.timezone("America/Bogota", Sale.sale_date))
+    day_trunc_sp = func.date_trunc("day", func.timezone("America/Bogota", SupplierPayment.payment_date))
 
+    # Inflows: cash receipts grouped by day
+    cr_data = db.session.query(
+        day_trunc_cr.label("day"), func.coalesce(func.sum(CashReceipt.amount), 0).label("total")
+    ).filter(
+        CashReceipt.tenant_id == tenant_id, CashReceipt.status == "active",
+        CashReceipt.receipt_date >= start,
+    ).group_by("day").all()
+
+    # Inflows: sale cash payments grouped by day
+    sp_data = db.session.query(
+        day_trunc_sale.label("day"), func.coalesce(func.sum(Payment.amount), 0).label("total")
+    ).join(Sale, Payment.sale_id == Sale.id).filter(
+        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        Sale.sale_date >= start, Payment.method == "cash",
+    ).group_by("day").all()
+
+    # Outflows: cash disbursements grouped by day
+    cd_data = db.session.query(
+        day_trunc_cd.label("day"), func.coalesce(func.sum(CashDisbursement.amount), 0).label("total")
+    ).filter(
+        CashDisbursement.tenant_id == tenant_id, CashDisbursement.status == "active",
+        CashDisbursement.disbursement_date >= start,
+    ).group_by("day").all()
+
+    # Outflows: supplier payments grouped by day
+    sup_data = db.session.query(
+        day_trunc_sp.label("day"), func.coalesce(func.sum(SupplierPayment.amount), 0).label("total")
+    ).filter(
+        SupplierPayment.tenant_id == tenant_id, SupplierPayment.status == "completed",
+        SupplierPayment.payment_date >= start,
+    ).group_by("day").all()
+
+    # Merge into dicts
+    fmt = lambda r: r.day.strftime("%Y-%m-%d")
+    cr_map = {fmt(r): float(r.total) for r in cr_data}
+    sp_map = {fmt(r): float(r.total) for r in sp_data}
+    cd_map = {fmt(r): float(r.total) for r in cd_data}
+    sup_map = {fmt(r): float(r.total) for r in sup_data}
+
+    results = []
     for i in range(days - 1, -1, -1):
         day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
-
-        inflows = db.session.query(
-            func.coalesce(func.sum(CashReceipt.amount), 0)
-        ).filter(
-            CashReceipt.tenant_id == tenant_id,
-            CashReceipt.status == "active",
-            _date_in_bogota(CashReceipt.receipt_date) == day,
-        ).scalar()
-
-        # Add sale payments (cash)
-        sale_cash = db.session.query(
-            func.coalesce(func.sum(Payment.amount), 0)
-        ).join(Sale, Payment.sale_id == Sale.id).filter(
-            Sale.tenant_id == tenant_id,
-            Sale.status == "completed",
-            _date_in_bogota(Sale.sale_date) == day,
-            Payment.method == "cash",
-        ).scalar()
-
-        outflows = db.session.query(
-            func.coalesce(func.sum(CashDisbursement.amount), 0)
-        ).filter(
-            CashDisbursement.tenant_id == tenant_id,
-            CashDisbursement.status == "active",
-            _date_in_bogota(CashDisbursement.disbursement_date) == day,
-        ).scalar()
-
-        # Add supplier payments to outflows
-        supplier_pay = db.session.query(
-            func.coalesce(func.sum(SupplierPayment.amount), 0)
-        ).filter(
-            SupplierPayment.tenant_id == tenant_id,
-            SupplierPayment.status == "completed",
-            _date_in_bogota(SupplierPayment.payment_date) == day,
-        ).scalar()
-
-        total_out = float(outflows) + float(supplier_pay)
-        total_in = float(inflows) + float(sale_cash)
-        results.append({
-            "date": day,
-            "inflows": total_in,
-            "outflows": total_out,
-            "net": total_in - total_out,
-        })
+        total_in = cr_map.get(day, 0) + sp_map.get(day, 0)
+        total_out = cd_map.get(day, 0) + sup_map.get(day, 0)
+        results.append({"date": day, "inflows": total_in, "outflows": total_out, "net": total_in - total_out})
 
     return results
 
