@@ -25,6 +25,29 @@ def seed():
     click.echo("Roles and permissions seeded successfully.")
 
 
+@cli.command("create-admin")
+@click.option("--name", prompt="Nombre del negocio")
+@click.option("--nit", prompt="NIT")
+@click.option("--email", prompt="Email del negocio")
+@click.option("--first-name", prompt="Nombre del admin")
+@click.option("--last-name", prompt="Apellido del admin")
+@click.option("--admin-email", prompt="Email del admin")
+@click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True)
+def create_admin(name, nit, email, first_name, last_name, admin_email, password):
+    """Create first tenant and admin user."""
+    from app.modules.auth_rbac.services import create_tenant
+    from app.modules.accounting.services import seed_chart_of_accounts
+    result = create_tenant(
+        name=name, tax_id=nit, email=email,
+        owner_first_name=first_name, owner_last_name=last_name,
+        owner_email=admin_email, owner_password=password,
+    )
+    tenant_id = result["tenant"]["id"]
+    seed_chart_of_accounts(tenant_id)
+    click.echo(f"Tenant '{name}' creado con admin {admin_email}")
+    click.echo(f"PUC colombiano sembrado ({tenant_id})")
+
+
 @cli.command("init-db")
 def init_db():
     """Create all database tables."""
