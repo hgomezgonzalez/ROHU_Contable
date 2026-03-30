@@ -1,12 +1,27 @@
 """Auth RBAC routes — REST API endpoints."""
 
+import json
+
 from flask import jsonify, request
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
-    get_jwt_identity,
+    get_jwt_identity as _get_jwt_identity,
     jwt_required,
 )
+
+
+def _make_identity(user_id: str, tenant_id: str) -> str:
+    """Serialize identity as JSON string (Flask-JWT-Extended requires string subject)."""
+    return json.dumps({"user_id": user_id, "tenant_id": tenant_id})
+
+
+def get_jwt_identity() -> dict:
+    """Deserialize JWT identity from JSON string back to dict."""
+    raw = _get_jwt_identity()
+    if isinstance(raw, str):
+        return json.loads(raw)
+    return raw
 
 from app.modules.auth_rbac.blueprint import auth_bp
 from app.extensions import limiter
@@ -58,7 +73,7 @@ def register():
         from app.modules.accounting.services import seed_chart_of_accounts
         seed_chart_of_accounts(result["tenant"]["id"])
         # Generate tokens for immediate login
-        identity = {"user_id": result["user"]["id"], "tenant_id": result["tenant"]["id"]}
+        identity = _make_identity(result["user"]["id"], result["tenant"]["id"])
         access_token = create_access_token(identity=identity)
         refresh_token = create_refresh_token(identity=identity)
         create_refresh_token_record(
@@ -92,7 +107,7 @@ def login():
 
     try:
         user_data = authenticate(email, password)
-        identity = {"user_id": user_data["id"], "tenant_id": user_data["tenant_id"]}
+        identity = _make_identity(user_data["id"], user_data["tenant_id"])
         access_token = create_access_token(identity=identity)
         refresh_token = create_refresh_token(identity=identity)
         create_refresh_token_record(
@@ -116,8 +131,8 @@ def login():
 @jwt_required(refresh=True)
 def refresh():
     """Refresh an access token using a valid refresh token."""
-    identity = get_jwt_identity()
-    access_token = create_access_token(identity=identity)
+    raw = _get_jwt_identity()
+    access_token = create_access_token(identity=raw)
     return jsonify(success=True, data={"access_token": access_token})
 
 

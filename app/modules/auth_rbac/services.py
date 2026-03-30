@@ -451,8 +451,10 @@ def require_permission(resource: str, action: str):
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
+            import json as _json
             verify_jwt_in_request()
-            identity = get_jwt_identity()
+            raw_identity = get_jwt_identity()
+            identity = _json.loads(raw_identity) if isinstance(raw_identity, str) else raw_identity
             user = User.query.get(identity["user_id"])
             if not user or not user.is_active:
                 return {"success": False, "error": {"code": "AUTH_INVALID_TOKEN", "message": "Usuario no válido"}}, 401

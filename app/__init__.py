@@ -96,7 +96,8 @@ def create_app(config_name: str = "development") -> Flask:
         """Test JWT creation and verification in same request."""
         from flask_jwt_extended import create_access_token, decode_token
         try:
-            identity = {"user_id": "test", "tenant_id": "test"}
+            import json
+            identity = json.dumps({"user_id": "test", "tenant_id": "test"})
             token = create_access_token(identity=identity)
             decoded = decode_token(token)
             return {
