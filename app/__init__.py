@@ -1,6 +1,6 @@
 """ROHU Contable — Flask Application Factory."""
 
-from flask import Flask
+from flask import Flask, request
 
 from app.extensions import db, migrate, jwt, cors, limiter
 from app.config import config_by_name
@@ -59,6 +59,36 @@ def create_app(config_name: str = "development") -> Flask:
             "worker-src 'self';"
         )
         return response
+
+    # JWT error callbacks — return JSON instead of Flask-JWT default HTML
+    @jwt.expired_token_loader
+    def expired_token_callback(jwt_header, jwt_payload):
+        return {"success": False, "error": {"code": "TOKEN_EXPIRED", "message": "Token expirado, inicie sesión nuevamente"}}, 401
+
+    @jwt.invalid_token_loader
+    def invalid_token_callback(error):
+        return {"success": False, "error": {"code": "TOKEN_INVALID", "message": "Token inválido"}}, 401
+
+    @jwt.unauthorized_loader
+    def missing_token_callback(error):
+        return {"success": False, "error": {"code": "TOKEN_MISSING", "message": "Token de autorización requerido"}}, 401
+
+    # Global JSON error handlers (prevent HTML error pages on API calls)
+    @app.errorhandler(500)
+    def handle_500(e):
+        import traceback
+        app.logger.error(f"500 Error: {e}\n{traceback.format_exc()}")
+        return {"success": False, "error": {"code": "SERVER_ERROR", "message": str(e)}}, 500
+
+    @app.errorhandler(404)
+    def handle_404(e):
+        if request.path.startswith('/api/'):
+            return {"success": False, "error": {"code": "NOT_FOUND", "message": "Recurso no encontrado"}}, 404
+        return e
+
+    @app.errorhandler(405)
+    def handle_405(e):
+        return {"success": False, "error": {"code": "METHOD_NOT_ALLOWED", "message": "Método no permitido"}}, 405
 
     @app.route("/health")
     def health():

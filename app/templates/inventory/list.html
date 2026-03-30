@@ -184,9 +184,9 @@
     const low = document.getElementById('low-stock-filter').checked;
     const noQR = document.getElementById('no-qr-filter').checked;
     const resp = await fetch(`/api/v1/inventory/products?q=${encodeURIComponent(q)}&per_page=50${low?'&low_stock=true':''}`, {headers, cache:'no-store'});
-    if (resp.status === 401) { window.location.href = '/app/login'; return; }
+    if (resp.status === 401 || resp.status === 422) { localStorage.clear(); window.location.href = '/app/login'; return; }
     const json = await resp.json();
-    if (!json.success) { document.getElementById('products-table').innerHTML = `<tr><td colspan="10" style="color:var(--danger)">Error: ${esc(json.error?.message||'Error cargando productos')}</td></tr>`; return; }
+    if (!json.success) { document.getElementById('products-table').innerHTML = `<tr><td colspan="10" style="color:var(--danger)">Error: ${esc(json.error?.message||'Respuesta inesperada del servidor (status '+resp.status+')')}</td></tr>`; return; }
     let data = json.data;
     if (noQR) data = data.filter(p => !p.qr_code);
     const tbody = document.getElementById('products-table');
