@@ -392,6 +392,22 @@ def reset_data():
         }), 500
 
 
+@auth_bp.route("/saas-clients", methods=["GET"])
+@require_permission("tenants", "manage")
+def list_saas_clients():
+    """List all deployed ROHU SaaS client instances from clients.json."""
+    import json, os
+    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'clients.json')
+    try:
+        with open(clients_file, 'r') as f:
+            clients = json.load(f)
+        return jsonify(success=True, data=clients)
+    except FileNotFoundError:
+        return jsonify(success=True, data=[])
+    except Exception as e:
+        return jsonify(success=False, error={"code": "FILE_ERROR", "message": str(e)}), 500
+
+
 @auth_bp.route("/me", methods=["GET"])
 @jwt_required()
 def me():

@@ -1,0 +1,58 @@
+name: Deploy to All Clients
+
+on:
+  workflow_dispatch:  # Manual trigger only (no auto-deploy on push for safety)
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm deployment to ALL clients'
+        required: true
+
+jobs:
+  read-clients:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set-matrix
+        run: |
+          APPS=$(python3 -c "
+          import json
+          with open('clients.json') as f:
+              clients = json.load(f)
+          apps = [c['app'] for c in clients]
+          print(json.dumps(apps))
+          ")
+          echo "matrix={\"app\":$APPS}" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: read-clients
+    if: github.event.inputs.confirm == 'deploy'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.read-clients.outputs.matrix) }}
+      fail-fast: false  # Don't stop all deploys if one fails
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Deploy to ${{ matrix.app }}
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          git remote add heroku-${{ matrix.app }} https://heroku:${HEROKU_API_KEY}@git.heroku.com/${{ matrix.app }}.git
+          git push heroku-${{ matrix.app }} main --force
+          echo "Deployed to ${{ matrix.app }}"
+
+      - name: Health check ${{ matrix.app }}
+        run: |
+          sleep 30  # Wait for release phase
+          URL="https://${{ matrix.app }}.herokuapp.com/health"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ ${{ matrix.app }} is healthy"
+          else
+            echo "❌ ${{ matrix.app }} health check failed (status: $STATUS)"
+            exit 1
+          fi

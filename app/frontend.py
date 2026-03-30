@@ -130,6 +130,11 @@ def admin_users():
     return render_template("admin/users.html")
 
 
+@frontend_bp.route("/admin/tenants")
+def admin_tenants():
+    return render_template("admin/tenants.html")
+
+
 @frontend_bp.route("/admin/settings")
 def admin_settings():
     return render_template("admin/settings.html")
