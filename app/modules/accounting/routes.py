@@ -133,9 +133,11 @@ def close_period(year, month):
 @require_permission("journal_entries", "close")
 def reopen_period_route(year, month):
     try:
+        data = request.get_json() or {}
+        reason = data.get("reason", "")
         period = acc.reopen_period(
             tenant_id=g.tenant_id, year=year, month=month,
-            user_id=str(g.current_user.id),
+            user_id=str(g.current_user.id), reason=reason,
         )
         return jsonify(success=True, data=period)
     except ValueError as e:

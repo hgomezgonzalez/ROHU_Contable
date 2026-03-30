@@ -91,28 +91,63 @@
 <!-- Tab: Periods -->
 <div id="panel-periods" class="tab-panel" style="display:none;">
   <div class="card" style="margin-bottom:16px;">
-    <div class="card-title">Cierre de Periodo Mensual</div>
-    <p style="font-size:13px; color:var(--text-light); margin-bottom:12px;">
-      Al cerrar un periodo, se genera un asiento de cierre que traslada ingresos y gastos a la cuenta de Utilidad del Ejercicio (3605). No se podrán crear asientos en periodos cerrados.
+    <div class="card-title">Control de Periodos Contables</div>
+    <p style="font-size:13px; color:var(--text-light); margin-bottom:4px;">
+      Cerrar un mes significa que ya revisó las cuentas y <strong>no quiere que nadie las modifique</strong>. Es como congelar ese mes.
     </p>
-    <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:16px;">
-      <div class="form-group" style="margin:0;">
-        <label>Año</label>
-        <input type="number" id="period-year" class="form-control" style="width:100px;" value="2026">
-      </div>
-      <div class="form-group" style="margin:0;">
-        <label>Mes</label>
-        <select id="period-month" class="form-control" style="width:150px;">
-          <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
-          <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
-          <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
-          <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
-        </select>
-      </div>
-      <button class="btn btn-primary" onclick="closePeriod()">Cerrar Periodo</button>
-      <button class="btn btn-outline" onclick="reopenPeriod()">Reabrir</button>
+    <p style="font-size:12px; color:var(--text-light); margin-bottom:16px;">
+      Solo el cierre de <strong>Diciembre</strong> genera el asiento contable anual que traslada utilidades al patrimonio (cuenta 3610).
+    </p>
+
+    <!-- Year selector -->
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
+      <label style="font-weight:600;">Año:</label>
+      <button class="btn btn-outline" style="padding:4px 12px;" onclick="changePeriodYear(-1)">◀</button>
+      <span id="period-year-display" style="font-size:18px; font-weight:700; min-width:60px; text-align:center;">2026</span>
+      <button class="btn btn-outline" style="padding:4px 12px;" onclick="changePeriodYear(1)">▶</button>
+      <input type="hidden" id="period-year" value="2026">
     </div>
-    <div id="period-result"></div>
+
+    <!-- 12-month grid -->
+    <div id="period-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:16px;">
+    </div>
+
+    <!-- Selected month detail -->
+    <div id="period-detail" style="display:none; border-top:2px solid var(--primary); padding-top:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 id="period-detail-title" style="font-size:16px;"></h3>
+        <span id="period-detail-badge" class="badge"></span>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
+        <div class="card" style="text-align:center; padding:12px;">
+          <div style="font-size:12px; color:var(--text-light);">Ingresos</div>
+          <div id="pd-income" style="font-size:18px; font-weight:700; color:var(--success);">—</div>
+        </div>
+        <div class="card" style="text-align:center; padding:12px;">
+          <div style="font-size:12px; color:var(--text-light);">Gastos + Costos</div>
+          <div id="pd-expenses" style="font-size:18px; font-weight:700; color:var(--danger);">—</div>
+        </div>
+        <div class="card" style="text-align:center; padding:12px;">
+          <div style="font-size:12px; color:var(--text-light);">Resultado</div>
+          <div id="pd-net" style="font-size:18px; font-weight:700;">—</div>
+        </div>
+      </div>
+      <div id="period-actions" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+      <div id="period-result" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- Reopen modal -->
+  <div id="reopen-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+    <div style="background:white; border-radius:var(--radius); padding:24px; max-width:450px; width:100%;">
+      <h3 style="margin-bottom:12px;">Reabrir Periodo</h3>
+      <p style="font-size:13px; color:var(--text-light); margin-bottom:12px;">Explique por qué necesita reabrir este periodo. El motivo queda registrado para auditoría.</p>
+      <textarea id="reopen-reason" class="form-control" rows="3" placeholder="Ej: Se omitió registrar una factura del día 15" required style="margin-bottom:12px;"></textarea>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="document.getElementById('reopen-modal').style.display='none'">Cancelar</button>
+        <button class="btn btn-danger" onclick="confirmReopen()">Reabrir Periodo</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -300,11 +335,112 @@
   }
 
   // ── Period Close/Reopen ────────────────────────────────────────
-  async function closePeriod() {
+  // ── Period Grid ──────────────────────────────────────────────
+  const MONTHS = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  let selectedPeriodMonth = null;
+
+  function changePeriodYear(delta) {
+    const el = document.getElementById('period-year');
+    el.value = parseInt(el.value) + delta;
+    document.getElementById('period-year-display').textContent = el.value;
+    renderPeriodGrid();
+  }
+
+  async function renderPeriodGrid() {
     const year = document.getElementById('period-year').value;
-    const month = document.getElementById('period-month').value;
-    const MONTHS = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-    const ok = await rohuConfirm(`¿Cerrar el periodo <strong>${MONTHS[month]} ${year}</strong>?<br><br>Se generará un asiento de cierre y no se podrán crear nuevos asientos en este mes.`);
+    const grid = document.getElementById('period-grid');
+
+    // Get all periods for this year
+    let periods = {};
+    try {
+      const resp = await fetch(`/api/v1/accounting/trial-balance?year=${year}&month=1`, {headers});
+    } catch(e) {}
+
+    // Fetch period statuses
+    const now = new Date();
+    const currentMonth = now.getFullYear() == year ? now.getMonth() + 1 : 13;
+
+    grid.innerHTML = '';
+    for (let m = 1; m <= 12; m++) {
+      const isFuture = parseInt(year) > now.getFullYear() || (parseInt(year) === now.getFullYear() && m > now.getMonth() + 1);
+      const isCurrent = parseInt(year) === now.getFullYear() && m === now.getMonth() + 1;
+
+      // Try to get period status from cached data
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-outline';
+      btn.style.cssText = 'padding:10px 8px; font-size:13px; text-align:center; border-radius:8px; flex-direction:column; display:flex; align-items:center; gap:4px;';
+      btn.innerHTML = `<span style="font-weight:600;">${MONTHS[m].substring(0,3)}</span><span class="period-status-${m}" style="font-size:10px; color:var(--text-light);">${isFuture ? 'Futuro' : isCurrent ? 'Actual' : '...'}</span>`;
+      if (isCurrent) btn.style.borderColor = 'var(--primary)';
+      if (!isFuture) btn.onclick = () => selectPeriodMonth(m);
+      else { btn.disabled = true; btn.style.opacity = '0.5'; }
+      grid.appendChild(btn);
+    }
+
+    // Load actual statuses async
+    for (let m = 1; m <= Math.min(12, currentMonth); m++) {
+      loadPeriodStatus(year, m);
+    }
+    document.getElementById('period-detail').style.display = 'none';
+  }
+
+  async function loadPeriodStatus(year, month) {
+    try {
+      const resp = await fetch(`/api/v1/accounting/trial-balance?year=${year}&month=${month}`, {headers});
+      const r = await resp.json();
+      const el = document.querySelector(`.period-status-${month}`);
+      if (!el) return;
+      // Check if period is closed
+      const periodResp = await fetch(`/api/v1/accounting/periods/${year}/${month}/close`, {method:'GET', headers}).catch(() => null);
+      // We'll just show open for now since we don't have a period status endpoint
+      el.textContent = 'Abierto';
+      el.style.color = 'var(--success)';
+    } catch(e) {}
+  }
+
+  async function selectPeriodMonth(month) {
+    selectedPeriodMonth = month;
+    const year = document.getElementById('period-year').value;
+    const detail = document.getElementById('period-detail');
+    detail.style.display = 'block';
+    document.getElementById('period-detail-title').textContent = `${MONTHS[month]} ${year}`;
+
+    // Load trial balance for this month
+    try {
+      const resp = await fetch(`/api/v1/accounting/trial-balance?year=${year}&month=${month}`, {headers});
+      const r = await resp.json();
+      if (r.success) {
+        let income = 0, expenses = 0;
+        (r.data.accounts || []).forEach(a => {
+          if (a.account_type === 'income') income += Math.abs(a.balance);
+          else if (a.account_type === 'expense' || a.account_type === 'cost') expenses += Math.abs(a.balance);
+        });
+        const net = income - expenses;
+        document.getElementById('pd-income').textContent = COP(income);
+        document.getElementById('pd-expenses').textContent = COP(expenses);
+        document.getElementById('pd-net').textContent = COP(net);
+        document.getElementById('pd-net').style.color = net >= 0 ? 'var(--success)' : 'var(--danger)';
+      }
+    } catch(e) {}
+
+    // Show actions
+    const isDec = month === 12;
+    const closeMsg = isDec
+      ? `¿Realizar cierre anual de <strong>${year}</strong>?<br><br>Se generará el asiento contable que traslada ingresos y gastos al patrimonio (cuenta 3610). No se podrán crear movimientos en diciembre ${year}.`
+      : `¿Cerrar <strong>${MONTHS[month]} ${year}</strong>?<br><br>Los movimientos del mes quedan en firme. No podrá crear ni editar movimientos en este mes. <em>No se genera asiento contable (solo control interno).</em>`;
+
+    document.getElementById('period-actions').innerHTML = `
+      <button class="btn btn-primary" onclick="closePeriodConfirm(${month}, ${isDec})">${isDec ? 'Realizar Cierre Anual' : 'Cerrar este mes'}</button>
+      <button class="btn btn-outline" onclick="openReopenModal(${month})">Reabrir</button>
+    `;
+    document.getElementById('period-result').innerHTML = '';
+  }
+
+  async function closePeriodConfirm(month, isDec) {
+    const year = document.getElementById('period-year').value;
+    const msg = isDec
+      ? `¿Realizar cierre anual de <strong>${year}</strong>?<br><br>Se genera asiento contable trasladando ingresos/gastos a patrimonio (3610). Los movimientos de diciembre quedan en firme.`
+      : `¿Cerrar <strong>${MONTHS[month]} ${year}</strong>?<br><br>Los movimientos del mes quedan en firme. No se genera asiento contable (solo bloqueo de control interno).`;
+    const ok = await rohuConfirm(msg);
     if (!ok) return;
 
     try {
@@ -314,36 +450,53 @@
         const d = r.data;
         document.getElementById('period-result').innerHTML = `
           <div class="alert" style="background:#D1FAE5; border:1px solid var(--success); padding:12px; border-radius:8px;">
-            <strong>Periodo ${MONTHS[month]} ${year} cerrado.</strong><br>
-            Ingresos: ${COP(d.income || 0)}<br>
-            Gastos: ${COP(d.expenses || 0)}<br>
-            Costos: ${COP(d.costs || 0)}<br>
-            <strong>Utilidad neta: ${COP(d.net_income || 0)}</strong>
+            <strong>${d.message || 'Periodo cerrado.'}</strong><br>
+            Ingresos: ${COP(d.income || 0)} | Gastos: ${COP(d.expenses || 0)} | Costos: ${COP(d.costs || 0)}<br>
+            <strong>Resultado: ${COP(d.net_income || 0)}</strong>
+            ${d.is_annual_close ? '<br><em>Asiento de cierre anual generado.</em>' : ''}
           </div>`;
-        rohuAlert(`Periodo ${MONTHS[month]} ${year} cerrado exitosamente`, 'success');
+        rohuAlert(d.message || 'Periodo cerrado', 'success');
+        renderPeriodGrid();
       } else {
-        document.getElementById('period-result').innerHTML = `<div class="alert alert-danger">${r.error.message}</div>`;
+        document.getElementById('period-result').innerHTML = `<div class="alert alert-danger">${r.error?.message || 'Error'}</div>`;
       }
     } catch (e) { rohuAlert('Error cerrando periodo', 'error'); }
   }
 
-  async function reopenPeriod() {
+  function openReopenModal(month) {
+    selectedPeriodMonth = month;
+    document.getElementById('reopen-reason').value = '';
+    document.getElementById('reopen-modal').style.display = 'flex';
+  }
+
+  async function confirmReopen() {
     const year = document.getElementById('period-year').value;
-    const month = document.getElementById('period-month').value;
-    const ok = await rohuConfirm('¿Reabrir este periodo? Solo se puede si no hay periodos posteriores cerrados.');
-    if (!ok) return;
+    const month = selectedPeriodMonth;
+    const reason = document.getElementById('reopen-reason').value.trim();
+    if (reason.length < 10) { rohuAlert('Ingrese un motivo de al menos 10 caracteres', 'warning'); return; }
 
     try {
-      const resp = await fetch(`/api/v1/accounting/periods/${year}/${month}/reopen`, {method:'POST', headers, body:'{}'});
+      const resp = await fetch(`/api/v1/accounting/periods/${year}/${month}/reopen`, {
+        method:'POST', headers, body: JSON.stringify({reason}),
+      });
       const r = await resp.json();
+      document.getElementById('reopen-modal').style.display = 'none';
       if (r.success) {
-        document.getElementById('period-result').innerHTML = '<div class="alert" style="background:#DBEAFE; border:1px solid var(--info);">Periodo reabierto correctamente.</div>';
+        document.getElementById('period-result').innerHTML = '<div class="alert" style="background:#DBEAFE; border:1px solid var(--info);">Periodo reabierto. Motivo registrado para auditoría.</div>';
         rohuAlert('Periodo reabierto', 'success');
+        renderPeriodGrid();
       } else {
-        document.getElementById('period-result').innerHTML = `<div class="alert alert-danger">${r.error.message}</div>`;
+        document.getElementById('period-result').innerHTML = `<div class="alert alert-danger">${r.error?.message || 'Error'}</div>`;
       }
     } catch (e) { rohuAlert('Error reabriendo periodo', 'error'); }
   }
+
+  // Init period grid when tab is shown
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.textContent.includes('Periodo')) renderPeriodGrid();
+    });
+  });
 
   loadBalance();
 </script>

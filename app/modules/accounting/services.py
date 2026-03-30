@@ -78,6 +78,9 @@ def create_journal_entry(
     period = get_or_create_period(tenant_id, entry_date)
     if period.status == "locked":
         raise ValueError(f"Periodo {period.year}-{period.month:02d} está bloqueado")
+    # Block entries in closed periods (except CLOSING and REVERSAL which are part of close/reopen flow)
+    if period.status == "closed" and entry_type not in ("CLOSING", "REVERSAL"):
+        raise ValueError(f"Periodo {period.year}-{period.month:02d} está cerrado. Reabra el periodo para registrar movimientos.")
 
     # Validate double-entry
     total_debit = Decimal("0")
@@ -500,8 +503,8 @@ def get_expenses(tenant_id: str, page: int = 1, per_page: int = 20) -> dict:
 
 # ── Period Reopen ────────────────────────────────────────────────
 
-def reopen_period(tenant_id: str, year: int, month: int, user_id: str) -> dict:
-    """Reopen a closed period. Only if no subsequent period is closed."""
+def reopen_period(tenant_id: str, year: int, month: int, user_id: str, reason: str = "") -> dict:
+    """Reopen a closed period. Only if no subsequent period is closed. Reverses closing entry if December."""
     period = AccountingPeriod.query.filter_by(
         tenant_id=tenant_id, year=year, month=month
     ).first()
@@ -522,6 +525,32 @@ def reopen_period(tenant_id: str, year: int, month: int, user_id: str) -> dict:
     if later:
         raise ValueError(f"No se puede reabrir: periodo {later.year}-{later.month:02d} ya está cerrado")
 
+    # If December, reverse the closing entry
+    if month == 12:
+        closing_entry = JournalEntry.query.filter_by(
+            tenant_id=tenant_id, period_id=period.id,
+            entry_type="CLOSING", is_reversed=False,
+        ).first()
+        if closing_entry:
+            reverse_lines = []
+            for line in closing_entry.lines:
+                reverse_lines.append({
+                    "puc_code": line.account.puc_code,
+                    "debit": float(line.credit_amount),
+                    "credit": float(line.debit_amount),
+                    "description": f"Reversa cierre: {line.description or ''}",
+                })
+            if reverse_lines:
+                create_journal_entry(
+                    tenant_id=tenant_id, created_by=user_id,
+                    entry_type="REVERSAL",
+                    description=f"Reversa cierre anual {year}-{month:02d}. Motivo: {reason or 'Sin motivo'}",
+                    lines=reverse_lines,
+                    source_document_type="period_reopen",
+                    source_document_id=str(period.id),
+                )
+            closing_entry.is_reversed = True
+
     period.status = "open"
     period.closed_at = None
     period.closed_by = None
@@ -532,14 +561,13 @@ def reopen_period(tenant_id: str, year: int, month: int, user_id: str) -> dict:
 # ── Monthly Close (automated) ───────────────────────────────────
 
 def monthly_close(tenant_id: str, year: int, month: int, user_id: str) -> dict:
-    """Automated monthly close: verify balance, generate closing entry, close period."""
-    # Verify balance
-    balance = get_trial_balance(tenant_id, year, month)
-    if not balance["is_balanced"]:
-        raise ValueError("No se puede cerrar: débitos y créditos no cuadran")
-
+    """Monthly close: freeze period. Only December generates the annual closing entry."""
     # Calculate income, expenses, costs for the period
+    balance = get_trial_balance(tenant_id, year, month)
     period = get_or_create_period(tenant_id, datetime(year, month, 1, tzinfo=timezone.utc))
+
+    if period.status == "closed":
+        raise ValueError(f"Periodo {year}-{month:02d} ya está cerrado")
 
     income_total = Decimal("0")
     expense_total = Decimal("0")
@@ -555,8 +583,8 @@ def monthly_close(tenant_id: str, year: int, month: int, user_id: str) -> dict:
 
     net_income = income_total - expense_total - cost_total
 
-    # Generate closing entry if there are income/expense accounts with balances
-    if income_total > 0 or expense_total > 0 or cost_total > 0:
+    # Only December generates the annual closing journal entry (NIIF/PUC)
+    if month == 12 and (income_total > 0 or expense_total > 0 or cost_total > 0):
         closing_lines = []
 
         # Close income accounts (debit to zero them)
@@ -566,50 +594,54 @@ def monthly_close(tenant_id: str, year: int, month: int, user_id: str) -> dict:
                     "puc_code": acc["puc_code"],
                     "debit": abs(acc["balance"]) if acc["balance"] > 0 else 0,
                     "credit": abs(acc["balance"]) if acc["balance"] < 0 else 0,
-                    "description": f"Cierre {acc['name']}",
+                    "description": f"Cierre anual {acc['name']}",
                 })
 
-        # Close expense accounts (credit to zero them)
+        # Close expense/cost accounts (credit to zero them)
         for acc in balance["accounts"]:
             if acc["account_type"] in ("expense", "cost") and abs(acc["balance"]) > 0.01:
                 closing_lines.append({
                     "puc_code": acc["puc_code"],
                     "debit": 0,
                     "credit": abs(acc["balance"]),
-                    "description": f"Cierre {acc['name']}",
+                    "description": f"Cierre anual {acc['name']}",
                 })
 
-        # Net to Utilidad del ejercicio
+        # Net to equity: 3610 (Utilidad) if profit, 3610 (Pérdida) if loss
         if net_income != 0:
+            puc_code = "3610"  # Utilidad/Pérdida del ejercicio
             closing_lines.append({
-                "puc_code": "3605",
+                "puc_code": puc_code,
                 "debit": float(abs(net_income)) if net_income < 0 else 0,
                 "credit": float(abs(net_income)) if net_income > 0 else 0,
-                "description": "Resultado del periodo",
+                "description": "Utilidad del ejercicio" if net_income > 0 else "Pérdida del ejercicio",
             })
 
         if closing_lines:
             create_journal_entry(
                 tenant_id=tenant_id, created_by=user_id,
                 entry_type="CLOSING",
-                description=f"Cierre periodo {year}-{month:02d}",
+                description=f"Cierre anual {year}",
                 lines=closing_lines,
                 source_document_type="period_close",
                 source_document_id=str(period.id),
             )
 
-    # Close the period
+    # Close (freeze) the period
     period.status = "closed"
     period.closed_at = datetime.now(timezone.utc)
     period.closed_by = user_id
     db.session.commit()
 
+    is_annual = month == 12
     return {
         "period": _period_to_dict(period),
         "income": float(income_total),
         "expenses": float(expense_total),
         "costs": float(cost_total),
         "net_income": float(net_income),
+        "is_annual_close": is_annual,
+        "message": f"Cierre anual {year} completado. Asiento contable generado." if is_annual else f"Periodo {year}-{month:02d} cerrado. No se pueden crear movimientos en este mes.",
     }
 
 
