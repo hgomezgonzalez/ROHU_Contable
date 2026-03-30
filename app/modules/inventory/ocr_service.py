@@ -8,10 +8,14 @@ def process_invoice_image(image_file) -> list:
     try:
         from PIL import Image, ImageEnhance, ImageFilter
         import pytesseract
+        import logging
+        log = logging.getLogger(__name__)
 
         image = Image.open(image_file)
 
-        # Convert to grayscale
+        # Convert to RGB first (handles RGBA, P, CMYK, etc.) then to grayscale
+        if image.mode not in ('L', 'RGB'):
+            image = image.convert('RGB')
         if image.mode != 'L':
             image = image.convert('L')
 
@@ -33,6 +37,14 @@ def process_invoice_image(image_file) -> list:
         image = image.point(lambda x: 0 if x < 140 else 255, '1')
         image = image.convert('L')
 
+        # Detect available Tesseract languages
+        try:
+            available_langs = pytesseract.get_languages()
+        except Exception:
+            available_langs = []
+
+        use_lang = 'spa' if 'spa' in available_langs else 'eng' if 'eng' in available_langs else None
+
         # Try multiple Tesseract configs for best results
         configs = [
             '--psm 6 --oem 3',   # Assume uniform block of text
@@ -42,41 +54,45 @@ def process_invoice_image(image_file) -> list:
 
         best_text = ''
         best_items = []
+        errors = []
 
         for config in configs:
             try:
-                text = pytesseract.image_to_string(image, lang='spa', config=config)
+                lang_arg = {'lang': use_lang} if use_lang else {}
+                text = pytesseract.image_to_string(image, config=config, **lang_arg)
+                if text and len(text.strip()) > len(best_text.strip()):
+                    best_text = text
                 items = parse_invoice_text(text)
                 if len(items) > len(best_items):
                     best_items = items
-                    best_text = text
-            except Exception:
+            except Exception as e:
+                errors.append(f"{config}: {str(e)}")
                 continue
 
-        # Fallback: try without Spanish lang
-        if len(best_items) < 2:
+        # Fallback: try with no lang and basic config
+        if not best_text.strip():
             try:
-                text = pytesseract.image_to_string(image, config='--psm 6')
+                text = pytesseract.image_to_string(image)
+                best_text = text
                 items = parse_invoice_text(text)
                 if len(items) > len(best_items):
                     best_items = items
-                    best_text = text
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"fallback: {str(e)}")
 
         text = best_text
         items = best_items
 
-        items = parse_invoice_text(text)
-
         # If no items found, return the raw text so user can see what Tesseract read
         if not items:
+            diag = f"Langs: {available_langs} | Usando: {use_lang} | Errores: {'; '.join(errors)}" if errors else f"Langs: {available_langs} | Usando: {use_lang}"
+            raw = text[:500] if text and text.strip() else f"Imagen no legible. {diag}"
             return [{
                 "name": "(Sin productos detectados automáticamente)",
                 "quantity": 0,
                 "unit_cost": 0,
                 "total": 0,
-                "raw_text": text[:500] if text else "Imagen no legible",
+                "raw_text": raw,
             }]
 
         return items
