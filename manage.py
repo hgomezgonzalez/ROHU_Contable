@@ -48,6 +48,23 @@ def create_admin(name, nit, email, first_name, last_name, admin_email, password)
     click.echo(f"PUC colombiano sembrado ({tenant_id})")
 
 
+@cli.command("seed-puc")
+def seed_puc():
+    """Seed PUC (chart of accounts) for all tenants that don't have accounts yet."""
+    from app.modules.auth_rbac.models import Tenant
+    from app.modules.accounting.models import ChartOfAccount
+    from app.modules.accounting.services import seed_chart_of_accounts
+    tenants = Tenant.query.filter_by(is_active=True).all()
+    for t in tenants:
+        count = ChartOfAccount.query.filter_by(tenant_id=t.id).count()
+        if count == 0:
+            seed_chart_of_accounts(str(t.id))
+            click.echo(f"PUC sembrado para '{t.name}' ({t.id})")
+        else:
+            click.echo(f"'{t.name}' ya tiene {count} cuentas, omitido.")
+    click.echo("Done.")
+
+
 @cli.command("init-db")
 def init_db():
     """Create all database tables."""

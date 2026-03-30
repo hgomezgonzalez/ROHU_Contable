@@ -146,9 +146,14 @@ def import_ocr():
             "code": "VALIDATION_ERROR", "message": "Archivo vacío"
         }), 400
 
-    from app.modules.inventory.ocr_service import process_invoice_image
-    items = process_invoice_image(image_file)
-    return jsonify(success=True, data=items, count=len(items))
+    try:
+        from app.modules.inventory.ocr_service import process_invoice_image
+        items = process_invoice_image(image_file)
+        return jsonify(success=True, data=items, count=len(items))
+    except Exception as e:
+        return jsonify(success=False, error={
+            "code": "OCR_ERROR", "message": f"Error procesando imagen: {str(e)}"
+        }), 422
 
 
 @inventory_bp.route("/import/confirm", methods=["POST"])

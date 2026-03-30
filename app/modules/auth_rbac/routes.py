@@ -54,6 +54,9 @@ def register():
 
     try:
         result = create_tenant(**{k: data[k] for k in required})
+        # Seed PUC (chart of accounts) for the new tenant
+        from app.modules.accounting.services import seed_chart_of_accounts
+        seed_chart_of_accounts(result["tenant"]["id"])
         # Generate tokens for immediate login
         identity = {"user_id": result["user"]["id"], "tenant_id": result["tenant"]["id"]}
         access_token = create_access_token(identity=identity)
