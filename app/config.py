@@ -13,7 +13,8 @@ class BaseConfig:
 
     SECRET_KEY = os.getenv("SECRET_KEY", os.urandom(32).hex())
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "")
+    _db_url = os.getenv("DATABASE_URL", "")
+    SQLALCHEMY_DATABASE_URI = _db_url.replace("postgres://", "postgresql://", 1)
 
     # JWT
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.urandom(32).hex())

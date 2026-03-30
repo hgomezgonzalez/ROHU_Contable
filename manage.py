@@ -7,7 +7,8 @@ from app import create_app
 
 
 def _create_app():
-    return create_app("development")
+    import os
+    return create_app(os.getenv("FLASK_ENV", "development"))
 
 
 @click.group(cls=FlaskGroup, create_app=_create_app)
