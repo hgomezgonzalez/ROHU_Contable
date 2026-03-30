@@ -141,7 +141,7 @@
       <button class="btn btn-primary" onclick="window.print()" style="flex:1;">Imprimir</button>
       <button class="btn btn-outline" id="btn-einvoice" onclick="generateEInvoice()" style="flex:1;">Factura Electrónica</button>
       <button class="btn btn-outline" onclick="openReturnModal(lastSaleId)" style="flex:1;">Devolución</button>
-      <button class="btn btn-success" onclick="closeReceipt()" style="flex:1;">Nueva Venta</button>
+      <button class="btn btn-success" id="btn-new-sale" onclick="closeReceipt()" style="flex:1;">Nueva Venta (Enter)</button>
     </div>
   </div>
 </div>
@@ -183,8 +183,15 @@
   <!-- Left: Products -->
   <div class="pos-products">
     <div style="margin-bottom:12px; display:flex; gap:8px;">
-      <input type="text" id="search-input" class="form-control search-input"
-             placeholder="Escanee con pistola lectora, cámara QR o busque por nombre..." autofocus style="flex:1;">
+      <div style="flex:1; position:relative;">
+        <input type="text" id="search-input" class="form-control search-input"
+               placeholder="Escanee código o escriba nombre... (F2)" autofocus style="width:100%;">
+        <div id="search-dropdown" role="listbox" aria-label="Resultados"
+             style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100;
+                    background:white; border:2px solid var(--primary); border-radius:0 0 8px 8px;
+                    box-shadow:0 4px 12px rgba(0,0,0,0.15); max-height:320px; overflow-y:auto;">
+        </div>
+      </div>
       <button class="btn btn-primary" onclick="openQRScanner()" title="Escanear QR con cámara">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
@@ -223,6 +230,20 @@
     </div>
   </div>
 </div>
+
+<!-- Keyboard hints bar -->
+<div id="kb-hints" style="position:fixed; bottom:0; left:var(--sidebar-w); right:0; background:rgba(15,23,42,0.9);
+     color:#94a3b8; font-size:11px; padding:6px 16px; display:flex; gap:16px; align-items:center;
+     z-index:50; backdrop-filter:blur(4px); flex-wrap:wrap;">
+  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">F2</kbd> Buscar</span>
+  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">↑↓</kbd> Navegar</span>
+  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">Enter</kbd> Agregar</span>
+  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">+−</kbd> Cantidad</span>
+  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">F12</kbd> Cobrar</span>
+  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">Esc</kbd> Cancelar</span>
+</div>
+<style>@media(max-width:768px){#kb-hints{left:0;font-size:10px;gap:8px;}}</style>
+
 {% endblock %}
 
 {% block scripts %}
@@ -265,38 +286,127 @@
     if (html5QrCode) { html5QrCode.stop().catch(()=>{}); html5QrCode.clear(); html5QrCode = null; }
   }
 
-  // ── Search ───────────────────────────────────────────────
+  // ── Search (keyboard-first + barcode scanner support) ────
   const searchInput = document.getElementById('search-input');
+  let dropdownIndex = -1;
+  let dropdownProducts = [];
+  let scannerLastKeyTime = 0;
+  let scannerMode = false;
+  const SCANNER_THRESHOLD = 80; // ms between keys for barcode scanner detection
+
   searchInput.addEventListener('input', e => {
     clearTimeout(searchTimeout);
     const q = e.target.value.trim();
-    if (q.length < 2) return;
+    if (q.length < 2) { closeDropdown(); return; }
     searchTimeout = setTimeout(() => searchProducts(q), 200);
   });
+
   searchInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); const q = searchInput.value.trim(); if (q) scanQR(q); }
+    const now = Date.now();
+
+    // Barcode scanner detection (keys arrive < 80ms apart)
+    if (e.key.length === 1) {
+      if (scannerLastKeyTime > 0 && (now - scannerLastKeyTime) < SCANNER_THRESHOLD) scannerMode = true;
+      scannerLastKeyTime = now;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (scannerMode) {
+        // Barcode scanner: direct lookup
+        const code = searchInput.value.trim();
+        scannerMode = false; scannerLastKeyTime = 0;
+        if (code) { scanQR(code); searchInput.value = ''; }
+      } else if (dropdownProducts.length > 0) {
+        // Dropdown visible: add selected item
+        const idx = dropdownIndex >= 0 ? dropdownIndex : 0;
+        if (dropdownProducts[idx]) {
+          addToCart(dropdownProducts[idx]);
+          searchInput.value = '';
+          closeDropdown();
+        }
+      } else {
+        // No dropdown: try scan
+        const q = searchInput.value.trim();
+        if (q) { scanQR(q); searchInput.value = ''; }
+      }
+      searchInput.focus();
+      return;
+    }
+    if (e.key === 'ArrowDown' && dropdownProducts.length > 0) {
+      e.preventDefault();
+      dropdownIndex = (dropdownIndex + 1) % dropdownProducts.length;
+      updateDropdownSelection();
+      return;
+    }
+    if (e.key === 'ArrowUp' && dropdownProducts.length > 0) {
+      e.preventDefault();
+      dropdownIndex = (dropdownIndex - 1 + dropdownProducts.length) % dropdownProducts.length;
+      updateDropdownSelection();
+      return;
+    }
+    if (e.key === 'Escape' && document.getElementById('search-dropdown').style.display !== 'none') {
+      e.preventDefault(); e.stopPropagation();
+      closeDropdown();
+      return;
+    }
   });
+
+  // Close dropdown on click outside
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#search-input') && !e.target.closest('#search-dropdown')) closeDropdown();
+  });
+
+  function renderDropdown(products) {
+    dropdownProducts = products.slice(0, 8);
+    dropdownIndex = 0;
+    const dd = document.getElementById('search-dropdown');
+    dd.innerHTML = dropdownProducts.map((p, i) => `
+      <div class="dd-item" data-idx="${i}" style="padding:10px 14px; cursor:pointer; display:flex;
+           align-items:center; gap:10px; border-bottom:1px solid var(--border); transition:background 0.1s;">
+        <span style="flex:1;font-weight:500;">${p.name}</span>
+        <span style="color:var(--primary);font-weight:600;white-space:nowrap;">${COP(p.sale_price)}</span>
+        <span style="font-size:12px;color:${p.is_low_stock?'var(--danger)':'var(--text-light)'};">${p.stock_current} ${p.unit||'uds'}</span>
+      </div>
+    `).join('');
+    dd.style.display = 'block';
+    updateDropdownSelection();
+    dd.querySelectorAll('.dd-item').forEach(el => {
+      el.addEventListener('click', () => { addToCart(dropdownProducts[parseInt(el.dataset.idx)]); searchInput.value = ''; closeDropdown(); searchInput.focus(); });
+      el.addEventListener('mouseenter', () => { dropdownIndex = parseInt(el.dataset.idx); updateDropdownSelection(); });
+    });
+  }
+
+  function updateDropdownSelection() {
+    document.querySelectorAll('#search-dropdown .dd-item').forEach((el, i) => {
+      el.style.background = i === dropdownIndex ? '#EFF6FF' : '';
+      el.style.borderLeft = i === dropdownIndex ? '3px solid var(--primary)' : '3px solid transparent';
+    });
+  }
+
+  function closeDropdown() {
+    document.getElementById('search-dropdown').style.display = 'none';
+    dropdownIndex = -1; dropdownProducts = [];
+  }
 
   async function searchProducts(query) {
     try {
       const resp = await fetch(`/api/v1/inventory/products?q=${encodeURIComponent(query)}&per_page=20`, {headers, cache: 'no-store'});
       if (resp.status === 401) { window.location.href = '/app/login'; return; }
-      if (!resp.ok) {
-        document.getElementById('product-grid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--danger);padding:20px;">Error cargando productos. Verifique permisos.</div>';
-        return;
-      }
+      if (!resp.ok) return;
       const result = await resp.json();
       const products = result.data || [];
-      renderProducts(products);
-      // Cache products for offline
-      // Product cache handled by rohuRefreshProductCache (full catalog), not per-search
+      if (query.length >= 2 && products.length > 0) {
+        renderDropdown(products);
+      } else {
+        closeDropdown();
+      }
+      renderGrid(products);
     } catch (e) {
-      // Offline fallback
       if (typeof rohuGetCachedProducts === 'function') {
         const cached = await rohuGetCachedProducts(query);
-        if (cached.length > 0) { renderProducts(cached); return; }
+        if (cached.length > 0) { renderDropdown(cached); renderGrid(cached); return; }
       }
-      document.getElementById('product-grid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-light);padding:20px;">Sin conexión — sin productos en caché</div>';
     }
   }
 
@@ -305,20 +415,19 @@
       const resp = await fetch(`/api/v1/inventory/products/scan?qr=${encodeURIComponent(code)}`, {headers});
       if (resp.ok) {
         const result = await resp.json();
-        if (result.success) { addToCart(result.data); searchInput.value = ''; searchInput.focus(); return; }
+        if (result.success) { addToCart(result.data); searchInput.value = ''; closeDropdown(); searchInput.focus(); return; }
       }
       searchProducts(code);
     } catch (e) {
-      // Offline QR lookup
       if (typeof rohuGetProductByQR === 'function') {
         const p = await rohuGetProductByQR(code);
-        if (p) { addToCart(p); searchInput.value = ''; searchInput.focus(); return; }
+        if (p) { addToCart(p); searchInput.value = ''; closeDropdown(); searchInput.focus(); return; }
       }
       searchProducts(code);
     }
   }
 
-  function renderProducts(products) {
+  function renderGrid(products) {
     const grid = document.getElementById('product-grid');
     if (products.length === 0) { grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-light); padding:40px;">No se encontraron productos</div>'; return; }
     grid.innerHTML = products.map(p => `
@@ -392,9 +501,11 @@
     setSaleType('cash');
     onPayMethodChange();
     document.getElementById('payment-modal').style.display = 'flex';
+    // Autofocus on received amount
+    setTimeout(() => document.getElementById('pay-received').focus(), 50);
   }
 
-  function closePaymentModal() { document.getElementById('payment-modal').style.display = 'none'; }
+  function closePaymentModal() { document.getElementById('payment-modal').style.display = 'none'; searchInput.focus(); }
 
   function setSaleType(type) {
     currentSaleType = type;
@@ -613,10 +724,12 @@
         </div>
       </div>`;
     document.getElementById('receipt-modal').style.display = 'flex';
+    setTimeout(() => document.getElementById('btn-new-sale').focus(), 50);
   }
 
   function closeReceipt() {
     document.getElementById('receipt-modal').style.display = 'none';
+    searchInput.value = '';
     searchInput.focus();
   }
 
@@ -657,22 +770,45 @@
     }
   }
 
-  // Keyboard shortcuts
+  // ── Keyboard shortcuts (keyboard-first POS) ─────────────
+  // Payment modal: Enter confirms, Alt+letter changes method
+  document.getElementById('payment-modal').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !document.getElementById('btn-confirm-sale').disabled) {
+      // Don't trigger if focus is on a button that has its own click
+      if (document.activeElement.tagName !== 'BUTTON') { e.preventDefault(); confirmSale(); }
+    }
+    if (e.altKey) {
+      const map = {e:'cash', n:'nequi', d:'daviplata', t:'transfer', c:'card'};
+      const method = map[e.key.toLowerCase()];
+      if (method) {
+        e.preventDefault();
+        document.getElementById('pay-method').value = method;
+        onPayMethodChange();
+        if (method === 'cash') setTimeout(() => document.getElementById('pay-received').focus(), 20);
+      }
+    }
+  });
+
+  // Receipt modal: Enter/Escape = new sale, P = print
+  document.getElementById('receipt-modal').addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); closeReceipt(); }
+    if (e.key.toLowerCase() === 'p') { e.preventDefault(); window.print(); }
+  });
+
+  // Global shortcuts
   document.addEventListener('keydown', e => {
+    const inInput = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
     // F2 or / = focus search
-    if ((e.key === '/' || e.key === 'F2') && document.activeElement !== searchInput) { e.preventDefault(); searchInput.focus(); }
+    if ((e.key === 'F2' || (e.key === '/' && !inInput)) && document.activeElement !== searchInput) { e.preventDefault(); searchInput.focus(); }
     // F12 = open payment modal (COBRAR)
     if (e.key === 'F12') { e.preventDefault(); openPaymentModal(); }
-    // Escape = close modals
-    if (e.key === 'Escape') { closePaymentModal(); closeReceipt(); stopQRScanner(); }
-    // Num+ = increment last item qty
-    if (e.key === '+' && cart.length > 0 && document.activeElement !== searchInput) {
-      e.preventDefault(); cart[cart.length-1].quantity++; renderCart();
+    // Escape = close modals (if dropdown not open)
+    if (e.key === 'Escape' && document.getElementById('search-dropdown').style.display === 'none') {
+      closePaymentModal(); closeReceipt(); stopQRScanner();
     }
-    // Num- = decrement last item qty
-    if (e.key === '-' && cart.length > 0 && document.activeElement !== searchInput) {
-      e.preventDefault(); updateQty(cart.length-1, -1);
-    }
+    // +/- = adjust qty of last cart item
+    if (e.key === '+' && cart.length > 0 && !inInput) { e.preventDefault(); cart[cart.length-1].quantity++; renderCart(); }
+    if (e.key === '-' && cart.length > 0 && !inInput) { e.preventDefault(); updateQty(cart.length-1, -1); }
   });
 
   searchProducts('');
