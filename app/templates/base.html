@@ -108,10 +108,13 @@
       </div>
     </nav>
 
+    <!-- Overlay for mobile sidebar -->
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
     <!-- Main -->
     <div class="main-content">
       <header class="header">
-        <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <button class="menu-toggle" id="menu-toggle-btn">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         <h2 class="header-title">{% block header_title %}ROHU Contable{% endblock %}</h2>
@@ -181,12 +184,21 @@
       }
     } catch(e) {}
 
-    // Close sidebar on mobile when clicking outside (but not inside modals)
-    document.querySelector('.main-content').addEventListener('click', (e) => {
-      if (!e.target.closest('[style*="position:fixed"], [style*="position: fixed"]')) {
-        document.getElementById('sidebar').classList.remove('open');
-      }
-    });
+    // Mobile sidebar toggle with overlay
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      const isOpen = sidebar.classList.toggle('open');
+      overlay.classList.toggle('active', isOpen);
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('active');
+    }
+    document.getElementById('menu-toggle-btn').addEventListener('click', toggleSidebar);
+    document.getElementById('sidebar-overlay').addEventListener('click', closeSidebar);
+    // Close sidebar when clicking any nav link (mobile)
+    document.querySelectorAll('.nav-item').forEach(el => el.addEventListener('click', closeSidebar));
 
     // Load app version in sidebar
     fetch('/health').then(r=>r.json()).then(d => {
