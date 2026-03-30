@@ -376,25 +376,32 @@
       grid.appendChild(btn);
     }
 
-    // Load actual statuses async
-    for (let m = 1; m <= Math.min(12, currentMonth); m++) {
-      loadPeriodStatus(year, m);
-    }
-    document.getElementById('period-detail').style.display = 'none';
-  }
-
-  async function loadPeriodStatus(year, month) {
+    // Load actual statuses from API
     try {
-      const resp = await fetch(`/api/v1/accounting/trial-balance?year=${year}&month=${month}`, {headers});
+      const resp = await fetch(`/api/v1/accounting/periods/${year}`, {headers});
       const r = await resp.json();
-      const el = document.querySelector(`.period-status-${month}`);
-      if (!el) return;
-      // Check if period is closed
-      const periodResp = await fetch(`/api/v1/accounting/periods/${year}/${month}/close`, {method:'GET', headers}).catch(() => null);
-      // We'll just show open for now since we don't have a period status endpoint
-      el.textContent = 'Abierto';
-      el.style.color = 'var(--success)';
+      if (r.success) {
+        const periodData = r.data; // {1: {status: "open"}, 2: {status: "closed"}, ...}
+        for (let m = 1; m <= 12; m++) {
+          const el = document.querySelector(`.period-status-${m}`);
+          if (!el) continue;
+          const p = periodData[m];
+          if (p && p.status === 'closed') {
+            el.textContent = 'Cerrado';
+            el.style.color = 'var(--danger)';
+            el.parentElement.style.background = '#FEF2F2';
+            el.parentElement.style.borderColor = 'var(--danger)';
+          } else if (p && p.status === 'locked') {
+            el.textContent = 'Bloqueado';
+            el.style.color = 'var(--warning)';
+          } else if (!el.textContent.includes('Futuro')) {
+            el.textContent = 'Abierto';
+            el.style.color = 'var(--success)';
+          }
+        }
+      }
     } catch(e) {}
+    document.getElementById('period-detail').style.display = 'none';
   }
 
   async function selectPeriodMonth(month) {
@@ -403,6 +410,13 @@
     const detail = document.getElementById('period-detail');
     detail.style.display = 'block';
     document.getElementById('period-detail-title').textContent = `${MONTHS[month]} ${year}`;
+
+    // Show status badge
+    const statusEl = document.querySelector(`.period-status-${month}`);
+    const isClosed = statusEl && statusEl.textContent.trim() === 'Cerrado';
+    const badge = document.getElementById('period-detail-badge');
+    badge.textContent = isClosed ? 'CERRADO' : 'ABIERTO';
+    badge.className = isClosed ? 'badge badge-danger' : 'badge badge-success';
 
     // Load trial balance for this month
     try {

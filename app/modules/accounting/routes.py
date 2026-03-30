@@ -114,6 +114,20 @@ def trial_balance():
     return jsonify(success=True, data=balance)
 
 
+@accounting_bp.route("/periods/<int:year>", methods=["GET"])
+@require_permission("journal_entries", "read")
+def list_periods(year):
+    """List all periods for a year with their status."""
+    from app.modules.accounting.models import AccountingPeriod
+    periods = AccountingPeriod.query.filter_by(
+        tenant_id=g.tenant_id, year=year
+    ).order_by(AccountingPeriod.month).all()
+    result = {}
+    for p in periods:
+        result[p.month] = {"status": p.status, "closed_at": p.closed_at.isoformat() if p.closed_at else None}
+    return jsonify(success=True, data=result)
+
+
 @accounting_bp.route("/periods/<int:year>/<int:month>/close", methods=["POST"])
 @require_permission("journal_entries", "close")
 def close_period(year, month):
