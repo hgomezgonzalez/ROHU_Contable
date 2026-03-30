@@ -442,10 +442,16 @@
       ? `¿Realizar cierre anual de <strong>${year}</strong>?<br><br>Se generará el asiento contable que traslada ingresos y gastos al patrimonio (cuenta 3610). No se podrán crear movimientos en diciembre ${year}.`
       : `¿Cerrar <strong>${MONTHS[month]} ${year}</strong>?<br><br>Los movimientos del mes quedan en firme. No podrá crear ni editar movimientos en este mes. <em>No se genera asiento contable (solo control interno).</em>`;
 
-    document.getElementById('period-actions').innerHTML = `
-      <button class="btn btn-primary" onclick="closePeriodConfirm(${month}, ${isDec})">${isDec ? 'Realizar Cierre Anual' : 'Cerrar este mes'}</button>
-      <button class="btn btn-outline" onclick="openReopenModal(${month})">Reabrir</button>
-    `;
+    if (isClosed) {
+      document.getElementById('period-actions').innerHTML = `
+        <div class="alert alert-warning" style="margin:0;flex:1;">Este periodo está cerrado. No se pueden registrar movimientos.</div>
+        <button class="btn btn-outline" onclick="openReopenModal(${month})">Reabrir Periodo</button>
+      `;
+    } else {
+      document.getElementById('period-actions').innerHTML = `
+        <button class="btn btn-primary" onclick="closePeriodConfirm(${month}, ${isDec})">${isDec ? 'Realizar Cierre Anual' : 'Cerrar este mes'}</button>
+      `;
+    }
     document.getElementById('period-result').innerHTML = '';
   }
 
@@ -470,7 +476,8 @@
             ${d.is_annual_close ? '<br><em>Asiento de cierre anual generado.</em>' : ''}
           </div>`;
         rohuAlert(d.message || 'Periodo cerrado', 'success');
-        renderPeriodGrid();
+        await renderPeriodGrid();
+        selectPeriodMonth(month);
       } else {
         document.getElementById('period-result').innerHTML = `<div class="alert alert-danger">${r.error?.message || 'Error'}</div>`;
       }
@@ -498,7 +505,8 @@
       if (r.success) {
         document.getElementById('period-result').innerHTML = '<div class="alert" style="background:#DBEAFE; border:1px solid var(--info);">Periodo reabierto. Motivo registrado para auditoría.</div>';
         rohuAlert('Periodo reabierto', 'success');
-        renderPeriodGrid();
+        await renderPeriodGrid();
+        selectPeriodMonth(month);
       } else {
         document.getElementById('period-result').innerHTML = `<div class="alert alert-danger">${r.error?.message || 'Error'}</div>`;
       }
