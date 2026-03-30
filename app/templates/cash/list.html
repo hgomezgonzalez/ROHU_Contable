@@ -76,7 +76,7 @@
       <div class="form-group"><label>Concepto *</label><input type="text" id="rc-concept" class="form-control" required placeholder="Ej: Abono factura #123"></div>
       <div class="form-group"><label>Nombre / Origen</label><input type="text" id="rc-source" class="form-control" placeholder="Nombre del cliente, socio, etc."></div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-        <div class="form-group"><label>Monto *</label><input type="number" id="rc-amount" class="form-control" step="100" min="1" required></div>
+        <div class="form-group"><label>Monto *</label><input type="number" id="rc-amount" class="form-control" step="0.01" min="1" required></div>
         <div class="form-group"><label>Método</label>
           <select id="rc-method" class="form-control">
             <option value="cash">Efectivo</option><option value="transfer">Transferencia</option>
@@ -121,7 +121,7 @@
       <div class="form-group"><label>Concepto *</label><input type="text" id="ce-concept" class="form-control" required placeholder="Ej: Pago arriendo local"></div>
       <div class="form-group"><label>Beneficiario</label><input type="text" id="ce-dest" class="form-control" placeholder="Nombre del beneficiario"></div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-        <div class="form-group"><label>Monto *</label><input type="number" id="ce-amount" class="form-control" step="100" min="1" required></div>
+        <div class="form-group"><label>Monto *</label><input type="number" id="ce-amount" class="form-control" step="0.01" min="1" required></div>
         <div class="form-group"><label>Método</label>
           <select id="ce-method" class="form-control">
             <option value="cash">Efectivo</option><option value="transfer">Transferencia</option>
@@ -157,7 +157,7 @@
           </select>
         </div>
       </div>
-      <div class="form-group"><label>Monto *</label><input type="number" id="tr-amount" class="form-control" step="100" min="1" required></div>
+      <div class="form-group"><label>Monto *</label><input type="number" id="tr-amount" class="form-control" step="0.01" min="1" required></div>
       <div class="form-group"><label>Referencia</label><input type="text" id="tr-ref" class="form-control" placeholder="# consignación, etc."></div>
       <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
         <button type="button" class="btn btn-outline" onclick="closeM('tr-modal')">Cancelar</button>
