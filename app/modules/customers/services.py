@@ -665,6 +665,71 @@ def _cp_to_dict(p: CustomerPayment) -> dict:
     }
 
 
+def build_collection_letter_data(tenant_id: str, customer_id: str) -> dict:
+    """Build all data needed for a formal collection letter."""
+    from app.modules.auth_rbac.models import Tenant
+
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        raise ValueError("Tenant no encontrado")
+
+    customer = Customer.query.filter_by(id=customer_id, tenant_id=tenant_id).first()
+    if not customer:
+        raise ValueError("Cliente no encontrado")
+
+    # Get overdue credit sales
+    overdue_sales = Sale.query.filter(
+        Sale.tenant_id == tenant_id,
+        Sale.customer_id == customer_id,
+        Sale.sale_type == "credit",
+        Sale.status == "completed",
+        Sale.payment_status.in_(["pending", "partial", "overdue"]),
+    ).order_by(Sale.due_date).all()
+
+    now = datetime.now(timezone.utc)
+    invoices = []
+    total_due = Decimal("0")
+    max_days = 0
+    for s in overdue_sales:
+        due = float(s.amount_due or s.total_amount)
+        if due <= 0:
+            continue
+        days = (now - (s.due_date or s.sale_date)).days if (s.due_date or s.sale_date) else 0
+        if days < 0:
+            days = 0
+        if days > max_days:
+            max_days = days
+        invoices.append({
+            "number": s.invoice_number,
+            "due_date": (s.due_date or s.sale_date).strftime("%d/%m/%Y") if (s.due_date or s.sale_date) else "—",
+            "original_amount": float(s.total_amount),
+            "balance_due": due,
+        })
+        total_due += Decimal(str(due))
+
+    seq = CollectionCampaign.query.filter_by(tenant_id=tenant_id).count() + 1
+
+    return {
+        "letter_ref": f"COBRO-{now.year}-{seq:06d}",
+        "business_name": tenant.trade_name or tenant.name,
+        "business_nit": tenant.tax_id or "—",
+        "business_address": tenant.address or "",
+        "business_city": tenant.city or "",
+        "business_phone": tenant.phone or "",
+        "business_email": tenant.email or "",
+        "customer_name": customer.name,
+        "customer_tax_id": customer.tax_id or "—",
+        "customer_tax_id_type": customer.tax_id_type or "CC",
+        "customer_city": customer.city or "",
+        "invoices": invoices,
+        "total_due": float(total_due),
+        "days_overdue": max_days,
+        "suggested_due_date": (now + timedelta(days=15)).strftime("%Y-%m-%d"),
+        "generated_at": now.strftime("%d/%m/%Y %H:%M"),
+        "generated_at_long": now.strftime("%d de %B de %Y").replace("January", "enero").replace("February", "febrero").replace("March", "marzo").replace("April", "abril").replace("May", "mayo").replace("June", "junio").replace("July", "julio").replace("August", "agosto").replace("September", "septiembre").replace("October", "octubre").replace("November", "noviembre").replace("December", "diciembre"),
+    }
+
+
 def _customer_to_dict(c: Customer) -> dict:
     return {
         "id": str(c.id),

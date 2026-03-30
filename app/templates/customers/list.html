@@ -78,8 +78,16 @@
       <td>${c.email || '-'}</td>
       <td>${c.city || '-'}</td>
       <td>${COP(c.credit_limit)}</td>
-      <td><button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="openEdit('${c.id}')">Editar</button></td>
+      <td>
+        <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="openEdit('${c.id}')">Editar</button>
+        <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;color:var(--danger);border-color:var(--danger);" onclick="openCollectionLetter('${c.id}')" title="Generar carta de cobro">Carta Cobro</button>
+      </td>
     </tr>`).join('');
+  }
+
+  function openCollectionLetter(customerId) {
+    const token = localStorage.getItem('access_token');
+    window.open(`/app/cobro/carta/${customerId}?token=${token}`, '_blank');
   }
 
   function openCreate() {

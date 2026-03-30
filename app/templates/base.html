@@ -131,6 +131,50 @@
   </div>
 
   <script>
+    // ── Auto-refresh JWT token ──────────────────────────────────
+    // Wraps native fetch: if 401, refresh token and retry once
+    const _origFetch = window.fetch.bind(window);
+    let _refreshing = null;
+
+    async function _refreshToken() {
+      const rt = localStorage.getItem('refresh_token');
+      if (!rt) throw new Error('No refresh token');
+      const resp = await _origFetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: {'Authorization': 'Bearer ' + rt, 'Content-Type': 'application/json'},
+      });
+      if (!resp.ok) throw new Error('Refresh failed');
+      const data = await resp.json();
+      if (data.success && data.data.access_token) {
+        localStorage.setItem('access_token', data.data.access_token);
+        return data.data.access_token;
+      }
+      throw new Error('Invalid refresh response');
+    }
+
+    window.fetch = async function(url, opts = {}) {
+      const resp = await _origFetch(url, opts);
+      // Only intercept API calls with auth that get 401
+      if (resp.status !== 401 || !opts.headers?.Authorization) return resp;
+      // Don't retry refresh/login endpoints
+      if (typeof url === 'string' && (url.includes('/auth/refresh') || url.includes('/auth/login'))) {
+        return resp;
+      }
+      try {
+        // Deduplicate concurrent refreshes
+        if (!_refreshing) _refreshing = _refreshToken().finally(() => { _refreshing = null; });
+        const newToken = await _refreshing;
+        // Retry original request with new token
+        const newOpts = {...opts, headers: {...opts.headers, 'Authorization': 'Bearer ' + newToken}};
+        return _origFetch(url, newOpts);
+      } catch(e) {
+        // Refresh failed — clear and redirect to login
+        localStorage.clear();
+        window.location.href = '/app/login';
+        return resp;
+      }
+    };
+
     // Online/Offline detection
     function updateStatus() {
       const el = document.getElementById('connection-status');

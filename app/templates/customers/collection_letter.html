@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carta de Cobro — {{ letter.customer_name }}</title>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { margin: 0; padding: 15mm; font-size: 11pt; background: white; }
+      .letter-container { box-shadow: none; border: none; max-width: 100%; padding: 0; }
+      @page { margin: 15mm; size: letter; }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Arial', sans-serif; background: #f0f2f5; color: #1a1a1a; line-height: 1.6; }
+    .print-controls {
+      background: #1E3A8A; color: white; padding: 12px 24px;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+    }
+    .print-controls button {
+      border: none; padding: 8px 20px; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 600;
+    }
+    .btn-print { background: #22C55E; color: white; }
+    .btn-close { background: rgba(255,255,255,0.2); color: white; }
+    .letter-container {
+      max-width: 720px; margin: 24px auto; background: white;
+      padding: 48px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); border-radius: 4px;
+    }
+    .business-header { border-bottom: 3px solid #1E3A8A; padding-bottom: 16px; margin-bottom: 24px; }
+    .business-name { font-size: 22px; font-weight: bold; color: #1E3A8A; }
+    .business-sub { font-size: 12px; color: #555; margin-top: 4px; }
+    .ref-date { display: flex; justify-content: space-between; margin: 16px 0; font-size: 13px; }
+    .addressee { margin: 20px 0; font-size: 13px; line-height: 1.8; }
+    .subject { font-weight: bold; font-size: 14px; margin: 16px 0; text-decoration: underline; }
+    .body-text { font-size: 13px; line-height: 1.8; margin: 12px 0; }
+    .invoice-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+    .invoice-table th { background: #1E3A8A; color: white; padding: 8px 10px; text-align: left; }
+    .invoice-table td { padding: 7px 10px; border-bottom: 1px solid #e5e7eb; }
+    .invoice-table tr.total { font-weight: bold; background: #f0f4ff; }
+    .mora-badge { color: #DC2626; font-weight: bold; font-size: 14px; margin: 8px 0; }
+    .signature-block { margin-top: 60px; }
+    .signature-line { border-top: 1px solid #333; width: 250px; padding-top: 8px; font-size: 13px; margin-top: 4px; }
+    .footer-note { font-size: 9px; color: #aaa; margin-top: 40px; border-top: 1px solid #eee; padding-top: 12px; }
+    .cop { white-space: nowrap; }
+    @media (max-width: 600px) {
+      .letter-container { padding: 20px; margin: 12px; }
+      .ref-date { flex-direction: column; gap: 4px; }
+      .print-controls { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Controls — not printed -->
+<div class="print-controls no-print">
+  <span style="font-size:14px;">Carta de Cobro — {{ letter.customer_name }}</span>
+  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+    <label style="font-size:13px;">
+      Plazo hasta:
+      <input type="date" id="due-date-input" value="{{ letter.suggested_due_date }}"
+             style="margin-left:4px; padding:4px 8px; border-radius:4px; border:1px solid rgba(255,255,255,0.3); background:rgba(255,255,255,0.1); color:white;">
+    </label>
+    <button class="btn-print" onclick="window.print()">Imprimir / Guardar PDF</button>
+    <button class="btn-close" onclick="window.close()">Cerrar</button>
+  </div>
+</div>
+
+<!-- Letter body -->
+<div class="letter-container">
+
+  <!-- Header -->
+  <div class="business-header">
+    <div class="business-name">{{ letter.business_name }}</div>
+    <div class="business-sub">
+      NIT: {{ letter.business_nit }}
+      {% if letter.business_address %} &nbsp;|&nbsp; {{ letter.business_address }}, {{ letter.business_city }}{% endif %}
+      {% if letter.business_phone %} &nbsp;|&nbsp; Tel: {{ letter.business_phone }}{% endif %}
+      {% if letter.business_email %} &nbsp;|&nbsp; {{ letter.business_email }}{% endif %}
+    </div>
+  </div>
+
+  <!-- Ref and date -->
+  <div class="ref-date">
+    <span><strong>Ref:</strong> {{ letter.letter_ref }}</span>
+    <span>{{ letter.business_city or 'Colombia' }}, {{ letter.generated_at_long }}</span>
+  </div>
+
+  <!-- Addressee -->
+  <div class="addressee">
+    <strong>Señor(a) / Empresa:</strong> {{ letter.customer_name }}<br>
+    <strong>{{ letter.customer_tax_id_type }}:</strong> {{ letter.customer_tax_id }}<br>
+    {% if letter.customer_city %}<strong>Ciudad:</strong> {{ letter.customer_city }}{% endif %}
+  </div>
+
+  <div class="subject">Asunto: Cobro extrajudicial de obligación pendiente</div>
+
+  <!-- Body -->
+  <div class="body-text">
+    <p>Estimado(a) <strong>{{ letter.customer_name }}</strong>,</p>
+    <p>Por medio de la presente, nos permitimos informarle respetuosamente que a la fecha
+    registra obligaciones pendientes de pago con <strong>{{ letter.business_name }}</strong>
+    por el siguiente concepto:</p>
+  </div>
+
+  <!-- Invoice table -->
+  {% if letter.invoices %}
+  <table class="invoice-table">
+    <thead>
+      <tr><th>No. Factura</th><th>Fecha vencimiento</th><th>Valor original</th><th>Saldo adeudado</th></tr>
+    </thead>
+    <tbody>
+      {% for inv in letter.invoices %}
+      <tr>
+        <td>{{ inv.number }}</td>
+        <td>{{ inv.due_date }}</td>
+        <td class="cop">${{ "{:,.0f}".format(inv.original_amount) }}</td>
+        <td class="cop">${{ "{:,.0f}".format(inv.balance_due) }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="total">
+        <td colspan="3">TOTAL ADEUDADO</td>
+        <td class="cop">${{ "{:,.0f}".format(letter.total_due) }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% else %}
+  <div class="body-text"><p><strong>Saldo pendiente: ${{ "{:,.0f}".format(letter.total_due) }}</strong></p></div>
+  {% endif %}
+
+  <p class="mora-badge">Días de mora: {{ letter.days_overdue }} días</p>
+
+  <div class="body-text">
+    <p>Le solicitamos cordialmente realizar el pago de la totalidad de la obligación
+    a más tardar el día <strong id="display-due-date">{{ letter.suggested_due_date }}</strong>.</p>
+
+    <p>Para realizar su pago o acordar un plan de pago, puede comunicarse con nosotros
+    al teléfono <strong>{{ letter.business_phone }}</strong>
+    {% if letter.business_email %} o al correo electrónico <strong>{{ letter.business_email }}</strong>{% endif %}.</p>
+
+    <p>De no recibir su pago ni respuesta en el plazo indicado, nos veremos en la
+    obligación de adelantar las acciones pertinentes para el cobro de la obligación.</p>
+
+    <p>Agradecemos su atención y quedamos a su disposición para cualquier aclaración.</p>
+  </div>
+
+  <!-- Signature -->
+  <div class="signature-block">
+    <p>Atentamente,</p>
+    <br><br>
+    <div class="signature-line">
+      <strong>{{ letter.business_name }}</strong><br>
+      Propietario / Administrador
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer-note">
+    Documento generado por ROHU Contable el {{ letter.generated_at }}.
+    Referencia: {{ letter.letter_ref }}.
+    Este documento no constituye título valor ni documento negociable. Su contenido es de carácter informativo y pre-jurídico.
+  </div>
+
+</div>
+
+<script>
+  document.getElementById('due-date-input').addEventListener('change', function() {
+    const d = new Date(this.value + 'T12:00:00');
+    const options = { year: 'numeric', month: 'long', day: 'numeric' };
+    document.getElementById('display-due-date').textContent = d.toLocaleDateString('es-CO', options);
+  });
+  // Format initial date
+  try {
+    const d = new Date(document.getElementById('due-date-input').value + 'T12:00:00');
+    document.getElementById('display-due-date').textContent = d.toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
+  } catch(e) {}
+</script>
+
+</body>
+</html>

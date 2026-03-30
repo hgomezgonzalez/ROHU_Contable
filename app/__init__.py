@@ -90,28 +90,6 @@ def create_app(config_name: str = "development") -> Flask:
     def handle_405(e):
         return {"success": False, "error": {"code": "METHOD_NOT_ALLOWED", "message": "Método no permitido"}}, 405
 
-    # Debug endpoint — remove after fixing JWT issue
-    @app.route("/debug/jwt-test", methods=["POST"])
-    def debug_jwt_test():
-        """Test JWT creation and verification in same request."""
-        from flask_jwt_extended import create_access_token, decode_token
-        try:
-            import json
-            identity = json.dumps({"user_id": "test", "tenant_id": "test"})
-            token = create_access_token(identity=identity)
-            decoded = decode_token(token)
-            return {
-                "success": True,
-                "token_created": True,
-                "decoded_sub": decoded.get("sub"),
-                "jwt_secret_key_set": bool(app.config.get("JWT_SECRET_KEY")),
-                "jwt_secret_key_len": len(str(app.config.get("JWT_SECRET_KEY", ""))),
-                "config_name": app.config.get("ENV", "unknown"),
-                "debug": app.debug,
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}, 500
-
     @app.route("/health")
     def health():
         return {"status": "ok", "service": "rohu-contable", "version": APP_VERSION, "deployed_at": DEPLOY_TIME}

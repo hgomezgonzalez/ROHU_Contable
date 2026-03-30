@@ -726,7 +726,7 @@ def _po_summary_to_dict(po: PurchaseOrder) -> dict:
 
 def _po_item_to_dict(i: PurchaseOrderItem) -> dict:
     return {
-        "id": str(i.id), "product_name": i.product_name,
+        "id": str(i.id), "product_id": str(i.product_id), "product_name": i.product_name,
         "quantity_ordered": float(i.quantity_ordered),
         "quantity_received": float(i.quantity_received),
         "unit_cost": float(i.unit_cost), "tax_rate": float(i.tax_rate),
