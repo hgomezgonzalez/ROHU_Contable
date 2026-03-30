@@ -17,9 +17,18 @@
   <script src="{{ url_for('static', filename='js/rohu-modal.js') }}"></script>
   <script src="{{ url_for('static', filename='js/rohu-offline.js') }}"></script>
   <script src="{{ url_for('static', filename='js/rohu-help.js') }}" defer></script>
+  <style>
+    #rohu-progress-bar{position:fixed;top:0;left:0;right:0;height:3px;z-index:9999;display:none;overflow:hidden;background:rgba(30,58,138,0.15);}
+    #rohu-progress-bar::after{content:'';position:absolute;top:0;left:0;width:40%;height:100%;background:linear-gradient(90deg,var(--primary),var(--secondary));animation:rohu-progress 1.2s ease-in-out infinite;}
+    @keyframes rohu-progress{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}
+    .btn-loading{pointer-events:none!important;opacity:0.7!important;position:relative;}
+    .btn-loading::after{content:'';display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite;margin-left:6px;vertical-align:middle;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
   {% block head %}{% endblock %}
 </head>
 <body data-active-page="{{ active_page|default('dashboard') }}">
+  <div id="rohu-progress-bar"></div>
   <div class="app-layout">
     <!-- Sidebar -->
     <nav class="sidebar" id="sidebar">
@@ -181,6 +190,42 @@
         return resp;
       }
     };
+
+    // ── Loading feedback (progress bar + button disable) ────
+    (() => {
+      let _activeReqs = 0;
+      let _activeBtn = null;
+      const _bar = document.getElementById('rohu-progress-bar');
+      const _jwtFetch = window.fetch.bind(window);
+
+      // Capture the button that triggered the click (before fetch fires)
+      document.addEventListener('click', e => {
+        const btn = e.target.closest('button, [type="submit"], .btn');
+        if (btn) _activeBtn = btn;
+      }, true);
+
+      window.fetch = async function(url, opts = {}) {
+        const method = (opts.method || 'GET').toUpperCase();
+        const isMutation = ['POST','PUT','DELETE','PATCH'].includes(method);
+        const isInternal = typeof url === 'string' && (url.includes('/auth/refresh') || url.includes('/auth/login') || url.includes('/health'));
+
+        if (!isMutation || isInternal) return _jwtFetch(url, opts);
+
+        _activeReqs++;
+        if (_activeReqs === 1) _bar.style.display = 'block';
+        const btn = _activeBtn;
+        if (btn && !btn.classList.contains('btn-loading')) btn.classList.add('btn-loading');
+
+        try {
+          return await _jwtFetch(url, opts);
+        } finally {
+          _activeReqs = Math.max(0, _activeReqs - 1);
+          if (_activeReqs === 0) _bar.style.display = 'none';
+          if (btn) btn.classList.remove('btn-loading');
+          _activeBtn = null;
+        }
+      };
+    })();
 
     // Online/Offline detection
     function updateStatus() {
