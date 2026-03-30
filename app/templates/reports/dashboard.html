@@ -10,9 +10,32 @@
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Hoy</h1>
+  <h1 class="page-title">Tablero de Control</h1>
   <span class="badge badge-info" id="dashboard-date"></span>
 </div>
+
+<!-- Date Filter Bar -->
+<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:20px;">
+  <div id="preset-chips" style="display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px;">
+    <button class="btn btn-outline date-preset active" data-preset="today" style="padding:6px 14px; font-size:13px; white-space:nowrap; border-radius:20px;">Hoy</button>
+    <button class="btn btn-outline date-preset" data-preset="yesterday" style="padding:6px 14px; font-size:13px; white-space:nowrap; border-radius:20px;">Ayer</button>
+    <button class="btn btn-outline date-preset" data-preset="week" style="padding:6px 14px; font-size:13px; white-space:nowrap; border-radius:20px;">Esta semana</button>
+    <button class="btn btn-outline date-preset" data-preset="month" style="padding:6px 14px; font-size:13px; white-space:nowrap; border-radius:20px;">Este mes</button>
+    <button class="btn btn-outline date-preset" data-preset="last_month" style="padding:6px 14px; font-size:13px; white-space:nowrap; border-radius:20px;">Mes anterior</button>
+    <button class="btn btn-outline date-preset" data-preset="custom" style="padding:6px 14px; font-size:13px; white-space:nowrap; border-radius:20px;">Personalizado</button>
+  </div>
+  <div id="custom-range" style="display:none; flex-wrap:wrap; gap:8px; align-items:center;">
+    <label style="font-size:12px; color:var(--text-light);">Desde</label>
+    <input type="datetime-local" id="filter-from" class="form-control" style="width:auto; padding:6px 10px; font-size:13px;">
+    <label style="font-size:12px; color:var(--text-light);">Hasta</label>
+    <input type="datetime-local" id="filter-to" class="form-control" style="width:auto; padding:6px 10px; font-size:13px;">
+    <button class="btn btn-primary" onclick="applyCustomRange()" style="padding:6px 16px; font-size:13px;">Aplicar</button>
+  </div>
+</div>
+
+<style>
+  .date-preset.active { background: var(--primary) !important; color: white !important; border-color: var(--primary) !important; }
+</style>
 
 <!-- KPI Cards — Ventas + Utilidad -->
 <div class="kpi-grid" id="kpi-grid">
@@ -92,15 +115,88 @@
   const PAY_NAMES = {cash:'Efectivo', card:'Tarjeta', transfer:'Transferencia', nequi:'Nequi', daviplata:'Daviplata'};
 
   let chartHour, chartPayments, chartProducts;
+  let currentDateFrom = null, currentDateTo = null;
+
+  // Date preset logic
+  function getPresetRange(preset) {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+    const pad = (n) => String(n).padStart(2, '0');
+    const fmt = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+
+    switch(preset) {
+      case 'today': return [new Date(y,m,d,0,0), new Date(y,m,d,23,59,59)];
+      case 'yesterday': return [new Date(y,m,d-1,0,0), new Date(y,m,d-1,23,59,59)];
+      case 'week': { const dow = now.getDay() || 7; return [new Date(y,m,d-dow+1,0,0), new Date(y,m,d,23,59,59)]; }
+      case 'month': return [new Date(y,m,1,0,0), new Date(y,m,d,23,59,59)];
+      case 'last_month': return [new Date(y,m-1,1,0,0), new Date(y,m,0,23,59,59)];
+      default: return [new Date(y,m,d,0,0), new Date(y,m,d,23,59,59)];
+    }
+  }
+
+  function toLocalISO(dt) {
+    const off = dt.getTimezoneOffset();
+    const local = new Date(dt.getTime() - off * 60000);
+    return local.toISOString().slice(0, 19);
+  }
+
+  function setPreset(preset) {
+    document.querySelectorAll('.date-preset').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.date-preset[data-preset="${preset}"]`).classList.add('active');
+    const customEl = document.getElementById('custom-range');
+    if (preset === 'custom') {
+      customEl.style.display = 'flex';
+      return;
+    }
+    customEl.style.display = 'none';
+    const [from, to] = getPresetRange(preset);
+    currentDateFrom = toLocalISO(from);
+    currentDateTo = toLocalISO(to);
+    loadDashboard();
+  }
+
+  function applyCustomRange() {
+    const from = document.getElementById('filter-from').value;
+    const to = document.getElementById('filter-to').value;
+    if (!from || !to) return;
+    currentDateFrom = from;
+    currentDateTo = to;
+    loadDashboard();
+  }
+
+  // Init presets click handlers
+  document.querySelectorAll('.date-preset').forEach(btn => {
+    btn.addEventListener('click', () => setPreset(btn.dataset.preset));
+  });
+
+  // Set default custom inputs to today
+  (() => {
+    const now = new Date();
+    const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0'), d = String(now.getDate()).padStart(2,'0');
+    document.getElementById('filter-from').value = `${y}-${m}-${d}T00:00`;
+    document.getElementById('filter-to').value = `${y}-${m}-${d}T23:59`;
+    // Set initial range to today
+    setPreset('today');
+  })();
 
   async function loadDashboard() {
     try {
-      const resp = await fetch('/api/v1/reports/dashboard', {headers});
+      let url = '/api/v1/reports/dashboard';
+      if (currentDateFrom && currentDateTo) {
+        url += `?date_from=${encodeURIComponent(currentDateFrom)}&date_to=${encodeURIComponent(currentDateTo)}`;
+      }
+      const resp = await fetch(url, {headers});
       if (resp.status === 401) { window.location.href = '/app/login'; return; }
       const {data} = await resp.json();
 
-      // KPIs
-      document.getElementById('dashboard-date').textContent = data.date;
+      // KPIs — show date range
+      const dfrom = new Date(data.date_from), dto = new Date(data.date_to);
+      const fmtD = dt => dt.toLocaleDateString('es-CO', {day:'2-digit', month:'short'});
+      const fmtT = dt => dt.toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit'});
+      const dateLabel = dfrom.toDateString() === dto.toDateString()
+        ? `${fmtD(dfrom)} ${fmtT(dfrom)} — ${fmtT(dto)}`
+        : `${fmtD(dfrom)} — ${fmtD(dto)}`;
+      document.getElementById('dashboard-date').textContent = dateLabel;
       document.getElementById('kpi-count').textContent = data.sales.count;
       document.getElementById('kpi-subtotal').textContent = COP(data.sales.subtotal || 0);
       document.getElementById('kpi-cost').textContent = COP(data.sales.cost || 0);
@@ -177,7 +273,5 @@
 
     } catch (err) { console.error('Dashboard error:', err); }
   }
-
-  loadDashboard();
 </script>
 {% endblock %}

@@ -11,7 +11,9 @@ from app.modules.reports import services as rpt
 @require_permission("reports", "read")
 def dashboard():
     date = request.args.get("date")
-    data = rpt.get_dashboard(g.tenant_id, date)
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    data = rpt.get_dashboard(g.tenant_id, date=date, date_from=date_from, date_to=date_to)
     return jsonify(success=True, data=data)
 
 

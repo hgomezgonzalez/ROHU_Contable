@@ -27,10 +27,56 @@ from app.modules.purchases.models import PurchaseOrder, SupplierPayment, Purchas
 
 # ── Dashboard ─────────────────────────────────────────────────────
 
-def get_dashboard(tenant_id: str, date: str = None) -> dict:
-    """Main dashboard with KPIs, top products, alerts."""
-    if not date:
-        date = _today_bogota()
+def _parse_date_range(date_from: str = None, date_to: str = None):
+    """Parse date range strings into timezone-aware datetimes. Defaults to today (Bogotá)."""
+    now_bog = datetime.now(BOGOTA_TZ)
+    if date_from:
+        try:
+            dt = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=BOGOTA_TZ)
+            start = dt
+        except ValueError:
+            start = now_bog.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        start = now_bog.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if date_to:
+        try:
+            dt = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=BOGOTA_TZ)
+            end = dt
+        except ValueError:
+            end = now_bog.replace(hour=23, minute=59, second=59, microsecond=999999)
+    else:
+        end = now_bog.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    return start, end
+
+
+def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_to: str = None) -> dict:
+    """Main dashboard with KPIs, top products, alerts. Supports date range."""
+    # Build date range filter
+    if date and not date_from:
+        # Legacy single-date: convert to range (full day)
+        try:
+            d = datetime.strptime(date, "%Y-%m-%d")
+            date_from_dt = d.replace(hour=0, minute=0, second=0, tzinfo=BOGOTA_TZ)
+            date_to_dt = d.replace(hour=23, minute=59, second=59, tzinfo=BOGOTA_TZ)
+        except ValueError:
+            date_from_dt, date_to_dt = _parse_date_range()
+    else:
+        date_from_dt, date_to_dt = _parse_date_range(date_from, date_to)
+
+    # Date filter used in all queries — uses index (tenant_id, sale_date)
+    def _sale_date_filter():
+        return and_(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date >= date_from_dt,
+            Sale.sale_date <= date_to_dt,
+        )
 
     # Auto-mark overdue credit sales
     try:
@@ -39,7 +85,7 @@ def get_dashboard(tenant_id: str, date: str = None) -> dict:
     except Exception:
         pass
 
-    # Sales KPIs for today (DISTINCT to avoid cartesian product with JOINed relationships)
+    # Sales KPIs
     sales_kpi = (
         db.session.query(
             func.count(Sale.id).label("count"),
@@ -47,25 +93,17 @@ def get_dashboard(tenant_id: str, date: str = None) -> dict:
             func.coalesce(func.sum(Sale.subtotal), 0).label("subtotal"),
             func.coalesce(func.sum(Sale.tax_amount), 0).label("tax"),
         )
-        .filter(
-            Sale.tenant_id == tenant_id,
-            Sale.status == "completed",
-            _date_in_bogota(Sale.sale_date) == date,
-        )
+        .filter(_sale_date_filter())
         .first()
     )
 
-    # Cost of goods sold today (from SaleItems)
+    # Cost of goods sold (from SaleItems)
     cost_kpi = (
         db.session.query(
             func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0).label("cost"),
         )
         .join(Sale, SaleItem.sale_id == Sale.id)
-        .filter(
-            Sale.tenant_id == tenant_id,
-            Sale.status == "completed",
-            _date_in_bogota(Sale.sale_date) == date,
-        )
+        .filter(_sale_date_filter())
         .first()
     )
     total_cost = float(cost_kpi.cost or 0) if cost_kpi else 0
@@ -84,11 +122,7 @@ def get_dashboard(tenant_id: str, date: str = None) -> dict:
             func.count(Payment.id).label("count"),
         )
         .join(Sale, Payment.sale_id == Sale.id)
-        .filter(
-            Sale.tenant_id == tenant_id,
-            Sale.status == "completed",
-            _date_in_bogota(Sale.sale_date) == date,
-        )
+        .filter(_sale_date_filter())
         .group_by(Payment.method)
         .all()
     )
@@ -102,11 +136,7 @@ def get_dashboard(tenant_id: str, date: str = None) -> dict:
             func.sum(SaleItem.quantity * SaleItem.unit_cost).label("cost"),
         )
         .join(Sale, SaleItem.sale_id == Sale.id)
-        .filter(
-            Sale.tenant_id == tenant_id,
-            Sale.status == "completed",
-            _date_in_bogota(Sale.sale_date) == date,
-        )
+        .filter(_sale_date_filter())
         .group_by(SaleItem.product_name)
         .order_by(desc("revenue"))
         .limit(5)
@@ -144,7 +174,8 @@ def get_dashboard(tenant_id: str, date: str = None) -> dict:
         .filter(
             PurchaseOrder.tenant_id == tenant_id,
             PurchaseOrder.status == "received",
-            _date_in_bogota(PurchaseOrder.received_at) == date,
+            PurchaseOrder.received_at >= date_from_dt,
+            PurchaseOrder.received_at <= date_to_dt,
         )
         .first()
     )
@@ -156,11 +187,7 @@ def get_dashboard(tenant_id: str, date: str = None) -> dict:
             func.count(Sale.id).label("count"),
             func.coalesce(func.sum(Sale.total_amount), 0).label("total"),
         )
-        .filter(
-            Sale.tenant_id == tenant_id,
-            Sale.status == "completed",
-            _date_in_bogota(Sale.sale_date) == date,
-        )
+        .filter(_sale_date_filter())
         .group_by("hour")
         .order_by("hour")
         .all()
@@ -204,7 +231,9 @@ def get_dashboard(tenant_id: str, date: str = None) -> dict:
     )
 
     return {
-        "date": date,
+        "date_from": date_from_dt.isoformat(),
+        "date_to": date_to_dt.isoformat(),
+        "date": date_from_dt.strftime("%Y-%m-%d"),
         "sales": {
             "count": sales_kpi.count or 0,
             "revenue": total_with_tax,
