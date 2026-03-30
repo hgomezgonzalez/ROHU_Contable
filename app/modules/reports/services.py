@@ -1071,7 +1071,16 @@ def get_profit_trend(tenant_id: str, period: str = "daily", days: int = 30) -> l
                 func.extract("month", Sale.sale_date) == m,
             ).scalar()
 
-            rev = float(revenue)
+            # Subtract credit notes (returns)
+            cn_total = db.session.query(
+                func.coalesce(func.sum(CreditNote.subtotal), 0)
+            ).filter(
+                CreditNote.tenant_id == tenant_id,
+                func.extract("year", CreditNote.created_at) == y,
+                func.extract("month", CreditNote.created_at) == m,
+            ).scalar()
+
+            rev = float(revenue) - float(cn_total)
             cst = float(cost)
             results.append({
                 "period": f"{y}-{m:02d}",
@@ -1099,7 +1108,15 @@ def get_profit_trend(tenant_id: str, period: str = "daily", days: int = 30) -> l
                 _date_in_bogota(Sale.sale_date) == day,
             ).scalar()
 
-            rev = float(revenue)
+            # Subtract credit notes (returns)
+            cn_total = db.session.query(
+                func.coalesce(func.sum(CreditNote.subtotal), 0)
+            ).filter(
+                CreditNote.tenant_id == tenant_id,
+                _date_in_bogota(CreditNote.created_at) == day,
+            ).scalar()
+
+            rev = float(revenue) - float(cn_total)
             cst = float(cost)
             results.append({
                 "period": day,
@@ -1161,11 +1178,22 @@ def get_cash_flow(tenant_id: str, days: int = 30) -> list:
             _date_in_bogota(CashDisbursement.disbursement_date) == day,
         ).scalar()
 
+        # Add supplier payments to outflows
+        supplier_pay = db.session.query(
+            func.coalesce(func.sum(SupplierPayment.amount), 0)
+        ).filter(
+            SupplierPayment.tenant_id == tenant_id,
+            SupplierPayment.status == "completed",
+            _date_in_bogota(SupplierPayment.payment_date) == day,
+        ).scalar()
+
+        total_out = float(outflows) + float(supplier_pay)
+        total_in = float(inflows) + float(sale_cash)
         results.append({
             "date": day,
-            "inflows": float(inflows) + float(sale_cash),
-            "outflows": float(outflows),
-            "net": float(inflows) + float(sale_cash) - float(outflows),
+            "inflows": total_in,
+            "outflows": total_out,
+            "net": total_in - total_out,
         })
 
     return results
