@@ -97,8 +97,10 @@ def create_tenant(
 
     db.session.commit()
 
-    # Refresh to load roles relationship
-    db.session.refresh(user)
+    # Re-query to fully load roles + permissions (refresh doesn't reload joined relations)
+    user = User.query.options(
+        db.joinedload(User.roles).joinedload(Role.permissions)
+    ).get(user.id)
 
     return {
         "tenant": _tenant_to_dict(tenant),
@@ -110,7 +112,9 @@ def create_tenant(
 
 def authenticate(email: str, password: str, tenant_id: Optional[str] = None) -> dict:
     """Authenticate user. Returns user data or raises ValueError."""
-    query = User.query.filter(
+    query = User.query.options(
+        db.joinedload(User.roles).joinedload(Role.permissions)
+    ).filter(
         User.email == email.lower().strip(),
         User.is_active.is_(True),
         User.deleted_at.is_(None),
@@ -738,4 +742,5 @@ def _user_to_dict(user: User) -> dict:
         "full_name": user.full_name,
         "is_active": user.is_active,
         "roles": [r.name for r in user.roles],
+        "permissions": list(user.permission_set),
     }
