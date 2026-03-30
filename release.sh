@@ -5,6 +5,6 @@ echo "--- Running Alembic migrations ---"
 flask db upgrade
 
 echo "--- Seeding roles and permissions ---"
-flask seed
+python manage.py seed
 
 echo "--- Release phase completed ---"
