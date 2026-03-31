@@ -201,7 +201,7 @@
         <td><strong>${p.stock_current}</strong></td>
         <td>${p.stock_minimum}</td>
         <td><span class="badge">${TAX[p.tax_type]||p.tax_type}</span></td>
-        <td>${p.is_low_stock?'<span class="badge badge-danger">Bajo</span>':'<span class="badge badge-success">OK</span>'}</td>
+        <td>${p.is_draft?'<span class="badge badge-warning">Borrador</span>':p.is_low_stock?'<span class="badge badge-danger">Bajo</span>':'<span class="badge badge-success">OK</span>'}</td>
         <td>
           <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick='openEdit(${JSON.stringify(p).replace(/'/g,"&#39;")})'>Editar</button>
           <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick='quickStock("${p.id}","${p.name}",${p.stock_current})'>+Stock</button>

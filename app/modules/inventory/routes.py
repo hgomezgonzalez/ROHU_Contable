@@ -65,6 +65,7 @@ def list_products():
         per_page=int(request.args.get("per_page", 20)),
         category_id=request.args.get("category_id"),
         low_stock_only=request.args.get("low_stock") == "true",
+        include_drafts=True,  # Inventory shows drafts so user can complete them
     )
     return jsonify(success=True, **result)
 

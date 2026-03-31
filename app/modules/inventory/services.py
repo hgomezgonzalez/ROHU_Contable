@@ -442,6 +442,7 @@ def _product_to_dict(product: Product) -> dict:
         "is_low_stock": product.is_low_stock,
         "category_id": str(product.category_id) if product.category_id else None,
         "is_active": product.is_active,
+        "is_draft": product.is_draft,
     }
 
 
