@@ -366,7 +366,10 @@
   document.getElementById('po-form').onsubmit = async function(e) {
     e.preventDefault();
     if (!poItems.length) { rohuAlert('Agregue al menos un producto', 'warning'); return; }
-    const items = poItems.map(i => ({product_id:i.product_id, quantity:i.quantity, unit_cost:i.unit_cost, tax_rate:i.tax_rate}));
+    const items = poItems.map(i => {
+      if (i.is_new) return {product_name:i.product_name, quantity:i.quantity, unit_cost:i.unit_cost, tax_rate:i.tax_rate};
+      return {product_id:i.product_id, quantity:i.quantity, unit_cost:i.unit_cost, tax_rate:i.tax_rate};
+    });
 
     if (editingPOId) {
       const body = { payment_type: document.getElementById('po-paytype').value, items };
