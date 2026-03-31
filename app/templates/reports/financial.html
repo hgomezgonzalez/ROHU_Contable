@@ -10,13 +10,21 @@
     .main-content { margin-left: 0 !important; }
     .card { box-shadow: none; border: 1px solid #ccc; }
   }
+  @media(max-width:600px){
+    .fin-controls{flex-wrap:wrap!important;gap:8px!important;}
+    .fin-controls select{width:auto!important;flex:1;}
+    .fin-card-header{flex-wrap:wrap!important;gap:8px!important;}
+    #pl-table td,#esf-table td{font-size:12px!important;padding:6px 4px!important;}
+    #pl-table td[style*="padding-left:24px"]{padding-left:12px!important;}
+    #pl-table tr[style*="font-size:18px"],#esf-table tr[style*="font-size:16px"]{font-size:14px!important;}
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="page-header no-print">
   <h1 class="page-title">Estados Financieros</h1>
-  <div style="display:flex; gap:8px; align-items:center;">
+  <div class="fin-controls" style="display:flex; gap:8px; align-items:center;">
     <select id="fin-year" class="form-control" style="width:100px;"></select>
     <select id="fin-month" class="form-control" style="width:140px;">
       <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
@@ -55,7 +63,7 @@
     <div class="card-title" style="margin:0;">Estado de Resultados</div>
     <a href="/api/v1/reports/profit-loss?format=csv" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
   </div>
-  <div id="pl-table">Cargando...</div>
+  <div class="table-wrap" id="pl-table">Cargando...</div>
 </div>
 
 <!-- Balance General (ESF) -->
@@ -63,7 +71,7 @@
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
     <div class="card-title" style="margin:0;">Estado de Situación Financiera (Balance General)</div>
   </div>
-  <div id="esf-table">Cargando...</div>
+  <div class="table-wrap" id="esf-table">Cargando...</div>
 </div>
 
 <!-- Inventario Valorizado -->

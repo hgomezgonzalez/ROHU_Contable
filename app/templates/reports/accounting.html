@@ -3,13 +3,26 @@
 {% block title %}Contabilidad — ROHU Contable{% endblock %}
 {% block header_title %}Contabilidad{% endblock %}
 
+{% block head %}
+<style>
+@media(max-width:600px){
+  .acct-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap!important;}
+  .acct-tabs .tab-btn{font-size:11px!important;padding:8px 10px!important;white-space:nowrap;}
+  .acct-period-grid{grid-template-columns:repeat(3,1fr)!important;}
+  .acct-period-detail-kpis{grid-template-columns:1fr!important;}
+  .acct-period-detail-kpis .card{padding:8px!important;}
+  .acct-period-detail-kpis div[style*="font-size:18px"]{font-size:14px!important;}
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Contabilidad</h1>
 </div>
 
 <!-- Tabs -->
-<div style="display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid var(--border);">
+<div class="acct-tabs" style="display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid var(--border);">
   <button class="btn btn-outline tab-btn active" onclick="switchTab('balance')" id="tab-balance" style="border-radius:8px 8px 0 0; border-bottom:none;">Balance de Prueba</button>
   <button class="btn btn-outline tab-btn" onclick="switchTab('journal')" id="tab-journal" style="border-radius:8px 8px 0 0; border-bottom:none;">Libro Diario</button>
   <button class="btn btn-outline tab-btn" onclick="switchTab('puc')" id="tab-puc" style="border-radius:8px 8px 0 0; border-bottom:none;">Plan de Cuentas (PUC)</button>
@@ -110,7 +123,7 @@
     </div>
 
     <!-- 12-month grid -->
-    <div id="period-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:16px;">
+    <div id="period-grid" class="acct-period-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:16px;">
     </div>
 
     <!-- Selected month detail -->
@@ -119,7 +132,7 @@
         <h3 id="period-detail-title" style="font-size:16px;"></h3>
         <span id="period-detail-badge" class="badge"></span>
       </div>
-      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
+      <div class="acct-period-detail-kpis" style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
         <div class="card" style="text-align:center; padding:12px;">
           <div style="font-size:12px; color:var(--text-light);">Ingresos</div>
           <div id="pd-income" style="font-size:18px; font-weight:700; color:var(--success);">—</div>

@@ -11,13 +11,20 @@
   .form-number { font-size:24px; font-weight:700; color:var(--primary); }
   .form-name { font-size:14px; font-weight:600; }
   .form-period { font-size:12px; color:var(--text-light); }
+  @media(max-width:600px){
+    .dian-kpi-grid{grid-template-columns:1fr!important;}
+    .dian-2col{grid-template-columns:1fr!important;}
+    .dian-header-controls{flex-wrap:wrap!important;}
+    .form-number{font-size:18px;}
+    .card-value{font-size:16px!important;}
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="page-header no-print">
   <h1 class="page-title">Soporte Tributario</h1>
-  <div style="display:flex; gap:8px; align-items:center;">
+  <div class="dian-header-controls" style="display:flex; gap:8px; align-items:center;">
     <select id="sel-year" class="form-control" style="width:auto;" onchange="loadAll()">
       <option value="2026" selected>2026</option><option value="2025">2025</option>
     </select>
@@ -67,7 +74,7 @@
 </div>
 
 <!-- IVA Mensual (Form 300) -->
-<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px;">
+<div class="dian-kpi-grid" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px;">
   <div class="card">
     <div class="card-title">IVA Generado (Ventas)</div>
     <div class="card-value" id="iva-gen" style="color:var(--danger);">—</div>
@@ -85,7 +92,7 @@
   </div>
 </div>
 
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+<div class="dian-2col" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
   <div class="card">
     <div class="card-title">IVA del Período (Form 300)</div>
     <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-iva')" title="Expandir">⛶</button><canvas id="chart-iva" height="70"></canvas></div>
@@ -97,7 +104,7 @@
 </div>
 
 <!-- Detalle ventas y compras -->
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+<div class="dian-2col" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
   <div class="card">
     <div class="card-title">Ventas del Período (Base para Form 300)</div>
     <table>
@@ -125,7 +132,7 @@
     <a href="#" id="export-tax" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
   </div>
   <div id="renta-threshold-msg"></div>
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+  <div class="dian-2col" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
     <div>
       <h4 style="margin-bottom:8px;">Ingresos y Gastos</h4>
       <table>
