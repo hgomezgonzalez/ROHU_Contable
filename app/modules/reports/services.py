@@ -633,12 +633,48 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
         .first()
     )
 
+    # Sales by IVA rate (segregation for F-300)
+    from app.modules.pos.models import SaleItem
+    sales_by_rate = db.session.query(
+        SaleItem.tax_rate,
+        func.coalesce(func.sum(SaleItem.subtotal), 0).label("base"),
+        func.coalesce(func.sum(SaleItem.tax_amount), 0).label("tax"),
+    ).join(Sale).filter(
+        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        func.extract("year", Sale.sale_date) == year,
+        func.extract("month", Sale.sale_date) == month,
+    ).group_by(SaleItem.tax_rate).all()
+
+    iva_by_rate = []
+    for r in sales_by_rate:
+        rate = float(r.tax_rate or 0)
+        iva_by_rate.append({
+            "rate": rate,
+            "label": f"IVA {rate}%" if rate > 0 else "Excluido/Exento",
+            "base": float(r.base),
+            "tax": float(r.tax),
+        })
+
+    # Withholdings applied in period (ReteFuente)
+    rete_applied = db.session.query(
+        func.coalesce(func.sum(JournalLine.credit_amount), 0).label("total")
+    ).join(JournalEntry).join(ChartOfAccount, JournalLine.account_id == ChartOfAccount.id).join(
+        AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id
+    ).filter(
+        ChartOfAccount.tenant_id == tenant_id,
+        ChartOfAccount.puc_code.like("2365%"),
+        AccountingPeriod.year == year,
+        AccountingPeriod.month == month,
+    ).scalar()
+
     return {
         "period": f"{year}-{month:02d}",
         "iva_generated": generated,
         "iva_deductible": deductible,
         "iva_net_payable": net_payable,
         "iva_balance": "a_pagar" if net_payable > 0 else "a_favor",
+        "iva_by_rate": iva_by_rate,
+        "retefuente_applied": float(rete_applied or 0),
         "sales": {
             "count": sales_total.count or 0,
             "taxable_base": float(sales_total.base or 0),

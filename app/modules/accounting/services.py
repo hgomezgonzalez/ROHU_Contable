@@ -437,14 +437,22 @@ def create_expense(
         lines.append({"puc_code": "2408", "debit": float(tax), "credit": 0,
                        "description": "IVA descontable"})
 
+    # Calculate withholdings (ReteFuente on expenses)
+    withholdings = calculate_withholdings(tenant_id, amt, "purchases")
+    total_withholdings = sum(Decimal(str(w["amount"])) for w in withholdings)
+    net_payable = float(total - total_withholdings)
+
+    for w in withholdings:
+        lines.append({"puc_code": w["puc_code"], "debit": 0, "credit": w["amount"],
+                       "description": f"{w['name']} ({w['rate']}%)"})
+
     if payment_status == "paid":
         cash_account = "1105" if payment_method == "cash" else "1110"
-        lines.append({"puc_code": cash_account, "debit": 0, "credit": float(total),
-                       "description": f"Pago {expense.expense_number}"})
+        lines.append({"puc_code": cash_account, "debit": 0, "credit": net_payable,
+                       "description": f"Pago {expense.expense_number} (neto retenciones)"})
     else:
-        # Causado (pending)
-        lines.append({"puc_code": "2335", "debit": 0, "credit": float(total),
-                       "description": "Gasto causado por pagar"})
+        lines.append({"puc_code": "2335", "debit": 0, "credit": net_payable,
+                       "description": "Gasto causado por pagar (neto retenciones)"})
 
     create_journal_entry(
         tenant_id=tenant_id, created_by=created_by,
@@ -747,6 +755,36 @@ def get_opening_balance(tenant_id: str) -> dict:
         "entry_date": existing.entry_date.isoformat(),
         "lines": lines,
     }
+
+
+# ── Withholding Calculation ──────────────────────────────────────
+
+UVT_VALUE = Decimal("49799")  # UVT 2025 — update annually
+
+
+def calculate_withholdings(tenant_id: str, base_amount: Decimal, applies_to: str = "purchases") -> list:
+    """Calculate applicable withholdings for a transaction. Returns list of {puc_code, amount, name}."""
+    configs = WithholdingConfig.query.filter(
+        WithholdingConfig.tenant_id == tenant_id,
+        WithholdingConfig.is_active.is_(True),
+        WithholdingConfig.applies_to.in_([applies_to, "both"]),
+    ).all()
+
+    results = []
+    for config in configs:
+        # Check UVT threshold
+        threshold = config.base_uvt * UVT_VALUE if config.base_uvt > 0 else Decimal("0")
+        if base_amount >= threshold:
+            amount = (base_amount * config.rate / 100).quantize(TWO_PLACES)
+            if amount > 0:
+                results.append({
+                    "puc_code": config.puc_code,
+                    "amount": float(amount),
+                    "name": config.name,
+                    "type": config.type,
+                    "rate": float(config.rate),
+                })
+    return results
 
 
 # ── Withholding Seed ─────────────────────────────────────────────

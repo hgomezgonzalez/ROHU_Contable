@@ -270,35 +270,40 @@ def receive_purchase_order(
 
     # Auto-post accounting entry
     if total_cost > 0:
-        from app.modules.accounting.services import create_journal_entry
+        from app.modules.accounting.services import create_journal_entry, calculate_withholdings
         from app.modules.auth_rbac.models import Tenant
         tenant = Tenant.query.get(tenant_id)
         is_simplified = tenant and tenant.fiscal_regime == "simplified"
 
         # For simplified regime: IVA goes to cost (no deductible IVA)
-        # For common regime: IVA goes to account 2370 (deductible)
         inventory_debit = float(total_cost + total_tax) if is_simplified else float(total_cost)
 
+        # Calculate withholdings (ReteFuente, ReteIVA)
+        withholdings = calculate_withholdings(tenant_id, total_cost, "purchases")
+        total_withholdings = sum(w["amount"] for w in withholdings)
+
+        # Net payable = cost + tax - withholdings
+        net_payable = float(total_cost + total_tax) - total_withholdings
+
+        lines = [
+            {"puc_code": "1435", "debit": inventory_debit, "credit": 0,
+             "description": f"Compra {po.order_number}"},
+        ]
+        if not is_simplified and total_tax > 0:
+            lines.append({"puc_code": "2408", "debit": float(total_tax), "credit": 0,
+                          "description": "IVA descontable"})
+
+        # Add withholding lines (credit — liability to DIAN)
+        for w in withholdings:
+            lines.append({"puc_code": w["puc_code"], "debit": 0, "credit": w["amount"],
+                          "description": f"{w['name']} ({w['rate']}%)"})
+
         if po.payment_type == "cash":
-            lines = [
-                {"puc_code": "1435", "debit": inventory_debit, "credit": 0,
-                 "description": f"Compra {po.order_number}"},
-            ]
-            if not is_simplified and total_tax > 0:
-                lines.append({"puc_code": "2408", "debit": float(total_tax), "credit": 0,
-                              "description": "IVA descontable"})
-            lines.append({"puc_code": "1105", "debit": 0, "credit": float(total_cost + total_tax),
-                          "description": "Pago de contado"})
-        else:  # credit
-            lines = [
-                {"puc_code": "1435", "debit": inventory_debit, "credit": 0,
-                 "description": f"Compra {po.order_number}"},
-            ]
-            if not is_simplified and total_tax > 0:
-                lines.append({"puc_code": "2408", "debit": float(total_tax), "credit": 0,
-                              "description": "IVA descontable"})
-            lines.append({"puc_code": "2205", "debit": 0, "credit": float(total_cost + total_tax),
-                          "description": "Cuenta por pagar proveedor"})
+            lines.append({"puc_code": "1105", "debit": 0, "credit": net_payable,
+                          "description": "Pago de contado (neto retenciones)"})
+        else:
+            lines.append({"puc_code": "2205", "debit": 0, "credit": net_payable,
+                          "description": "CxP proveedor (neto retenciones)"})
 
         create_journal_entry(
             tenant_id=tenant_id, created_by=user_id,
