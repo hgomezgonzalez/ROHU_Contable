@@ -313,14 +313,18 @@
       { facingMode: "environment" },
       { fps: 15, qrbox: { width: qrboxSize, height: qrboxSize }, formatsToSupport: formats, aspectRatio: 1.0 },
       (decodedText, decodedResult) => {
-        // Successfully decoded — stop scanner first, then process
+        // Successfully decoded
         const code = decodedText.trim();
+        if (!code) return;
         console.log('Scanned:', code, 'Format:', decodedResult?.result?.format?.formatName);
         stopQRScanner();
-        // Put code in search field and process
-        searchInput.value = code;
-        rohuAlert('Código leído: ' + code, 'info');
-        scanQR(code);
+        // Delay to let modal close and DOM settle before writing to input
+        setTimeout(() => {
+          searchInput.value = code;
+          searchInput.focus();
+          rohuAlert('Código leído: ' + code, 'info');
+          scanQR(code);
+        }, 300);
       },
       (errorMessage) => { /* scan attempt — normal, ignore */ }
     ).catch((err) => {
@@ -468,22 +472,24 @@
         if (result.success) {
           addToCart(result.data);
           rohuAlert(`${result.data.name} agregado al carrito`, 'success');
-          searchInput.value = ''; closeDropdown(); searchInput.focus();
+          searchInput.value = '';
+          closeDropdown();
+          searchInput.focus();
           return;
         }
       }
-      // Product not found by exact code — search by name/text
-      rohuAlert(`Código "${code}" no encontrado. Buscando por texto...`, 'info');
+      // Product not found by exact code — keep code visible and search by text
+      rohuAlert(`Código "${code}" no registrado como producto. Busque por nombre.`, 'warning');
       searchInput.value = code;
-      searchProducts(code);
       searchInput.focus();
+      // Trigger text search to show dropdown if matches by name
+      if (code.length >= 2) searchProducts(code);
     } catch (e) {
       if (typeof rohuGetProductByQR === 'function') {
         const p = await rohuGetProductByQR(code);
         if (p) { addToCart(p); searchInput.value = ''; closeDropdown(); searchInput.focus(); return; }
       }
       searchInput.value = code;
-      searchProducts(code);
       searchInput.focus();
     }
   }
