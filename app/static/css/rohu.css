@@ -600,6 +600,17 @@ tr:hover { background: #F1F5F9; }
     grid-template-columns: 1fr;
   }
 
+  /* POS mobile optimizations */
+  .cart-footer {
+    position: sticky; bottom: 0; z-index: 10;
+    background: var(--bg-card); border-top: 2px solid var(--primary);
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
+  }
+  .cart-item-qty button { width: 44px; height: 44px; font-size: 20px; }
+  .cart-item-qty input { width: 48px; font-size: 16px; }
+  .cart-item-total { display: none; }
+  .pos-cart { max-height: none; }
+
   .header-title { font-size: var(--fs-md); }
 
   .grid-2, .grid-2-1, .grid-3 {
