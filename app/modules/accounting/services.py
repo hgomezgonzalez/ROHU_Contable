@@ -229,7 +229,12 @@ def post_sale_reversal(
     sub = Decimal(str(subtotal)).quantize(TWO_PLACES)
     tax = Decimal(str(tax_amount)).quantize(TWO_PLACES)
     cost = Decimal(str(cost_total)).quantize(TWO_PLACES)
-    cash_account = "1105" if payment_method == "cash" else "1110"
+    if payment_method == "credit":
+        cash_account = "1305"  # CxC — reverse accounts receivable
+    elif payment_method == "cash":
+        cash_account = "1105"
+    else:
+        cash_account = "1110"
 
     # Reverse revenue using 4175 Devoluciones en ventas
     lines = [
@@ -480,15 +485,20 @@ def pay_expense(tenant_id: str, expense_id: str, user_id: str,
     expense.paid_at = datetime.now(timezone.utc)
 
     # Accounting: DB 2335 CxP | CR 1105/1110
+    # Use net amount (total - withholdings already recorded when expense was caused)
+    withholdings = calculate_withholdings(tenant_id, Decimal(str(expense.amount)), "purchases")
+    total_withholdings = sum(Decimal(str(w["amount"])) for w in withholdings)
+    net_payable = float(Decimal(str(expense.total_amount)) - total_withholdings)
+
     cash_account = "1105" if payment_method == "cash" else "1110"
     create_journal_entry(
         tenant_id=tenant_id, created_by=user_id,
         entry_type="PAYMENT",
         description=f"Pago gasto {expense.expense_number}",
         lines=[
-            {"puc_code": "2335", "debit": float(expense.total_amount), "credit": 0,
+            {"puc_code": "2335", "debit": net_payable, "credit": 0,
              "description": "Pago gasto causado"},
-            {"puc_code": cash_account, "debit": 0, "credit": float(expense.total_amount),
+            {"puc_code": cash_account, "debit": 0, "credit": net_payable,
              "description": f"Egreso por {expense.concept}"},
         ],
         source_document_type="expense_payment", source_document_id=str(expense.id),

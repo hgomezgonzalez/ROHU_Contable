@@ -1326,6 +1326,148 @@ def get_receivables_vs_payables(tenant_id: str) -> dict:
     }
 
 
+def get_health_summary(tenant_id: str) -> dict:
+    """Business health summary: breakeven, month comparison, net pocket, 6-month trend."""
+    from app.modules.accounting.models import Expense
+
+    now = datetime.now(BOGOTA_TZ)
+    y, m = now.year, now.month
+
+    # Current month sales (subtotal, cost, gross profit)
+    cur_sales = db.session.query(
+        func.coalesce(func.sum(Sale.subtotal), 0).label("revenue"),
+        func.coalesce(func.sum(Sale.total_amount), 0).label("total"),
+    ).filter(
+        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        func.extract("year", Sale.sale_date) == y,
+        func.extract("month", Sale.sale_date) == m,
+    ).first()
+
+    cur_cost = db.session.query(
+        func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
+    ).join(Sale).filter(
+        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        func.extract("year", Sale.sale_date) == y,
+        func.extract("month", Sale.sale_date) == m,
+    ).scalar()
+
+    # Current month expenses
+    cur_expenses = db.session.query(
+        func.coalesce(func.sum(Expense.total_amount), 0)
+    ).filter(
+        Expense.tenant_id == tenant_id, Expense.status == "active",
+        func.extract("year", Expense.expense_date) == y,
+        func.extract("month", Expense.expense_date) == m,
+    ).scalar()
+
+    revenue = float(cur_sales.revenue or 0)
+    cost = float(cur_cost or 0)
+    expenses = float(cur_expenses or 0)
+    gross_profit = revenue - cost
+    total_costs = cost + expenses
+    net_result = revenue - total_costs
+    coverage_pct = round((revenue / max(total_costs, 1)) * 100, 1) if total_costs > 0 else 100
+
+    # Previous month for comparison
+    pm = m - 1
+    py = y
+    if pm <= 0:
+        pm = 12
+        py -= 1
+
+    prev_sales = db.session.query(
+        func.coalesce(func.sum(Sale.subtotal), 0)
+    ).filter(
+        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        func.extract("year", Sale.sale_date) == py,
+        func.extract("month", Sale.sale_date) == pm,
+    ).scalar()
+
+    prev_cost = db.session.query(
+        func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
+    ).join(Sale).filter(
+        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        func.extract("year", Sale.sale_date) == py,
+        func.extract("month", Sale.sale_date) == pm,
+    ).scalar()
+
+    prev_rev = float(prev_sales or 0)
+    prev_cst = float(prev_cost or 0)
+    prev_profit = prev_rev - prev_cst
+
+    sales_delta = round(((revenue - prev_rev) / max(prev_rev, 1)) * 100, 1) if prev_rev > 0 else 0
+    profit_delta = round(((gross_profit - prev_profit) / max(prev_profit, 1)) * 100, 1) if prev_profit > 0 else 0
+
+    # 6-month trend
+    trend = []
+    for i in range(5, -1, -1):
+        tm = now.month - i
+        ty = now.year
+        while tm <= 0:
+            tm += 12
+            ty -= 1
+        t_rev = db.session.query(func.coalesce(func.sum(Sale.subtotal), 0)).filter(
+            Sale.tenant_id == tenant_id, Sale.status == "completed",
+            func.extract("year", Sale.sale_date) == ty, func.extract("month", Sale.sale_date) == tm,
+        ).scalar()
+        t_cost = db.session.query(func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)).join(Sale).filter(
+            Sale.tenant_id == tenant_id, Sale.status == "completed",
+            func.extract("year", Sale.sale_date) == ty, func.extract("month", Sale.sale_date) == tm,
+        ).scalar()
+        t_exp = db.session.query(func.coalesce(func.sum(Expense.total_amount), 0)).filter(
+            Expense.tenant_id == tenant_id, Expense.status == "active",
+            func.extract("year", Expense.expense_date) == ty, func.extract("month", Expense.expense_date) == tm,
+        ).scalar()
+        t_r = float(t_rev or 0)
+        t_c = float(t_cost or 0) + float(t_exp or 0)
+        trend.append({"period": f"{ty}-{tm:02d}", "sales": t_r, "total_expenses": t_c, "net_result": round(t_r - t_c, 2)})
+
+    # Trend verdict
+    if len(trend) >= 2:
+        first_net = trend[0]["net_result"]
+        last_net = trend[-1]["net_result"]
+        if last_net > first_net * 1.05:
+            verdict = "improving"
+        elif last_net < first_net * 0.95:
+            verdict = "declining"
+        else:
+            verdict = "stable"
+    else:
+        verdict = "insufficient_data"
+
+    # CxP pending
+    cxp = db.session.query(func.coalesce(func.sum(PurchaseOrder.total_amount), 0)).filter(
+        PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.payment_type == "credit",
+        PurchaseOrder.status.in_(["received", "partially_received"]),
+    ).scalar()
+    cxp_paid = db.session.query(func.coalesce(func.sum(SupplierPayment.amount), 0)).filter(
+        SupplierPayment.tenant_id == tenant_id, SupplierPayment.status == "completed",
+    ).scalar()
+    cxp_pending = max(float(cxp or 0) - float(cxp_paid or 0), 0)
+
+    MONTHS_ES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+    return {
+        "breakeven": {
+            "total_expenses": total_costs, "total_sales": revenue,
+            "coverage_pct": coverage_pct, "gap": round(revenue - total_costs, 2),
+            "has_expenses": expenses > 0,
+        },
+        "month_comparison": {
+            "current": {"label": f"{MONTHS_ES[m]} {y}", "sales": revenue, "gross_profit": gross_profit},
+            "previous": {"label": f"{MONTHS_ES[pm]} {py}", "sales": prev_rev, "gross_profit": prev_profit},
+            "sales_delta_pct": sales_delta, "profit_delta_pct": profit_delta,
+        },
+        "net_pocket": {
+            "sales": revenue, "cost_of_goods": cost, "operating_expenses": expenses,
+            "result": net_result, "cxp_pending": cxp_pending,
+        },
+        "trend": trend,
+        "trend_verdict": verdict,
+    }
+
+
 def get_inventory_rotation(tenant_id: str) -> dict:
     """Inventory rotation analysis: fast movers, slow movers, dead stock."""
     from datetime import timedelta as td

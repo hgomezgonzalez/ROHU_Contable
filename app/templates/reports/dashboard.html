@@ -73,6 +73,46 @@
   </div>
 </div>
 
+<!-- Health Indicators -->
+<div class="card" id="health-breakeven" style="margin-bottom:16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div class="card-title" style="margin:0;">¿Cubrí mis gastos este mes?</div>
+    <span id="health-coverage-badge" class="badge" style="font-size:14px;"></span>
+  </div>
+  <div style="background:var(--bg); border-radius:8px; height:24px; overflow:hidden; margin-bottom:8px;">
+    <div id="health-bar" style="height:100%; border-radius:8px; transition:width 0.5s;"></div>
+  </div>
+  <div id="health-message" style="font-size:14px; font-weight:600;"></div>
+  <div id="health-detail" style="font-size:12px; color:var(--text-light); margin-top:4px;"></div>
+</div>
+
+<div class="grid-2" style="margin-bottom:16px;">
+  <!-- Month Comparison -->
+  <div class="card">
+    <div class="card-title">Este mes vs mes pasado</div>
+    <div id="health-comparison" style="display:flex; gap:16px; align-items:center; justify-content:center; min-height:80px;">
+      <div style="text-align:center;">
+        <div style="font-size:12px; color:var(--text-light);">Ventas</div>
+        <div id="hc-sales-delta" style="font-size:20px; font-weight:700;"></div>
+        <div id="hc-sales-detail" style="font-size:11px; color:var(--text-light);"></div>
+      </div>
+      <div style="width:1px; height:50px; background:var(--border);"></div>
+      <div style="text-align:center;">
+        <div style="font-size:12px; color:var(--text-light);">Utilidad</div>
+        <div id="hc-profit-delta" style="font-size:20px; font-weight:700;"></div>
+        <div id="hc-profit-detail" style="font-size:11px; color:var(--text-light);"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Net Pocket -->
+  <div class="card">
+    <div class="card-title">Lo que me queda</div>
+    <div id="health-pocket-value" style="font-size:28px; font-weight:700; text-align:center; margin:8px 0;"></div>
+    <div id="health-pocket-detail" style="font-size:12px; color:var(--text-light);"></div>
+  </div>
+</div>
+
 <!-- Charts Row -->
 <div class="grid-2">
   <div class="card">
@@ -272,6 +312,72 @@
       alertsEl.innerHTML = html || '<div style="color:var(--text-light); padding:12px 0;">Sin alertas activas</div>';
 
     } catch (err) { console.error('Dashboard error:', err); }
+
+    // Load health indicators
+    try {
+      const hResp = await fetch('/api/v1/reports/health-summary', {headers});
+      const hData = await hResp.json();
+      if (hData.success) renderHealth(hData.data);
+    } catch(e) { console.error('Health error:', e); }
+  }
+
+  function renderHealth(h) {
+    // Breakeven gauge
+    const pct = Math.min(h.breakeven.coverage_pct, 150);
+    const bar = document.getElementById('health-bar');
+    const badge = document.getElementById('health-coverage-badge');
+    const msg = document.getElementById('health-message');
+    const detail = document.getElementById('health-detail');
+
+    bar.style.width = Math.min(pct, 100) + '%';
+    badge.textContent = pct.toFixed(0) + '%';
+
+    if (pct >= 100) {
+      bar.style.background = 'var(--success)';
+      badge.className = 'badge badge-success'; badge.style.fontSize = '14px';
+      msg.style.color = 'var(--success)';
+      msg.textContent = '¡Cubriste todos tus gastos! Te sobran ' + COP(h.breakeven.gap);
+      detail.textContent = 'Sigue así, el negocio está sano.';
+    } else if (pct >= 60) {
+      bar.style.background = 'var(--warning)';
+      badge.className = 'badge badge-warning'; badge.style.fontSize = '14px';
+      msg.style.color = '#92400E';
+      msg.textContent = 'Cubriste el ' + pct.toFixed(0) + '% de tus gastos';
+      detail.textContent = 'Te faltan ' + COP(Math.abs(h.breakeven.gap)) + ' para cubrir todo.';
+    } else {
+      bar.style.background = 'var(--danger)';
+      badge.className = 'badge badge-danger'; badge.style.fontSize = '14px';
+      msg.style.color = 'var(--danger)';
+      msg.textContent = 'Solo cubriste el ' + pct.toFixed(0) + '% de tus gastos';
+      detail.textContent = 'Te faltan ' + COP(Math.abs(h.breakeven.gap)) + '. Revisa gastos o aumenta ventas.';
+    }
+    if (!h.breakeven.has_expenses) {
+      msg.textContent = 'Registra tus gastos para ver este indicador';
+      detail.textContent = 'Ve a Caja y Bancos > Gastos Operativos';
+      bar.style.width = '0%'; badge.textContent = '—';
+    }
+    detail.textContent += '  |  Ventas: ' + COP(h.breakeven.total_sales) + '  |  Gastos: ' + COP(h.breakeven.total_expenses);
+
+    // Month comparison
+    const sd = h.month_comparison.sales_delta_pct;
+    const pd = h.month_comparison.profit_delta_pct;
+    const sdEl = document.getElementById('hc-sales-delta');
+    const pdEl = document.getElementById('hc-profit-delta');
+    sdEl.textContent = (sd >= 0 ? '▲ ' : '▼ ') + Math.abs(sd) + '%';
+    sdEl.style.color = sd >= 0 ? 'var(--success)' : 'var(--danger)';
+    pdEl.textContent = (pd >= 0 ? '▲ ' : '▼ ') + Math.abs(pd) + '%';
+    pdEl.style.color = pd >= 0 ? 'var(--success)' : 'var(--danger)';
+    document.getElementById('hc-sales-detail').textContent = COP(h.month_comparison.previous.sales) + ' → ' + COP(h.month_comparison.current.sales);
+    document.getElementById('hc-profit-detail').textContent = COP(h.month_comparison.previous.gross_profit) + ' → ' + COP(h.month_comparison.current.gross_profit);
+
+    // Net pocket
+    const pv = document.getElementById('health-pocket-value');
+    const r = h.net_pocket.result;
+    pv.textContent = COP(r);
+    pv.style.color = r > 0 ? 'var(--success)' : r < 0 ? 'var(--danger)' : 'var(--warning)';
+    let pDetail = `(+) Ventas: ${COP(h.net_pocket.sales)}  (−) Costo: ${COP(h.net_pocket.cost_of_goods)}  (−) Gastos: ${COP(h.net_pocket.operating_expenses)}`;
+    if (h.net_pocket.cxp_pending > 0) pDetail += `  |  CxP pendiente: ${COP(h.net_pocket.cxp_pending)}`;
+    document.getElementById('health-pocket-detail').textContent = pDetail;
   }
 </script>
 {% endblock %}

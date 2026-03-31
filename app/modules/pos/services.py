@@ -468,7 +468,7 @@ def void_sale(
 
     # Auto-post reversal accounting entries
     cost_total = sum(float(item.unit_cost) * float(item.quantity) for item in sale.items)
-    payment_method = sale.payments[0].method if sale.payments else "cash"
+    payment_method = "credit" if sale.sale_type == "credit" else (sale.payments[0].method if sale.payments else "cash")
     try:
         from app.modules.accounting.services import post_sale_reversal
         post_sale_reversal(

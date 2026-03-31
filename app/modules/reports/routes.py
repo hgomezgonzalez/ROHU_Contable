@@ -152,6 +152,13 @@ def transactions():
     return jsonify(success=True, **data)
 
 
+@reports_bp.route("/health-summary", methods=["GET"])
+@require_permission("reports", "read")
+def health_summary():
+    data = rpt.get_health_summary(g.tenant_id)
+    return jsonify(success=True, data=data)
+
+
 # ── Audit Log ────────────────────────────────────────────────────
 
 @reports_bp.route("/audit-log", methods=["GET"])

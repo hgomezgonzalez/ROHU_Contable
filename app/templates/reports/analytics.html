@@ -24,6 +24,16 @@
 </div>
 <style>.analytics-period.active{background:var(--primary)!important;color:white!important;border-color:var(--primary)!important;}</style>
 
+<!-- Business Health Trend -->
+<div class="card" style="margin-bottom:16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div class="card-title" style="margin:0;">¿Cómo va mi negocio?</div>
+    <span id="trend-verdict-badge" class="badge" style="font-size:13px;"></span>
+  </div>
+  <div class="chart-wrap" style="height:200px;"><canvas id="chart-health-trend" height="120"></canvas></div>
+  <div id="trend-summary" style="font-size:13px; color:var(--text-light); margin-top:8px;"></div>
+</div>
+
 <!-- Row 0: Profit Trend -->
 <div class="card" style="margin-bottom:16px;">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -233,10 +243,52 @@
     });
   });
 
+  async function loadHealthTrend() {
+    try {
+      const resp = await fetch('/api/v1/reports/health-summary', {headers});
+      const r = await resp.json();
+      if (!r.success) return;
+      const h = r.data;
+
+      // Trend chart
+      if (charts.healthTrend) charts.healthTrend.destroy();
+      charts.healthTrend = new Chart(document.getElementById('chart-health-trend'), {
+        type: 'line',
+        data: {
+          labels: h.trend.map(t => t.period),
+          datasets: [
+            {label: 'Ventas', data: h.trend.map(t => t.sales), borderColor: '#1E3A8A', backgroundColor: '#1E3A8A20', fill: false, tension: 0.3, borderWidth: 2},
+            {label: 'Gastos totales', data: h.trend.map(t => t.total_expenses), borderColor: '#EF4444', backgroundColor: '#EF444420', fill: false, tension: 0.3, borderWidth: 2, borderDash: [5,5]},
+            {label: 'Lo que queda', data: h.trend.map(t => t.net_result), borderColor: '#10B981', backgroundColor: '#10B98130', fill: true, tension: 0.3, borderWidth: 3},
+          ]
+        },
+        options: {responsive: true, maintainAspectRatio: false,
+          plugins: {legend: {display: true, position: 'top', labels: {boxWidth: 12, font: {size: 11}}}},
+          scales: {y: {beginAtZero: true}, x: {ticks: {font: {size: 11}}}}}
+      });
+
+      // Verdict badge
+      const badge = document.getElementById('trend-verdict-badge');
+      const verdicts = {improving: ['MEJORANDO', 'badge-success'], stable: ['ESTABLE', 'badge-warning'], declining: ['REVISAR', 'badge-danger'], insufficient_data: ['POCOS DATOS', 'badge-info']};
+      const v = verdicts[h.trend_verdict] || verdicts.stable;
+      badge.textContent = v[0]; badge.className = 'badge ' + v[1]; badge.style.fontSize = '13px';
+
+      // Summary text
+      const msgs = {
+        improving: 'Tus ventas crecen más rápido que tus gastos. ¡Muy bien!',
+        stable: 'Tu negocio se mantiene estable. Buen momento para buscar cómo crecer.',
+        declining: 'Tus gastos crecen más que tus ventas. Revisa dónde reducir costos.',
+        insufficient_data: 'Con más meses de datos podrás ver la tendencia de tu negocio.',
+      };
+      document.getElementById('trend-summary').textContent = msgs[h.trend_verdict] || '';
+    } catch(e) { console.error('Health trend error:', e); }
+  }
+
   function loadAll() {
     const period = currentDays > 60 ? 'monthly' : 'daily';
     loadProfitTrend(period);
     loadAnalytics();
+    loadHealthTrend();
   }
 
   loadAll();
