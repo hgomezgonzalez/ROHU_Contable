@@ -268,6 +268,8 @@
 
   // ── QR Camera Scanner ────────────────────────────────────
   async function openQRScanner() {
+    window._scannerProcessing = false;
+
     // Request camera permission explicitly first (required on mobile)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -312,29 +314,36 @@
     html5QrCode.start(
       { facingMode: "environment" },
       { fps: 15, qrbox: { width: qrboxSize, height: qrboxSize }, formatsToSupport: formats, aspectRatio: 1.0 },
-      (decodedText, decodedResult) => {
-        // Successfully decoded
+      (decodedText) => {
+        // Successfully decoded — guard against double-fire
         const code = decodedText.trim();
-        if (!code) return;
-        console.log('Scanned:', code, 'Format:', decodedResult?.result?.format?.formatName);
-        // Save code BEFORE stopping scanner
-        window._lastScannedCode = code;
-        stopQRScanner();
-        // Process the scanned code
-        processScannedCode(code);
+        if (!code || window._scannerProcessing) return;
+        window._scannerProcessing = true;
+        console.log('Scanned code:', code);
+        // CRITICAL: stop scanner FIRST with await, THEN process code
+        // iOS Safari kills async callbacks if MediaStream context is destroyed mid-execution
+        stopQRScanner().then(() => {
+          processScannedCode(code);
+        }).catch(() => {
+          processScannedCode(code);
+        });
       },
-      (errorMessage) => { /* scan attempt — normal, ignore */ }
+      () => { /* scan attempt — normal, ignore */ }
     ).catch((err) => {
       console.error('Camera start error:', err);
       stopQRScanner();
-      rohuAlert('Error al iniciar cámara: ' + (err.message || String(err)) + '. Intente escribir el código manualmente.', 'warning');
+      rohuAlert('Error al iniciar cámara: ' + (err.message || String(err)) + '. Escriba el código manualmente.', 'warning');
       searchInput.focus();
     });
   }
 
-  function stopQRScanner() {
+  async function stopQRScanner() {
     document.getElementById('qr-modal').style.display = 'none';
-    if (html5QrCode) { html5QrCode.stop().catch(()=>{}); html5QrCode.clear(); html5QrCode = null; }
+    if (html5QrCode) {
+      try { await html5QrCode.stop(); } catch(e) {}
+      try { html5QrCode.clear(); } catch(e) {}
+      html5QrCode = null;
+    }
   }
 
   // ── Search (keyboard-first + barcode scanner support) ────
