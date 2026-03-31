@@ -28,7 +28,7 @@
   {% block head %}{% endblock %}
 </head>
 <body data-active-page="{{ active_page|default('dashboard') }}">
-  <div id="rohu-progress-bar"></div>
+  <div id="rohu-progress-bar" role="progressbar" aria-label="Procesando operación" aria-live="polite"></div>
   <div class="app-layout">
     <!-- Sidebar -->
     <nav class="sidebar" id="sidebar">

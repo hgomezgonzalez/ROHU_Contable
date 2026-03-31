@@ -627,6 +627,8 @@
   }
 
   async function saveOpeningBalance() {
+    const ok = await rohuConfirm('¿Confirma que estos son sus saldos de apertura?<br><br><strong>Esta acción solo se puede hacer una vez.</strong> Verifique que los valores son correctos antes de continuar.');
+    if (!ok) return;
     const payload = {
       opening_date: document.getElementById('op-date').value,
       cash: parseFloat(document.getElementById('op-cash').value) || 0,

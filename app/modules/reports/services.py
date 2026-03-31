@@ -22,6 +22,7 @@ from app.extensions import db
 from app.modules.pos.models import Sale, SaleItem, Payment, CreditNote
 from app.modules.inventory.models import Product, StockMovement
 from app.modules.accounting.models import ChartOfAccount, JournalEntry, JournalLine, AccountingPeriod
+from app.modules.accounting.services import get_trial_balance
 from app.modules.purchases.models import PurchaseOrder, SupplierPayment, PurchaseCreditNote, PurchaseDebitNote
 
 

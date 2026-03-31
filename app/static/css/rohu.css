@@ -632,14 +632,14 @@ tr:hover { background: #F1F5F9; }
 
 .help-overlay {
   display: none; position: fixed; inset: 0;
-  background: rgba(0,0,0,0.3); z-index: 998;
+  background: rgba(0,0,0,0.3); z-index: 1100;
 }
 .help-overlay.active { display: block; }
 
 .help-drawer {
   position: fixed; top: 0; right: 0; bottom: 0;
   width: 380px; max-width: 95vw;
-  background: white; z-index: 999;
+  background: white; z-index: 1101;
   box-shadow: -4px 0 20px rgba(0,0,0,0.15);
   transform: translateX(100%);
   transition: transform 0.3s ease;

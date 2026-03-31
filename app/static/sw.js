@@ -18,6 +18,7 @@ const STATIC_ASSETS = [
   '/static/css/rohu.css',
   '/static/js/rohu-modal.js',
   '/static/js/rohu-offline.js',
+  '/static/js/rohu-help.js',
   '/static/js/chart.min.js',
   '/static/img/logo-rohu.svg',
   '/static/img/icon-rohu.svg',
