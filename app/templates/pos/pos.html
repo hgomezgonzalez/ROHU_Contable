@@ -4,7 +4,7 @@
 {% block header_title %}Punto de Venta{% endblock %}
 
 {% block head %}
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="/static/js/html5-qrcode.min.js"></script>
 <style>
   /* Receipt print styles */
   @media print {
@@ -267,7 +267,28 @@
   }).catch(() => { tenantInfo = JSON.parse(localStorage.getItem('tenant') || '{}'); });
 
   // ── QR Camera Scanner ────────────────────────────────────
-  function openQRScanner() {
+  async function openQRScanner() {
+    // Request camera permission explicitly first (required on mobile)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      // Permission granted — stop the test stream and proceed with html5-qrcode
+      stream.getTracks().forEach(t => t.stop());
+    } catch(permErr) {
+      console.error('Camera permission error:', permErr);
+      const msg = permErr.name || String(permErr);
+      if (msg === 'NotAllowedError' || msg.includes('denied')) {
+        rohuAlert('Permiso de cámara denegado. Vaya a Ajustes del navegador → Permisos del sitio → Cámara → Permitir.', 'warning');
+      } else if (msg === 'NotFoundError') {
+        rohuAlert('No se encontró cámara en este dispositivo.', 'warning');
+      } else if (msg === 'NotReadableError') {
+        rohuAlert('La cámara está siendo usada por otra aplicación. Ciérrela e intente de nuevo.', 'warning');
+      } else {
+        rohuAlert('No se puede acceder a la cámara: ' + msg, 'warning');
+      }
+      searchInput.focus();
+      return;
+    }
+
     document.getElementById('qr-modal').style.display = 'flex';
     html5QrCode = new Html5Qrcode("qr-reader");
     html5QrCode.start(
@@ -275,16 +296,9 @@
       (text) => { stopQRScanner(); scanQR(text); },
       (err) => { /* scan attempt errors — normal, ignore */ }
     ).catch((err) => {
-      console.error('Camera error:', err);
+      console.error('Camera start error:', err);
       stopQRScanner();
-      const msg = (err && err.message) ? err.message : String(err);
-      if (msg.includes('Permission') || msg.includes('denied')) {
-        rohuAlert('Permiso de cámara denegado. Vaya a Ajustes del navegador y permita el acceso a la cámara para este sitio.', 'warning');
-      } else if (msg.includes('NotFound') || msg.includes('device')) {
-        rohuAlert('No se encontró cámara en este dispositivo. Use el campo de búsqueda para ingresar el código manualmente.', 'warning');
-      } else {
-        rohuAlert('Cámara no disponible: ' + msg + '. Use búsqueda manual.', 'warning');
-      }
+      rohuAlert('Error al iniciar cámara: ' + (err.message || String(err)), 'warning');
       searchInput.focus();
     });
   }

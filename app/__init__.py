@@ -51,7 +51,7 @@ def create_app(config_name: str = "development") -> Flask:
             response.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains'
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https: blob:; "
             "media-src 'self' blob:; "
