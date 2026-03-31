@@ -137,11 +137,20 @@ def update_product(tenant_id: str, product_id: str, **kwargs) -> dict:
 
 
 def get_product_by_qr(tenant_id: str, qr_code: str) -> Optional[dict]:
-    """Lookup a product by QR code. Used by POS scanner. Must be fast."""
-    product = Product.query.filter_by(
-        tenant_id=tenant_id, qr_code=qr_code, is_active=True
+    """Lookup a product by QR code, barcode, or SKU. Used by POS scanner. Must be fast."""
+    code = qr_code.strip()
+    # Search in qr_code, barcode, and sku fields
+    product = Product.query.filter(
+        Product.tenant_id == tenant_id,
+        Product.is_active.is_(True),
+        Product.deleted_at.is_(None),
+        db.or_(
+            Product.qr_code == code,
+            Product.barcode == code,
+            Product.sku == code,
+        )
     ).first()
-    if not product or product.deleted_at:
+    if not product:
         return None
     return _product_to_dict(product)
 

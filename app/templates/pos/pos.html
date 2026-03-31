@@ -293,7 +293,11 @@
     html5QrCode = new Html5Qrcode("qr-reader");
     html5QrCode.start(
       { facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } },
-      (text) => { stopQRScanner(); scanQR(text); },
+      (text) => {
+        stopQRScanner();
+        rohuAlert('Código leído: ' + text, 'info');
+        scanQR(text);
+      },
       (err) => { /* scan attempt errors — normal, ignore */ }
     ).catch((err) => {
       console.error('Camera start error:', err);
@@ -437,15 +441,26 @@
       const resp = await fetch(`/api/v1/inventory/products/scan?qr=${encodeURIComponent(code)}`, {headers});
       if (resp.ok) {
         const result = await resp.json();
-        if (result.success) { addToCart(result.data); searchInput.value = ''; closeDropdown(); searchInput.focus(); return; }
+        if (result.success) {
+          addToCart(result.data);
+          rohuAlert(`${result.data.name} agregado al carrito`, 'success');
+          searchInput.value = ''; closeDropdown(); searchInput.focus();
+          return;
+        }
       }
+      // Product not found by exact code — search by name/text
+      rohuAlert(`Código "${code}" no encontrado. Buscando por texto...`, 'info');
+      searchInput.value = code;
       searchProducts(code);
+      searchInput.focus();
     } catch (e) {
       if (typeof rohuGetProductByQR === 'function') {
         const p = await rohuGetProductByQR(code);
         if (p) { addToCart(p); searchInput.value = ''; closeDropdown(); searchInput.focus(); return; }
       }
+      searchInput.value = code;
       searchProducts(code);
+      searchInput.focus();
     }
   }
 
