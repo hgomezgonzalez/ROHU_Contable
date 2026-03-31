@@ -212,6 +212,35 @@ def pay_expense(expense_id):
         return jsonify(success=False, error={"code": "PAY_ERROR", "message": str(e)}), 409
 
 
+# ── Opening Balance (Saldos Iniciales) ──────────────────────────
+
+@accounting_bp.route("/opening-balance", methods=["GET"])
+@require_permission("journal_entries", "create")
+def get_opening():
+    data = acc.get_opening_balance(g.tenant_id)
+    return jsonify(success=True, data=data)
+
+
+@accounting_bp.route("/opening-balance", methods=["POST"])
+@require_permission("journal_entries", "create")
+def create_opening():
+    data = request.get_json()
+    try:
+        result = acc.create_opening_balance(
+            tenant_id=g.tenant_id, user_id=str(g.current_user.id),
+            opening_date=data.get("opening_date", ""),
+            cash=float(data.get("cash", 0)),
+            bank=float(data.get("bank", 0)),
+            receivables=float(data.get("receivables", 0)),
+            payables=float(data.get("payables", 0)),
+            capital=float(data.get("capital", 0)),
+            include_inventory=data.get("include_inventory", True),
+        )
+        return jsonify(success=True, data=result)
+    except ValueError as e:
+        return jsonify(success=False, error={"code": "OPENING_ERROR", "message": str(e)}), 409
+
+
 # ── Withholdings ─────────────────────────────────────────────────
 
 @accounting_bp.route("/withholdings", methods=["GET"])

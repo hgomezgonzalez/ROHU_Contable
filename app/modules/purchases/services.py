@@ -285,7 +285,7 @@ def receive_purchase_order(
                  "description": f"Compra {po.order_number}"},
             ]
             if not is_simplified and total_tax > 0:
-                lines.append({"puc_code": "2370", "debit": float(total_tax), "credit": 0,
+                lines.append({"puc_code": "2408", "debit": float(total_tax), "credit": 0,
                               "description": "IVA descontable"})
             lines.append({"puc_code": "1105", "debit": 0, "credit": float(total_cost + total_tax),
                           "description": "Pago de contado"})
@@ -295,7 +295,7 @@ def receive_purchase_order(
                  "description": f"Compra {po.order_number}"},
             ]
             if not is_simplified and total_tax > 0:
-                lines.append({"puc_code": "2370", "debit": float(total_tax), "credit": 0,
+                lines.append({"puc_code": "2408", "debit": float(total_tax), "credit": 0,
                               "description": "IVA descontable"})
             lines.append({"puc_code": "2205", "debit": 0, "credit": float(total_cost + total_tax),
                           "description": "Cuenta por pagar proveedor"})
@@ -599,7 +599,7 @@ def create_purchase_credit_note(
     ]
     if total_tax > 0:
         lines.append({
-            "puc_code": "2370", "debit": 0, "credit": float(cn.tax_amount),
+            "puc_code": "2408", "debit": 0, "credit": float(cn.tax_amount),
             "description": "Reversa IVA descontable",
         })
 

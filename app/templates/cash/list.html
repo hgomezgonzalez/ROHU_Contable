@@ -13,6 +13,7 @@
   <button class="btn btn-outline tab-btn active" onclick="switchTab('receipts')" id="tab-receipts" style="border-radius:8px 8px 0 0; border-bottom:none;">Recibos de Caja</button>
   <button class="btn btn-outline tab-btn" onclick="switchTab('disbursements')" id="tab-disbursements" style="border-radius:8px 8px 0 0; border-bottom:none;">Egresos</button>
   <button class="btn btn-outline tab-btn" onclick="switchTab('transfers')" id="tab-transfers" style="border-radius:8px 8px 0 0; border-bottom:none;">Traslados</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('expenses')" id="tab-expenses" style="border-radius:8px 8px 0 0; border-bottom:none;">Gastos Operativos</button>
 </div>
 
 <!-- Tab: Receipts -->
@@ -166,6 +167,78 @@
     </form>
   </div>
 </div>
+
+<!-- Tab: Expenses -->
+<div id="panel-expenses" class="tab-panel" style="display:none;">
+  <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+    <button class="btn btn-primary" onclick="document.getElementById('exp-modal').style.display='flex'">+ Registrar Gasto</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Gasto #</th><th>Categoría</th><th>Concepto</th><th>Monto</th><th>Estado</th><th>Fecha</th></tr></thead>
+        <tbody id="expenses-table"><tr><td colspan="6">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Expense Modal -->
+<div id="exp-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:var(--radius); padding:24px; max-width:480px; width:100%;">
+    <h3 style="margin-bottom:16px;">Registrar Gasto</h3>
+    <form id="exp-form">
+      <div class="form-group">
+        <label>Tipo de gasto *</label>
+        <div id="exp-categories" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-bottom:8px;">
+          <button type="button" class="btn btn-outline exp-cat" data-puc="5120" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:18px;">🏠</span>Arriendo</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="5135" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:18px;">⚡</span>Servicios</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="5105" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:18px;">👤</span>Nómina</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="5155" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:18px;">🚚</span>Transporte</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="5115" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:18px;">📋</span>Impuestos</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="5145" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:18px;">🔧</span>Mantenim.</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="5195" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:18px;">📦</span>Otros</button>
+        </div>
+        <input type="hidden" id="exp-puc" required>
+      </div>
+      <div class="form-group"><label>Concepto *</label><input type="text" id="exp-concept" class="form-control" required placeholder="Ej: Arriendo local marzo 2026"></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div class="form-group"><label>Monto *</label><input type="number" id="exp-amount" class="form-control" step="0.01" min="1" required></div>
+        <div class="form-group"><label>IVA</label><input type="number" id="exp-tax" class="form-control" step="0.01" min="0" value="0"></div>
+      </div>
+      <div class="form-group">
+        <label>Estado de pago</label>
+        <div style="display:flex; gap:8px;">
+          <button type="button" id="exp-paid-yes" class="btn btn-primary" style="flex:1;" onclick="setExpPaid('paid')">Ya lo pagué</button>
+          <button type="button" id="exp-paid-no" class="btn btn-outline" style="flex:1;" onclick="setExpPaid('pending')">Por pagar</button>
+        </div>
+      </div>
+      <div id="exp-pay-details">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div class="form-group"><label>Método</label>
+            <select id="exp-method" class="form-control">
+              <option value="cash">Efectivo</option><option value="transfer">Transferencia</option>
+              <option value="nequi">Nequi</option><option value="daviplata">Daviplata</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Referencia</label><input type="text" id="exp-ref" class="form-control" placeholder="# recibo o transferencia"></div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="closeM('exp-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar Gasto</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -183,6 +256,7 @@
     if (tab === 'receipts') loadReceipts();
     if (tab === 'disbursements') loadDisbursements();
     if (tab === 'transfers') loadTransfers();
+    if (tab === 'expenses') loadExpenses();
   }
 
   function togglePuc() {
@@ -313,6 +387,74 @@
     const r = await resp.json();
     if (r.success) { closeM('tr-modal'); e.target.reset(); loadTransfers(); rohuAlert(`Traslado ${r.data.transfer_number} realizado`, 'success'); }
     else { rohuAlert(r.error.message, 'error'); }
+  });
+
+  // ── Expenses (Gastos Operativos) ─────────────────────────
+  const EXP_CATS = {5120:'Arriendo',5135:'Servicios',5105:'Nómina',5155:'Transporte',5115:'Impuestos',5145:'Mantenimiento',5195:'Otros'};
+  let expPayStatus = 'paid';
+
+  function selectExpCat(btn) {
+    document.querySelectorAll('.exp-cat').forEach(b => { b.classList.remove('active'); b.style.background = ''; b.style.color = ''; b.style.borderColor = ''; });
+    btn.classList.add('active');
+    btn.style.background = 'var(--primary)'; btn.style.color = 'white'; btn.style.borderColor = 'var(--primary)';
+    document.getElementById('exp-puc').value = btn.dataset.puc;
+  }
+
+  function setExpPaid(status) {
+    expPayStatus = status;
+    const yesBtn = document.getElementById('exp-paid-yes');
+    const noBtn = document.getElementById('exp-paid-no');
+    const details = document.getElementById('exp-pay-details');
+    if (status === 'paid') {
+      yesBtn.className = 'btn btn-primary'; noBtn.className = 'btn btn-outline';
+      details.style.display = '';
+    } else {
+      noBtn.className = 'btn btn-primary'; yesBtn.className = 'btn btn-outline';
+      details.style.display = 'none';
+    }
+  }
+
+  async function loadExpenses() {
+    try {
+      const resp = await fetch('/api/v1/accounting/expenses', {headers});
+      const r = await resp.json();
+      const tbody = document.getElementById('expenses-table');
+      if (!r.success || !r.data.length) { tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-light)">Sin gastos registrados. Use "+ Registrar Gasto" para agregar arriendos, servicios, nómina, etc.</td></tr>'; return; }
+      tbody.innerHTML = r.data.map(e => `<tr>
+        <td><strong>${e.expense_number}</strong></td>
+        <td>${EXP_CATS[parseInt(e.puc_code)] || e.puc_code}</td>
+        <td>${e.concept}</td>
+        <td>${COP(e.total_amount)}</td>
+        <td><span class="badge ${e.payment_status==='paid'?'badge-success':'badge-warning'}">${e.payment_status==='paid'?'Pagado':'Pendiente'}</span></td>
+        <td style="font-size:12px;">${new Date(e.created_at).toLocaleDateString('es-CO')}</td>
+      </tr>`).join('');
+    } catch(e) { document.getElementById('expenses-table').innerHTML = '<tr><td colspan="6">Error cargando gastos</td></tr>'; }
+  }
+
+  document.getElementById('exp-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const puc = document.getElementById('exp-puc').value;
+    if (!puc) { rohuAlert('Seleccione el tipo de gasto', 'warning'); return; }
+
+    const payload = {
+      puc_code: puc,
+      concept: document.getElementById('exp-concept').value.trim(),
+      amount: parseFloat(document.getElementById('exp-amount').value),
+      tax_amount: parseFloat(document.getElementById('exp-tax').value) || 0,
+      payment_status: expPayStatus,
+      payment_method: expPayStatus === 'paid' ? document.getElementById('exp-method').value : null,
+      receipt_reference: expPayStatus === 'paid' ? document.getElementById('exp-ref').value : null,
+    };
+
+    const resp = await fetch('/api/v1/accounting/expenses', {method:'POST', headers, body: JSON.stringify(payload)});
+    const r = await resp.json();
+    if (r.success) {
+      closeM('exp-modal'); e.target.reset();
+      document.querySelectorAll('.exp-cat').forEach(b => { b.style.background=''; b.style.color=''; b.style.borderColor=''; });
+      document.getElementById('exp-puc').value = '';
+      loadExpenses();
+      rohuAlert(`Gasto ${r.data.expense_number} registrado`, 'success');
+    } else { rohuAlert(r.error?.message || 'Error registrando gasto', 'error'); }
   });
 
   // Init

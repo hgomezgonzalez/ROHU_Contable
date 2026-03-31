@@ -14,6 +14,7 @@
   <button class="btn btn-outline tab-btn" onclick="switchTab('journal')" id="tab-journal" style="border-radius:8px 8px 0 0; border-bottom:none;">Libro Diario</button>
   <button class="btn btn-outline tab-btn" onclick="switchTab('puc')" id="tab-puc" style="border-radius:8px 8px 0 0; border-bottom:none;">Plan de Cuentas (PUC)</button>
   <button class="btn btn-outline tab-btn" onclick="switchTab('periods')" id="tab-periods" style="border-radius:8px 8px 0 0; border-bottom:none;">Periodos / Cierre</button>
+  <button class="btn btn-outline tab-btn" onclick="switchTab('opening')" id="tab-opening" style="border-radius:8px 8px 0 0; border-bottom:none;">Apertura</button>
 </div>
 
 <!-- Tab: Balance -->
@@ -147,6 +148,48 @@
         <button class="btn btn-outline" onclick="document.getElementById('reopen-modal').style.display='none'">Cancelar</button>
         <button class="btn btn-danger" onclick="confirmReopen()">Reabrir Periodo</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Opening Balance -->
+<div id="panel-opening" class="tab-panel" style="display:none;">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Empezar con mis saldos actuales</div>
+    <p style="font-size:13px; color:var(--text-light); margin-bottom:16px;">
+      Si su negocio ya lleva tiempo operando, ingrese los saldos actuales para que ROHU arranque con los datos correctos. Solo se hace una vez.
+    </p>
+    <div id="opening-status"></div>
+    <div id="opening-form-container">
+      <div class="form-group"><label>Fecha de apertura *</label><input type="date" id="op-date" class="form-control" style="max-width:200px;"></div>
+
+      <h4 style="margin:16px 0 8px; color:var(--primary);">Lo que tiene el negocio (activos)</h4>
+      <div class="grid-2">
+        <div class="form-group"><label>Efectivo en caja</label><input type="number" id="op-cash" class="form-control" step="0.01" min="0" value="0" placeholder="$0"></div>
+        <div class="form-group"><label>Saldo en cuenta bancaria</label><input type="number" id="op-bank" class="form-control" step="0.01" min="0" value="0" placeholder="$0"></div>
+      </div>
+      <div class="form-group"><label>Clientes que le deben (CxC)</label><input type="number" id="op-receivables" class="form-control" step="0.01" min="0" value="0" placeholder="$0"></div>
+      <div class="form-group">
+        <label>Inventario</label>
+        <div id="op-inventory-info" style="font-size:14px; font-weight:600; color:var(--primary); padding:8px; background:var(--bg); border-radius:6px;">
+          Calculando del inventario actual...
+        </div>
+        <p style="font-size:11px; color:var(--text-light);">Se calcula automáticamente de los productos que ya creó (stock × costo promedio).</p>
+      </div>
+
+      <h4 style="margin:16px 0 8px; color:var(--danger);">Lo que debe el negocio (pasivos)</h4>
+      <div class="form-group"><label>Deuda con proveedores (CxP)</label><input type="number" id="op-payables" class="form-control" step="0.01" min="0" value="0" placeholder="$0"></div>
+
+      <h4 style="margin:16px 0 8px; color:var(--success);">Su capital en el negocio</h4>
+      <div class="form-group"><label>Capital aportado</label><input type="number" id="op-capital" class="form-control" step="0.01" min="0" value="0" placeholder="$0"></div>
+      <div id="op-summary" style="padding:12px; background:var(--bg); border-radius:8px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between;"><span>Total activos:</span><strong id="op-total-assets">$0</strong></div>
+        <div style="display:flex; justify-content:space-between;"><span>Total pasivos:</span><strong id="op-total-liabilities" style="color:var(--danger);">$0</strong></div>
+        <div style="display:flex; justify-content:space-between; border-top:2px solid var(--primary); margin-top:4px; padding-top:4px;">
+          <span><strong>Patrimonio neto:</strong></span><strong id="op-equity" style="color:var(--success);">$0</strong></div>
+        <p style="font-size:11px; color:var(--text-light); margin-top:4px;">Utilidades acumuladas = Patrimonio - Capital aportado (calculado automáticamente)</p>
+      </div>
+      <button class="btn btn-primary btn-lg" onclick="saveOpeningBalance()" style="width:100%;">Confirmar Saldos de Apertura</button>
     </div>
   </div>
 </div>
@@ -519,6 +562,99 @@
       if (btn.textContent.includes('Periodo')) renderPeriodGrid();
     });
   });
+
+  // ── Opening Balance ──────────────────────────────────────
+  async function loadOpeningBalance() {
+    const now = new Date();
+    document.getElementById('op-date').value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+
+    try {
+      const resp = await fetch('/api/v1/accounting/opening-balance', {headers});
+      const r = await resp.json();
+      if (r.success && r.data.exists) {
+        document.getElementById('opening-form-container').style.display = 'none';
+        document.getElementById('opening-status').innerHTML = `
+          <div class="alert alert-success" style="margin-bottom:16px;">
+            <strong>Saldos de apertura registrados</strong> (${new Date(r.data.entry_date).toLocaleDateString('es-CO')})
+            <div class="table-wrap" style="margin-top:8px;">
+              <table style="font-size:13px;">
+                <thead><tr><th>Cuenta</th><th>Nombre</th><th style="text-align:right">Débito</th><th style="text-align:right">Crédito</th></tr></thead>
+                <tbody>${r.data.lines.map(l => `<tr>
+                  <td>${l.puc_code}</td><td>${l.name}</td>
+                  <td style="text-align:right">${l.debit > 0 ? COP(l.debit) : ''}</td>
+                  <td style="text-align:right">${l.credit > 0 ? COP(l.credit) : ''}</td>
+                </tr>`).join('')}</tbody>
+              </table>
+            </div>
+          </div>`;
+      }
+    } catch(e) {}
+
+    // Calculate inventory value
+    try {
+      const resp = await fetch('/api/v1/reports/inventory', {headers});
+      const r = await resp.json();
+      if (r.success) {
+        document.getElementById('op-inventory-info').textContent = COP(r.data.total_value_at_cost || 0) + ' (inventario actual)';
+      }
+    } catch(e) {}
+
+    // Live calculation of totals
+    ['op-cash','op-bank','op-receivables','op-payables','op-capital'].forEach(id => {
+      document.getElementById(id).addEventListener('input', updateOpeningSummary);
+    });
+    updateOpeningSummary();
+  }
+
+  function updateOpeningSummary() {
+    const cash = parseFloat(document.getElementById('op-cash').value) || 0;
+    const bank = parseFloat(document.getElementById('op-bank').value) || 0;
+    const recv = parseFloat(document.getElementById('op-receivables').value) || 0;
+    const payables = parseFloat(document.getElementById('op-payables').value) || 0;
+    const capital = parseFloat(document.getElementById('op-capital').value) || 0;
+
+    // Get inventory from display
+    const invText = document.getElementById('op-inventory-info').textContent;
+    const invMatch = invText.match(/[\d.,]+/);
+    const inv = invMatch ? parseFloat(invMatch[0].replace(/\./g,'').replace(',','.')) || 0 : 0;
+
+    const assets = cash + bank + recv + inv;
+    const equity = assets - payables;
+
+    document.getElementById('op-total-assets').textContent = COP(assets);
+    document.getElementById('op-total-liabilities').textContent = COP(payables);
+    document.getElementById('op-equity').textContent = COP(equity);
+  }
+
+  async function saveOpeningBalance() {
+    const payload = {
+      opening_date: document.getElementById('op-date').value,
+      cash: parseFloat(document.getElementById('op-cash').value) || 0,
+      bank: parseFloat(document.getElementById('op-bank').value) || 0,
+      receivables: parseFloat(document.getElementById('op-receivables').value) || 0,
+      payables: parseFloat(document.getElementById('op-payables').value) || 0,
+      capital: parseFloat(document.getElementById('op-capital').value) || 0,
+      include_inventory: true,
+    };
+
+    try {
+      const resp = await fetch('/api/v1/accounting/opening-balance', {method:'POST', headers, body: JSON.stringify(payload)});
+      const r = await resp.json();
+      if (r.success) {
+        rohuAlert('Saldos de apertura registrados correctamente', 'success');
+        loadOpeningBalance();
+      } else {
+        rohuAlert(r.error?.message || 'Error', 'error');
+      }
+    } catch(e) { rohuAlert('Error de conexión', 'error'); }
+  }
+
+  // Add opening tab to switchTab
+  const _origSwitchTab = switchTab;
+  switchTab = function(tab) {
+    _origSwitchTab(tab);
+    if (tab === 'opening') loadOpeningBalance();
+  };
 
   loadBalance();
 </script>

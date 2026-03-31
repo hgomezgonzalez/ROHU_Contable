@@ -434,7 +434,7 @@ def create_expense(
          "description": concept},
     ]
     if tax > 0:
-        lines.append({"puc_code": "2370", "debit": float(tax), "credit": 0,
+        lines.append({"puc_code": "2408", "debit": float(tax), "credit": 0,
                        "description": "IVA descontable"})
 
     if payment_status == "paid":
@@ -642,6 +642,110 @@ def monthly_close(tenant_id: str, year: int, month: int, user_id: str) -> dict:
         "net_income": float(net_income),
         "is_annual_close": is_annual,
         "message": f"Cierre anual {year} completado. Asiento contable generado." if is_annual else f"Periodo {year}-{month:02d} cerrado. No se pueden crear movimientos en este mes.",
+    }
+
+
+# ── Opening Balance (Saldos Iniciales) ──────────────────────────
+
+def create_opening_balance(
+    tenant_id: str, user_id: str, opening_date: str,
+    cash: float = 0, bank: float = 0,
+    receivables: float = 0, payables: float = 0,
+    capital: float = 0, include_inventory: bool = True,
+) -> dict:
+    """Create the opening balance entry for a tenant. Only one per tenant."""
+    from app.modules.inventory.models import Product
+
+    # Check no existing OPENING
+    existing = JournalEntry.query.filter_by(
+        tenant_id=tenant_id, entry_type="OPENING"
+    ).first()
+    if existing:
+        raise ValueError("Ya existe un asiento de apertura. Use 'Corregir apertura' si necesita cambios.")
+
+    # Parse date
+    try:
+        dt = datetime.strptime(opening_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        dt = datetime.now(timezone.utc)
+
+    # Calculate inventory from existing products
+    inventory_value = 0
+    if include_inventory:
+        products = Product.query.filter_by(tenant_id=tenant_id, is_active=True).all()
+        for p in products:
+            inventory_value += float(p.stock_current) * float(p.cost_average or p.purchase_price or 0)
+        inventory_value = round(inventory_value, 2)
+
+    # Calculate retained earnings by difference
+    total_assets = cash + bank + receivables + inventory_value
+    total_liabilities = payables
+    retained_earnings = total_assets - total_liabilities - capital
+    if retained_earnings < 0:
+        retained_earnings = 0
+        capital = total_assets - total_liabilities  # Adjust capital
+
+    # Build lines
+    lines = []
+    if cash > 0:
+        lines.append({"puc_code": "1105", "debit": cash, "credit": 0, "description": "Saldo inicial caja"})
+    if bank > 0:
+        lines.append({"puc_code": "1110", "debit": bank, "credit": 0, "description": "Saldo inicial bancos"})
+    if inventory_value > 0:
+        lines.append({"puc_code": "1435", "debit": inventory_value, "credit": 0, "description": "Inventario inicial (calculado)"})
+    if receivables > 0:
+        lines.append({"puc_code": "1305", "debit": receivables, "credit": 0, "description": "Saldo inicial clientes (CxC)"})
+    if payables > 0:
+        lines.append({"puc_code": "2205", "debit": 0, "credit": payables, "description": "Saldo inicial proveedores (CxP)"})
+    if capital > 0:
+        lines.append({"puc_code": "3105", "debit": 0, "credit": capital, "description": "Capital social"})
+    if retained_earnings > 0:
+        lines.append({"puc_code": "3710", "debit": 0, "credit": retained_earnings, "description": "Utilidades acumuladas"})
+
+    if not lines:
+        raise ValueError("Ingrese al menos un saldo para crear el asiento de apertura")
+
+    entry = create_journal_entry(
+        tenant_id=tenant_id, created_by=user_id,
+        entry_type="OPENING",
+        description=f"Asiento de apertura - {opening_date}",
+        lines=lines,
+        source_document_type="opening_balance",
+        entry_date=dt,
+    )
+
+    return {
+        "entry": entry,
+        "summary": {
+            "total_assets": total_assets,
+            "total_liabilities": total_liabilities,
+            "capital": capital,
+            "retained_earnings": retained_earnings,
+            "inventory_value": inventory_value,
+        }
+    }
+
+
+def get_opening_balance(tenant_id: str) -> dict:
+    """Check if opening balance exists."""
+    existing = JournalEntry.query.filter_by(
+        tenant_id=tenant_id, entry_type="OPENING"
+    ).first()
+    if not existing:
+        return {"exists": False}
+
+    lines = []
+    for line in existing.lines:
+        lines.append({
+            "puc_code": line.account.puc_code,
+            "name": line.account.name,
+            "debit": float(line.debit_amount),
+            "credit": float(line.credit_amount),
+        })
+    return {
+        "exists": True,
+        "entry_date": existing.entry_date.isoformat(),
+        "lines": lines,
     }
 
 

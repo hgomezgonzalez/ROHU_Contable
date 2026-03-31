@@ -532,26 +532,11 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
         .first()
     )
 
-    # IVA deductible (2367 — debit account)
-    iva_ded = (
-        db.session.query(
-            func.coalesce(func.sum(JournalLine.debit_amount), 0).label("debit"),
-            func.coalesce(func.sum(JournalLine.credit_amount), 0).label("credit"),
-        )
-        .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
-        .join(ChartOfAccount, JournalLine.account_id == ChartOfAccount.id)
-        .join(AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id)
-        .filter(
-            ChartOfAccount.tenant_id == tenant_id,
-            ChartOfAccount.puc_code == "2370",
-            AccountingPeriod.year == year,
-            AccountingPeriod.month == month,
-        )
-        .first()
-    )
-
-    generated = float((iva_gen.credit or 0) - (iva_gen.debit or 0))
-    deductible = float((iva_ded.debit or 0) - (iva_ded.credit or 0))
+    # IVA deductible = debits of 2408 (purchases reduce IVA payable)
+    # Both generated and deductible are in the same account 2408
+    # Generated = credits (from sales), Deductible = debits (from purchases)
+    generated = float((iva_gen.credit or 0))
+    deductible = float((iva_gen.debit or 0))
     net_payable = generated - deductible
 
     # Sales and purchases totals
@@ -883,8 +868,8 @@ def get_annual_tax_summary(tenant_id: str, year: int) -> dict:
     # IVA del año
     d_gen, c_gen = _sum_accounts(["2408"], year)
     iva_generado = c_gen - d_gen
-    d_ded, c_ded = _sum_accounts(["2370"], year)
-    iva_descontable = d_ded - c_ded
+    # IVA descontable = debits of 2408 (from purchases)
+    iva_descontable = d_gen  # debits of 2408 are the deductible IVA
     iva_neto = iva_generado - iva_descontable
 
     # Sales and purchases counts
