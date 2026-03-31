@@ -104,11 +104,24 @@ def create_purchase_order(
     total_tax = Decimal("0")
 
     for item_data in items:
-        product = Product.query.filter_by(
-            id=item_data["product_id"], tenant_id=tenant_id
-        ).first()
-        if not product:
-            raise ValueError(f"Producto no encontrado: {item_data['product_id']}")
+        if item_data.get("product_id"):
+            # Existing product
+            product = Product.query.filter_by(
+                id=item_data["product_id"], tenant_id=tenant_id
+            ).first()
+            if not product:
+                raise ValueError(f"Producto no encontrado: {item_data['product_id']}")
+        elif item_data.get("product_name"):
+            # New product — create draft
+            from app.modules.inventory.services import create_product_draft
+            product = create_product_draft(
+                tenant_id=tenant_id, created_by=created_by,
+                name=item_data["product_name"],
+                purchase_price=float(item_data.get("unit_cost", 0)),
+                tax_type=item_data.get("tax_type", "iva_19"),
+            )
+        else:
+            raise ValueError("Cada item requiere product_id o product_name")
 
         qty = Decimal(str(item_data["quantity"]))
         cost = Decimal(str(item_data["unit_cost"]))

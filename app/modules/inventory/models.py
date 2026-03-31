@@ -75,6 +75,7 @@ class Product(db.Model):
     stock_minimum = db.Column(db.Numeric(12, 4), nullable=False, default=0)
 
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_draft = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now, onupdate=_now)
     deleted_at = db.Column(db.DateTime(timezone=True))

@@ -52,6 +52,23 @@ def _normalize_tax_type(tax_type: str) -> str:
     return mapping.get(tax_type.lower(), "iva_19")
 
 
+def create_product_draft(
+    tenant_id: str, created_by: str, name: str,
+    purchase_price: float = 0, tax_type: str = "iva_19", unit: str = "unit",
+) -> Product:
+    """Create a draft product from a purchase order. No stock, no sale price, no accounting entry."""
+    product = Product(
+        tenant_id=tenant_id, created_by=created_by, name=name,
+        sale_price=0, purchase_price=Decimal(str(purchase_price)),
+        cost_average=Decimal(str(purchase_price)),
+        tax_type=_normalize_tax_type(tax_type), unit=unit,
+        is_draft=True,
+    )
+    db.session.add(product)
+    db.session.flush()
+    return product
+
+
 def create_product(
     tenant_id: str, created_by: str, name: str, sale_price: float,
     purchase_price: float = 0, qr_code: Optional[str] = None,
@@ -168,6 +185,7 @@ def get_product_by_id(tenant_id: str, product_id: str) -> Optional[dict]:
 def search_products(
     tenant_id: str, query: str = "", page: int = 1, per_page: int = 20,
     category_id: Optional[str] = None, low_stock_only: bool = False,
+    include_drafts: bool = False,
 ) -> dict:
     """Search products by name, SKU, QR code or barcode."""
     q = Product.query.filter(
@@ -175,6 +193,8 @@ def search_products(
         Product.is_active.is_(True),
         Product.deleted_at.is_(None),
     )
+    if not include_drafts:
+        q = q.filter(Product.is_draft.is_(False))
 
     if query:
         import re

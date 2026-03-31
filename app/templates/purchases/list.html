@@ -171,11 +171,22 @@
 
       <div class="card-title">Productos</div>
       <div id="po-items-list"></div>
-      <div style="display:grid; grid-template-columns:3fr 1fr 1fr auto; gap:8px; margin-bottom:12px;">
+      <!-- Toggle: existing or new product -->
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <button type="button" id="btn-prod-existing" class="btn btn-primary" style="flex:1;font-size:12px;" onclick="setProdMode('existing')">Producto existente</button>
+        <button type="button" id="btn-prod-new" class="btn btn-outline" style="flex:1;font-size:12px;" onclick="setProdMode('new')">+ Producto nuevo</button>
+      </div>
+      <div id="po-prod-existing" style="display:grid; grid-template-columns:3fr 1fr 1fr auto; gap:8px; margin-bottom:12px;">
         <select id="po-prod" class="form-control"><option value="">Seleccionar producto...</option></select>
         <input type="number" id="po-qty" class="form-control" placeholder="Cant." min="1" value="1">
         <input type="number" id="po-cost" class="form-control" placeholder="Costo $" min="0">
         <button type="button" class="btn btn-success" onclick="addPOItem()" style="padding:8px 12px;">+</button>
+      </div>
+      <div id="po-prod-new" style="display:none; display:none; grid-template-columns:3fr 1fr 1fr auto; gap:8px; margin-bottom:12px;">
+        <input type="text" id="po-new-name" class="form-control" placeholder="Nombre del producto nuevo">
+        <input type="number" id="po-new-qty" class="form-control" placeholder="Cant." min="1" value="1">
+        <input type="number" id="po-new-cost" class="form-control" placeholder="Costo $" min="0">
+        <button type="button" class="btn btn-success" onclick="addPONewItem()" style="padding:8px 12px;">+</button>
       </div>
 
       <div style="text-align:right; font-size:16px; font-weight:700; margin-bottom:12px;">
@@ -282,7 +293,26 @@
   }
 
   // PO Creation
-  function openPOModal() { poItems = []; renderPOItems(); document.getElementById('po-modal').style.display = 'flex'; loadSuppliers(); loadProducts(); }
+  function openPOModal() { poItems = []; renderPOItems(); document.getElementById('po-modal').style.display = 'flex'; loadSuppliers(); loadProducts(); setProdMode('existing'); }
+
+  function setProdMode(mode) {
+    document.getElementById('po-prod-existing').style.display = mode === 'existing' ? 'grid' : 'none';
+    document.getElementById('po-prod-new').style.display = mode === 'new' ? 'grid' : 'none';
+    document.getElementById('btn-prod-existing').className = mode === 'existing' ? 'btn btn-primary' : 'btn btn-outline';
+    document.getElementById('btn-prod-new').className = mode === 'new' ? 'btn btn-primary' : 'btn btn-outline';
+    document.getElementById('btn-prod-existing').style.flex = '1'; document.getElementById('btn-prod-existing').style.fontSize = '12px';
+    document.getElementById('btn-prod-new').style.flex = '1'; document.getElementById('btn-prod-new').style.fontSize = '12px';
+  }
+
+  function addPONewItem() {
+    const name = document.getElementById('po-new-name').value.trim();
+    if (!name) { rohuAlert('Ingrese el nombre del producto', 'warning'); return; }
+    const qty = parseFloat(document.getElementById('po-new-qty').value) || 1;
+    const cost = parseFloat(document.getElementById('po-new-cost').value) || 0;
+    poItems.push({product_name: name, quantity: qty, unit_cost: cost, tax_rate: 19, is_new: true});
+    renderPOItems();
+    document.getElementById('po-new-name').value = ''; document.getElementById('po-new-qty').value = '1'; document.getElementById('po-new-cost').value = '';
+  }
 
   function addPOItem() {
     const sel = document.getElementById('po-prod');
@@ -307,7 +337,8 @@
         const sub = item.quantity * item.unit_cost;
         const tax = sub * 0.19;
         total += sub + tax;
-        return `<tr><td>${item.product_name.split('(')[0]}</td><td>${item.quantity}</td><td>${COP(item.unit_cost)}</td><td>${COP(sub + tax)}</td><td><button onclick="removePOItem(${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;">×</button></td></tr>`;
+        const nameLabel = item.is_new ? `${item.product_name} <span class="badge badge-info" style="font-size:10px;">Nuevo</span>` : (item.product_name||'').split('(')[0];
+        return `<tr><td>${nameLabel}</td><td>${item.quantity}</td><td>${COP(item.unit_cost)}</td><td>${COP(sub + tax)}</td><td><button onclick="removePOItem(${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;">×</button></td></tr>`;
       }).join('') + '</tbody></table>';
     document.getElementById('po-total').textContent = COP(total);
   }
