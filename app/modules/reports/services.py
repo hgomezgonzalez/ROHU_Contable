@@ -544,23 +544,30 @@ def get_balance_sheet(tenant_id: str, year: int = None, month: int = None) -> di
 
     for acc in balance["accounts"]:
         group, bal = classify(acc)
+        atype = acc["account_type"]
+
+        # Accumulate income/expense/cost for period result
+        if atype == "income":
+            period_income += acc["balance"]  # positive = credit (normal)
+        elif atype in ("expense", "cost"):
+            period_expense += acc["balance"]  # positive = debit (normal)
+
+        # Add to balance sheet groups (use signed balance, not abs)
         if group and abs(bal) > 0.01:
             groups[group]["items"].append({
-                "puc_code": acc["puc_code"], "name": acc["name"], "balance": abs(bal)
+                "puc_code": acc["puc_code"], "name": acc["name"],
+                "balance": bal if bal > 0 else -bal,  # display positive
+                "is_negative": bal < 0,
             })
-            groups[group]["total"] += abs(bal)
-        # Accumulate income/expense/cost for period result (not yet in equity)
-        if acc["account_type"] == "income":
-            period_income += abs(acc["balance"])
-        elif acc["account_type"] in ("expense", "cost"):
-            period_expense += abs(acc["balance"])
+            groups[group]["total"] += bal  # SIGNED total (not abs!)
 
     # Add period result to equity (income - expenses - costs)
     period_result = round(period_income - period_expense, 2)
     if abs(period_result) > 0.01:
         label = "Resultado del periodo (utilidad)" if period_result > 0 else "Resultado del periodo (pérdida)"
         groups["equity"]["items"].append({
-            "puc_code": "—", "name": label, "balance": abs(period_result)
+            "puc_code": "—", "name": label, "balance": abs(period_result),
+            "is_negative": period_result < 0,
         })
         groups["equity"]["total"] += period_result
 
