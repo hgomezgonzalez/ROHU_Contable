@@ -1230,8 +1230,9 @@ def get_profit_trend(tenant_id: str, period: str = "daily", days: int = 30) -> l
 
 
 def get_cash_flow(tenant_id: str, days: int = 30) -> list:
-    """Daily cash flow: inflows vs outflows. Optimized: 4 queries total (was 120)."""
+    """Daily cash flow: inflows vs outflows. Includes expenses paid in cash."""
     from app.modules.cash.models import CashReceipt, CashDisbursement
+    from app.modules.accounting.models import Expense
 
     now = datetime.now(BOGOTA_TZ)
     start = now - timedelta(days=days)
@@ -1239,6 +1240,7 @@ def get_cash_flow(tenant_id: str, days: int = 30) -> list:
     day_trunc_cd = func.date_trunc("day", func.timezone("America/Bogota", CashDisbursement.disbursement_date))
     day_trunc_sale = func.date_trunc("day", func.timezone("America/Bogota", Sale.sale_date))
     day_trunc_sp = func.date_trunc("day", func.timezone("America/Bogota", SupplierPayment.payment_date))
+    day_trunc_exp = func.date_trunc("day", func.timezone("America/Bogota", Expense.expense_date))
 
     # Inflows: cash receipts grouped by day
     cr_data = db.session.query(
@@ -1272,18 +1274,28 @@ def get_cash_flow(tenant_id: str, days: int = 30) -> list:
         SupplierPayment.payment_date >= start,
     ).group_by("day").all()
 
+    # Outflows: paid expenses (arriendo, servicios, nómina, etc.)
+    exp_data = db.session.query(
+        day_trunc_exp.label("day"), func.coalesce(func.sum(Expense.total_amount), 0).label("total")
+    ).filter(
+        Expense.tenant_id == tenant_id, Expense.status == "active",
+        Expense.payment_status == "paid",
+        Expense.expense_date >= start,
+    ).group_by("day").all()
+
     # Merge into dicts
     fmt = lambda r: r.day.strftime("%Y-%m-%d")
     cr_map = {fmt(r): float(r.total) for r in cr_data}
     sp_map = {fmt(r): float(r.total) for r in sp_data}
     cd_map = {fmt(r): float(r.total) for r in cd_data}
     sup_map = {fmt(r): float(r.total) for r in sup_data}
+    exp_map = {fmt(r): float(r.total) for r in exp_data}
 
     results = []
     for i in range(days - 1, -1, -1):
         day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
         total_in = cr_map.get(day, 0) + sp_map.get(day, 0)
-        total_out = cd_map.get(day, 0) + sup_map.get(day, 0)
+        total_out = cd_map.get(day, 0) + sup_map.get(day, 0) + exp_map.get(day, 0)
         results.append({"date": day, "inflows": total_in, "outflows": total_out, "net": total_in - total_out})
 
     return results

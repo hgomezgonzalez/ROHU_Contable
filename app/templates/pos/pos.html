@@ -39,7 +39,7 @@
   <div class="card" style="width:100%; max-width:500px; text-align:center; margin:12px;">
     <h3 style="margin-bottom:8px;">Escanear Código</h3>
     <p style="margin:0 0 8px; font-size:12px; color:var(--text-light);">Apunte la cámara al código QR o código de barras del producto. Mantenga firme.</p>
-    <div id="qr-reader" style="width:100%; min-height:250px;"></div>
+    <div id="qr-reader" style="width:100%; min-height:300px;"></div>
     <button class="btn btn-outline" onclick="stopQRScanner()" style="width:100%; margin-top:8px;">Cancelar</button>
   </div>
 </div>
@@ -307,13 +307,16 @@
       Html5QrcodeSupportedFormats.CODABAR,
     ];
 
-    // Responsive qrbox size based on screen
-    const vw = Math.min(window.innerWidth - 60, 300);
-    const qrboxSize = Math.max(vw, 150);
+    // Use full camera view (no qrbox restriction) for better detection
+    // qrbox function returns dynamic size relative to video dimensions
+    const qrboxFunc = (viewfinderWidth, viewfinderHeight) => {
+      const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+      return { width: Math.floor(minEdge * 0.85), height: Math.floor(minEdge * 0.85) };
+    };
 
     html5QrCode.start(
       { facingMode: "environment" },
-      { fps: 15, qrbox: { width: qrboxSize, height: qrboxSize }, formatsToSupport: formats, aspectRatio: 1.0 },
+      { fps: 20, qrbox: qrboxFunc, formatsToSupport: formats, disableFlip: false },
       (decodedText) => {
         // Successfully decoded — guard against double-fire
         const code = decodedText.trim();
