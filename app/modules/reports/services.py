@@ -538,6 +538,10 @@ def get_balance_sheet(tenant_id: str, year: int = None, month: int = None) -> di
         "equity": {"label": "Patrimonio", "items": [], "total": 0},
     }
 
+    # Track income/expense/cost for period result
+    period_income = 0
+    period_expense = 0
+
     for acc in balance["accounts"]:
         group, bal = classify(acc)
         if group and abs(bal) > 0.01:
@@ -545,6 +549,20 @@ def get_balance_sheet(tenant_id: str, year: int = None, month: int = None) -> di
                 "puc_code": acc["puc_code"], "name": acc["name"], "balance": abs(bal)
             })
             groups[group]["total"] += abs(bal)
+        # Accumulate income/expense/cost for period result (not yet in equity)
+        if acc["account_type"] == "income":
+            period_income += abs(acc["balance"])
+        elif acc["account_type"] in ("expense", "cost"):
+            period_expense += abs(acc["balance"])
+
+    # Add period result to equity (income - expenses - costs)
+    period_result = round(period_income - period_expense, 2)
+    if abs(period_result) > 0.01:
+        label = "Resultado del periodo (utilidad)" if period_result > 0 else "Resultado del periodo (pérdida)"
+        groups["equity"]["items"].append({
+            "puc_code": "—", "name": label, "balance": abs(period_result)
+        })
+        groups["equity"]["total"] += period_result
 
     total_assets = groups["asset_current"]["total"] + groups["asset_non_current"]["total"]
     total_liabilities = groups["liability_current"]["total"] + groups["liability_non_current"]["total"]

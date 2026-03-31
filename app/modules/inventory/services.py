@@ -85,6 +85,26 @@ def create_product(
             quantity=Decimal(str(initial_stock)),
             unit_cost=Decimal(str(purchase_price)),
         )
+        # Generate accounting entry for initial stock (DB Inventory / CR Equity)
+        inv_value = float(Decimal(str(initial_stock)) * Decimal(str(purchase_price)))
+        if inv_value > 0:
+            try:
+                from app.modules.accounting.services import create_journal_entry
+                create_journal_entry(
+                    tenant_id=tenant_id, created_by=created_by,
+                    entry_type="ADJUSTMENT",
+                    description=f"Stock inicial: {name} ({initial_stock} uds × ${purchase_price:,.0f})",
+                    lines=[
+                        {"puc_code": "1435", "debit": inv_value, "credit": 0,
+                         "description": f"Inventario inicial {name}"},
+                        {"puc_code": "3115", "debit": 0, "credit": inv_value,
+                         "description": "Aporte en especie (inventario)"},
+                    ],
+                    source_document_type="product_initial_stock",
+                    source_document_id=str(product.id),
+                )
+            except Exception:
+                pass  # Don't block product creation if accounting fails
 
     db.session.commit()
     return _product_to_dict(product)
