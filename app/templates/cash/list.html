@@ -190,21 +190,41 @@
     <form id="exp-form">
       <div class="form-group">
         <label>Tipo de gasto *</label>
+        <div style="margin-bottom:4px; font-size:12px; color:var(--text-light);">Seleccione categoría:</div>
         <div id="exp-categories" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-bottom:8px;">
-          <button type="button" class="btn btn-outline exp-cat" data-puc="5120" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
-            <span style="font-size:18px;">🏠</span>Arriendo</button>
-          <button type="button" class="btn btn-outline exp-cat" data-puc="5135" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
-            <span style="font-size:18px;">⚡</span>Servicios</button>
-          <button type="button" class="btn btn-outline exp-cat" data-puc="5105" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
-            <span style="font-size:18px;">👤</span>Nómina</button>
-          <button type="button" class="btn btn-outline exp-cat" data-puc="5155" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
-            <span style="font-size:18px;">🚚</span>Transporte</button>
-          <button type="button" class="btn btn-outline exp-cat" data-puc="5115" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
-            <span style="font-size:18px;">📋</span>Impuestos</button>
-          <button type="button" class="btn btn-outline exp-cat" data-puc="5145" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
-            <span style="font-size:18px;">🔧</span>Mantenim.</button>
-          <button type="button" class="btn btn-outline exp-cat" data-puc="5195" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
-            <span style="font-size:18px;">📦</span>Otros</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="516005" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:16px;">🏠</span>Arriendo</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="" onclick="showExpSub(this,'services')" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:16px;">⚡</span>Servicios</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="510505" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:16px;">👤</span>Nómina</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="515505" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:16px;">🚚</span>Transporte</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="" onclick="showExpSub(this,'taxes')" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:16px;">📋</span>Impuestos</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="516505" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:16px;">🔧</span>Mantenim.</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="517505" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:16px;">📣</span>Publicidad</button>
+          <button type="button" class="btn btn-outline exp-cat" data-puc="519505" onclick="selectExpCat(this)" style="padding:8px 4px;font-size:11px;flex-direction:column;display:flex;align-items:center;gap:2px;">
+            <span style="font-size:16px;">📦</span>Otros</button>
+        </div>
+        <!-- Subcategory selectors (hidden by default) -->
+        <div id="exp-sub-services" style="display:none; margin-bottom:8px;">
+          <select id="exp-sub-sel-services" class="form-control" onchange="document.getElementById('exp-puc').value=this.value">
+            <option value="513505">Energía eléctrica</option>
+            <option value="513510">Acueducto y alcantarillado</option>
+            <option value="513515">Gas</option>
+            <option value="513520">Teléfono e internet</option>
+          </select>
+        </div>
+        <div id="exp-sub-taxes" style="display:none; margin-bottom:8px;">
+          <select id="exp-sub-sel-taxes" class="form-control" onchange="document.getElementById('exp-puc').value=this.value">
+            <option value="519525">Impuesto predial</option>
+            <option value="519530">Industria y comercio (ICA)</option>
+            <option value="519535">Tasas y contribuciones</option>
+            <option value="519540">Otros impuestos</option>
+          </select>
         </div>
         <input type="hidden" id="exp-puc" required>
       </div>
@@ -390,7 +410,15 @@
   });
 
   // ── Expenses (Gastos Operativos) ─────────────────────────
-  const EXP_CATS = {5120:'Arriendo',5135:'Servicios',5105:'Nómina',5155:'Transporte',5115:'Impuestos',5145:'Mantenimiento',5195:'Otros'};
+  const EXP_CATS = {
+    516005:'Arriendo',513505:'Energía',513510:'Agua',513515:'Gas',513520:'Internet',
+    510505:'Nómina',510515:'Aux.Transporte',515505:'Transporte',515510:'Pasajes',
+    519525:'Predial',519530:'ICA',519535:'Tasas',519540:'Otros imp.',
+    516505:'Mant.local',516510:'Mant.equipo',516515:'Mant.software',
+    517505:'Publicidad',517510:'Volantes',519505:'Papelería',519510:'Aseo',
+    519545:'Comisiones',519550:'Software',519515:'Representación',519520:'Legales',
+    5195:'Otros gastos'
+  };
   let expPayStatus = 'paid';
 
   function selectExpCat(btn) {
@@ -398,6 +426,19 @@
     btn.classList.add('active');
     btn.style.background = 'var(--primary)'; btn.style.color = 'white'; btn.style.borderColor = 'var(--primary)';
     document.getElementById('exp-puc').value = btn.dataset.puc;
+    // Hide all subcategory selectors
+    document.querySelectorAll('[id^="exp-sub-"]').forEach(el => el.style.display = 'none');
+  }
+
+  function showExpSub(btn, type) {
+    selectExpCat(btn);
+    document.querySelectorAll('[id^="exp-sub-"]').forEach(el => el.style.display = 'none');
+    const subEl = document.getElementById('exp-sub-' + type);
+    if (subEl) {
+      subEl.style.display = 'block';
+      const sel = subEl.querySelector('select');
+      if (sel) document.getElementById('exp-puc').value = sel.value;
+    }
   }
 
   function setExpPaid(status) {

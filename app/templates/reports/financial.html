@@ -58,6 +58,14 @@
   <div id="pl-table">Cargando...</div>
 </div>
 
+<!-- Balance General (ESF) -->
+<div class="card" style="margin-bottom:16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <div class="card-title" style="margin:0;">Estado de Situación Financiera (Balance General)</div>
+  </div>
+  <div id="esf-table">Cargando...</div>
+</div>
+
 <!-- Inventario Valorizado -->
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -151,6 +159,41 @@
           </td>
         </tr>
       </table>`;
+
+    // Balance General (ESF)
+    try {
+      const esfResp = await fetch(`/api/v1/reports/balance-sheet?year=${year}&month=${month}`, {headers});
+      const {data: esf} = await esfResp.json();
+      const renderGroup = (g) => g.items.map(i => `<tr><td style="padding-left:24px;color:var(--text-light);">${i.puc_code} ${i.name}</td><td style="text-align:right">${COP(i.balance)}</td></tr>`).join('');
+
+      document.getElementById('esf-table').innerHTML = `
+        <table>
+          <tr style="background:var(--bg);"><td colspan="2"><strong>ACTIVOS</strong></td></tr>
+          <tr><td><strong>Activos corrientes</strong></td><td style="text-align:right"><strong>${COP(esf.assets.current.total)}</strong></td></tr>
+          ${renderGroup(esf.assets.current)}
+          <tr><td><strong>Activos no corrientes</strong></td><td style="text-align:right"><strong>${COP(esf.assets.non_current.total)}</strong></td></tr>
+          ${renderGroup(esf.assets.non_current)}
+          <tr style="border-top:2px solid var(--primary);"><td><strong>TOTAL ACTIVOS</strong></td><td style="text-align:right"><strong>${COP(esf.assets.total)}</strong></td></tr>
+
+          <tr style="background:var(--bg);"><td colspan="2"><strong>PASIVOS</strong></td></tr>
+          <tr><td><strong>Pasivos corrientes</strong></td><td style="text-align:right"><strong>${COP(esf.liabilities.current.total)}</strong></td></tr>
+          ${renderGroup(esf.liabilities.current)}
+          <tr><td><strong>Pasivos no corrientes</strong></td><td style="text-align:right"><strong>${COP(esf.liabilities.non_current.total)}</strong></td></tr>
+          ${renderGroup(esf.liabilities.non_current)}
+          <tr style="border-top:2px solid var(--danger);"><td><strong>TOTAL PASIVOS</strong></td><td style="text-align:right;color:var(--danger);"><strong>${COP(esf.liabilities.total)}</strong></td></tr>
+
+          <tr style="background:var(--bg);"><td colspan="2"><strong>PATRIMONIO</strong></td></tr>
+          ${renderGroup(esf.equity)}
+          <tr style="border-top:2px solid var(--success);"><td><strong>TOTAL PATRIMONIO</strong></td><td style="text-align:right;color:var(--success);"><strong>${COP(esf.equity.total)}</strong></td></tr>
+
+          <tr style="border-top:3px double var(--primary); font-size:16px;">
+            <td><strong>PASIVOS + PATRIMONIO</strong></td>
+            <td style="text-align:right"><strong>${COP(esf.total_liabilities_equity)}</strong>
+              ${esf.is_balanced ? '<span class="badge badge-success" style="margin-left:8px;">Cuadrado</span>' : '<span class="badge badge-danger" style="margin-left:8px;">Descuadre</span>'}
+            </td>
+          </tr>
+        </table>`;
+    } catch(e) { document.getElementById('esf-table').innerHTML = '<div class="alert alert-danger">Error cargando Balance General</div>'; }
 
     // Inventory
     const iResp = await fetch('/api/v1/reports/inventory', {headers});

@@ -1115,6 +1115,24 @@ PUC_SEED = [
     ("519510", "Elementos de aseo", "expense", "debit"),
     ("519515", "Gastos de representación", "expense", "debit"),
     ("519520", "Gastos legales y notariales", "expense", "debit"),
+    ("519525", "Impuesto predial", "expense", "debit"),
+    ("519530", "Impuesto de industria y comercio (ICA)", "expense", "debit"),
+    ("519535", "Tasas y contribuciones", "expense", "debit"),
+    ("519540", "Otros impuestos y gravámenes", "expense", "debit"),
+    ("519545", "Comisiones plataformas digitales", "expense", "debit"),
+    ("519550", "Suscripciones de software", "expense", "debit"),
+
+    # 5155 - Gastos de viaje y transporte
+    ("515505", "Fletes y acarreos", "expense", "debit"),
+    ("515510", "Pasajes y viáticos", "expense", "debit"),
+
+    # 5165 - Mantenimiento (subcuenta adicional)
+    ("516515", "Mantenimiento software y sistemas", "expense", "debit"),
+
+    # 5175 - Publicidad
+    ("5175", "Publicidad y propaganda", "expense", "debit"),
+    ("517505", "Publicidad en redes sociales", "expense", "debit"),
+    ("517510", "Material impreso y volantes", "expense", "debit"),
 
     # 52 - Depreciación y amortización
     ("5205", "Depreciación propiedad planta y equipo", "expense", "debit"),

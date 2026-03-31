@@ -62,6 +62,15 @@ def profit_loss():
     return jsonify(success=True, data=data)
 
 
+@reports_bp.route("/balance-sheet", methods=["GET"])
+@require_permission("reports", "read")
+def balance_sheet():
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+    data = rpt.get_balance_sheet(g.tenant_id, year, month)
+    return jsonify(success=True, data=data)
+
+
 # ── DIAN Support ──────────────────────────────────────────────────
 
 @reports_bp.route("/dian/iva", methods=["GET"])

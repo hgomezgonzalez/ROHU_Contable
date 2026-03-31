@@ -506,6 +506,67 @@ def get_profit_loss(tenant_id: str, year: int = None, month: int = None) -> dict
     }
 
 
+# ── Balance General (Estado de Situación Financiera) ─────────────
+
+def get_balance_sheet(tenant_id: str, year: int = None, month: int = None) -> dict:
+    """Structured Balance Sheet (ESF) classified by current/non-current."""
+    balance = get_trial_balance(tenant_id, year, month)
+
+    # Classification rules based on PUC code ranges
+    def classify(acc):
+        code = acc["puc_code"]
+        atype = acc["account_type"]
+        bal = acc["balance"]
+        if atype == "asset":
+            # Current assets: 11xx (cash), 12xx (investments ST), 13xx (receivables), 14xx (inventory)
+            is_current = code[:2] in ("11", "12", "13", "14")
+            return ("asset_current" if is_current else "asset_non_current", bal)
+        elif atype == "liability":
+            # Current liabilities: 21xx-24xx; Non-current: 25xx+
+            is_current = code[:2] in ("21", "22", "23", "24")
+            return ("liability_current" if is_current else "liability_non_current", bal)
+        elif atype == "equity":
+            return ("equity", bal)
+        return (None, 0)
+
+    groups = {
+        "asset_current": {"label": "Activos Corrientes", "items": [], "total": 0},
+        "asset_non_current": {"label": "Activos No Corrientes", "items": [], "total": 0},
+        "liability_current": {"label": "Pasivos Corrientes", "items": [], "total": 0},
+        "liability_non_current": {"label": "Pasivos No Corrientes", "items": [], "total": 0},
+        "equity": {"label": "Patrimonio", "items": [], "total": 0},
+    }
+
+    for acc in balance["accounts"]:
+        group, bal = classify(acc)
+        if group and abs(bal) > 0.01:
+            groups[group]["items"].append({
+                "puc_code": acc["puc_code"], "name": acc["name"], "balance": abs(bal)
+            })
+            groups[group]["total"] += abs(bal)
+
+    total_assets = groups["asset_current"]["total"] + groups["asset_non_current"]["total"]
+    total_liabilities = groups["liability_current"]["total"] + groups["liability_non_current"]["total"]
+    total_equity = groups["equity"]["total"]
+
+    return {
+        "year": year, "month": month,
+        "assets": {
+            "current": groups["asset_current"],
+            "non_current": groups["asset_non_current"],
+            "total": round(total_assets, 2),
+        },
+        "liabilities": {
+            "current": groups["liability_current"],
+            "non_current": groups["liability_non_current"],
+            "total": round(total_liabilities, 2),
+        },
+        "equity": groups["equity"],
+        "total_liabilities_equity": round(total_liabilities + total_equity, 2),
+        "is_balanced": abs(total_assets - (total_liabilities + total_equity)) < 1,
+    }
+
+
 # ── DIAN Support Reports ──────────────────────────────────────────
 
 def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
