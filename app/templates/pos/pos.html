@@ -317,14 +317,11 @@
         const code = decodedText.trim();
         if (!code) return;
         console.log('Scanned:', code, 'Format:', decodedResult?.result?.format?.formatName);
+        // Save code BEFORE stopping scanner
+        window._lastScannedCode = code;
         stopQRScanner();
-        // Delay to let modal close and DOM settle before writing to input
-        setTimeout(() => {
-          searchInput.value = code;
-          searchInput.focus();
-          rohuAlert('Código leído: ' + code, 'info');
-          scanQR(code);
-        }, 300);
+        // Process the scanned code
+        processScannedCode(code);
       },
       (errorMessage) => { /* scan attempt — normal, ignore */ }
     ).catch((err) => {
@@ -461,6 +458,51 @@
         const cached = await rohuGetCachedProducts(query);
         if (cached.length > 0) { renderDropdown(cached); renderGrid(cached); return; }
       }
+    }
+  }
+
+  async function processScannedCode(code) {
+    // Called from camera scanner — handles product lookup and fallback
+    try {
+      const resp = await fetch(`/api/v1/inventory/products/scan?qr=${encodeURIComponent(code)}`, {headers});
+      if (resp.ok) {
+        const result = await resp.json();
+        if (result.success) {
+          addToCart(result.data);
+          rohuAlert(`${result.data.name} agregado al carrito`, 'success');
+          // Try to clear the search field after a delay (mobile may ignore)
+          setTimeout(() => { searchInput.value = ''; searchInput.focus(); }, 500);
+          return;
+        }
+      }
+      // Not found by code — try text search
+      const searchResp = await fetch(`/api/v1/inventory/products?q=${encodeURIComponent(code)}&per_page=5`, {headers, cache:'no-store'});
+      if (searchResp.ok) {
+        const searchResult = await searchResp.json();
+        const products = searchResult.data || [];
+        if (products.length === 1) {
+          // Exact 1 result — add it directly
+          addToCart(products[0]);
+          rohuAlert(`${products[0].name} agregado al carrito`, 'success');
+          setTimeout(() => { searchInput.value = ''; searchInput.focus(); }, 500);
+          return;
+        } else if (products.length > 1) {
+          // Multiple results — show them in dropdown
+          rohuAlert(`Código "${code}" — ${products.length} productos encontrados. Seleccione uno.`, 'info');
+          setTimeout(() => {
+            searchInput.value = code;
+            renderDropdown(products);
+            searchInput.focus();
+          }, 500);
+          return;
+        }
+      }
+      // Nothing found at all
+      rohuAlert(`Producto con código "${code}" no encontrado. Regístrelo primero en Inventario.`, 'warning');
+      setTimeout(() => { searchInput.value = code; searchInput.focus(); }, 500);
+    } catch(e) {
+      rohuAlert(`Error buscando código: ${code}. Inténtelo manualmente.`, 'error');
+      setTimeout(() => { searchInput.value = code; searchInput.focus(); }, 500);
     }
   }
 
