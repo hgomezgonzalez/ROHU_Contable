@@ -273,10 +273,18 @@
     html5QrCode.start(
       { facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } },
       (text) => { stopQRScanner(); scanQR(text); },
-      () => {}
-    ).catch(() => {
+      (err) => { /* scan attempt errors — normal, ignore */ }
+    ).catch((err) => {
+      console.error('Camera error:', err);
       stopQRScanner();
-      rohuAlert('Cámara no disponible. Use el campo de búsqueda para ingresar el código QR manualmente.', 'warning');
+      const msg = (err && err.message) ? err.message : String(err);
+      if (msg.includes('Permission') || msg.includes('denied')) {
+        rohuAlert('Permiso de cámara denegado. Vaya a Ajustes del navegador y permita el acceso a la cámara para este sitio.', 'warning');
+      } else if (msg.includes('NotFound') || msg.includes('device')) {
+        rohuAlert('No se encontró cámara en este dispositivo. Use el campo de búsqueda para ingresar el código manualmente.', 'warning');
+      } else {
+        rohuAlert('Cámara no disponible: ' + msg + '. Use búsqueda manual.', 'warning');
+      }
       searchInput.focus();
     });
   }
