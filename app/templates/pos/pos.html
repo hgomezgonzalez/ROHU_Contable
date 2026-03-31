@@ -35,12 +35,12 @@
 
 {% block content %}
 <!-- QR Scanner Modal -->
-<div id="qr-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:300; align-items:center; justify-content:center;">
-  <div class="card" style="width:100%; max-width:450px; text-align:center;">
-    <h3 style="margin-bottom:12px;">Escanear Código QR</h3>
-    <div id="qr-reader" style="width:100%;"></div>
-    <p style="margin:12px 0; font-size:13px; color:var(--text-light);">Apunte la cámara al código QR del producto</p>
-    <button class="btn btn-outline" onclick="stopQRScanner()" style="width:100%;">Cancelar</button>
+<div id="qr-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:300; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:500px; text-align:center; margin:12px;">
+    <h3 style="margin-bottom:8px;">Escanear Código</h3>
+    <p style="margin:0 0 8px; font-size:12px; color:var(--text-light);">Apunte la cámara al código QR o código de barras del producto. Mantenga firme.</p>
+    <div id="qr-reader" style="width:100%; min-height:250px;"></div>
+    <button class="btn btn-outline" onclick="stopQRScanner()" style="width:100%; margin-top:8px;">Cancelar</button>
   </div>
 </div>
 
@@ -271,7 +271,6 @@
     // Request camera permission explicitly first (required on mobile)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      // Permission granted — stop the test stream and proceed with html5-qrcode
       stream.getTracks().forEach(t => t.stop());
     } catch(permErr) {
       console.error('Camera permission error:', permErr);
@@ -291,18 +290,43 @@
 
     document.getElementById('qr-modal').style.display = 'flex';
     html5QrCode = new Html5Qrcode("qr-reader");
+
+    // Support ALL common barcode + QR formats
+    const formats = [
+      Html5QrcodeSupportedFormats.QR_CODE,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.CODE_93,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.CODABAR,
+    ];
+
+    // Responsive qrbox size based on screen
+    const vw = Math.min(window.innerWidth - 60, 300);
+    const qrboxSize = Math.max(vw, 150);
+
     html5QrCode.start(
-      { facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } },
-      (text) => {
+      { facingMode: "environment" },
+      { fps: 15, qrbox: { width: qrboxSize, height: qrboxSize }, formatsToSupport: formats, aspectRatio: 1.0 },
+      (decodedText, decodedResult) => {
+        // Successfully decoded — stop scanner first, then process
+        const code = decodedText.trim();
+        console.log('Scanned:', code, 'Format:', decodedResult?.result?.format?.formatName);
         stopQRScanner();
-        rohuAlert('Código leído: ' + text, 'info');
-        scanQR(text);
+        // Put code in search field and process
+        searchInput.value = code;
+        rohuAlert('Código leído: ' + code, 'info');
+        scanQR(code);
       },
-      (err) => { /* scan attempt errors — normal, ignore */ }
+      (errorMessage) => { /* scan attempt — normal, ignore */ }
     ).catch((err) => {
       console.error('Camera start error:', err);
       stopQRScanner();
-      rohuAlert('Error al iniciar cámara: ' + (err.message || String(err)), 'warning');
+      rohuAlert('Error al iniciar cámara: ' + (err.message || String(err)) + '. Intente escribir el código manualmente.', 'warning');
       searchInput.focus();
     });
   }
