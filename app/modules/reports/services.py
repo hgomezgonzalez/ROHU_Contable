@@ -1388,27 +1388,30 @@ def get_health_summary(tenant_id: str, date_from: str = None, date_to: str = Non
     net_result = revenue - total_costs
     coverage_pct = round((revenue / max(total_costs, 1)) * 100, 1) if total_costs > 0 else 100
 
-    # Previous month for comparison
-    pm = m - 1
-    py = y
-    if pm <= 0:
-        pm = 12
-        py -= 1
+    # Previous equivalent period for comparison
+    # Calculate the same duration as the selected range, shifted back
+    range_days = (date_to_dt - date_from_dt).days
+    prev_to = date_from_dt - timedelta(seconds=1)
+    prev_from = prev_to - timedelta(days=max(range_days, 1))
+    prev_from = prev_from.replace(hour=0, minute=0, second=0)
+
+    pm = prev_from.month
+    py = prev_from.year
 
     prev_sales = db.session.query(
         func.coalesce(func.sum(Sale.subtotal), 0)
     ).filter(
         Sale.tenant_id == tenant_id, Sale.status == "completed",
-        func.extract("year", Sale.sale_date) == py,
-        func.extract("month", Sale.sale_date) == pm,
+        Sale.sale_date >= prev_from,
+        Sale.sale_date <= prev_to,
     ).scalar()
 
     prev_cost = db.session.query(
         func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
     ).join(Sale).filter(
         Sale.tenant_id == tenant_id, Sale.status == "completed",
-        func.extract("year", Sale.sale_date) == py,
-        func.extract("month", Sale.sale_date) == pm,
+        Sale.sale_date >= prev_from,
+        Sale.sale_date <= prev_to,
     ).scalar()
 
     prev_rev = float(prev_sales or 0)
@@ -1472,11 +1475,11 @@ def get_health_summary(tenant_id: str, date_from: str = None, date_to: str = Non
         "breakeven": {
             "total_expenses": total_costs, "total_sales": revenue,
             "coverage_pct": coverage_pct, "gap": round(revenue - total_costs, 2),
-            "has_expenses": expenses > 0,
+            "has_expenses": total_costs > 0,
         },
         "month_comparison": {
-            "current": {"label": f"{MONTHS_ES[m]} {y}", "sales": revenue, "gross_profit": gross_profit},
-            "previous": {"label": f"{MONTHS_ES[pm]} {py}", "sales": prev_rev, "gross_profit": prev_profit},
+            "current": {"label": date_from_dt.strftime("%d/%m") + "—" + date_to_dt.strftime("%d/%m"), "sales": revenue, "gross_profit": gross_profit},
+            "previous": {"label": prev_from.strftime("%d/%m") + "—" + prev_to.strftime("%d/%m"), "sales": prev_rev, "gross_profit": prev_profit},
             "sales_delta_pct": sales_delta, "profit_delta_pct": profit_delta,
         },
         "net_pocket": {
