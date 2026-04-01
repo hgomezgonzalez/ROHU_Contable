@@ -155,7 +155,9 @@ def transactions():
 @reports_bp.route("/health-summary", methods=["GET"])
 @require_permission("reports", "read")
 def health_summary():
-    data = rpt.get_health_summary(g.tenant_id)
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    data = rpt.get_health_summary(g.tenant_id, date_from=date_from, date_to=date_to)
     return jsonify(success=True, data=data)
 
 

@@ -315,7 +315,9 @@
 
     // Load health indicators
     try {
-      const hResp = await fetch('/api/v1/reports/health-summary', {headers});
+      let hUrl = '/api/v1/reports/health-summary';
+      if (currentDateFrom && currentDateTo) hUrl += `?date_from=${encodeURIComponent(currentDateFrom)}&date_to=${encodeURIComponent(currentDateTo)}`;
+      const hResp = await fetch(hUrl, {headers});
       const hData = await hResp.json();
       if (hData.success) renderHealth(hData.data);
     } catch(e) { console.error('Health error:', e); }

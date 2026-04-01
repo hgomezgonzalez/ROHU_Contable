@@ -1338,38 +1338,46 @@ def get_receivables_vs_payables(tenant_id: str) -> dict:
     }
 
 
-def get_health_summary(tenant_id: str) -> dict:
+def get_health_summary(tenant_id: str, date_from: str = None, date_to: str = None) -> dict:
     """Business health summary: breakeven, month comparison, net pocket, 6-month trend."""
     from app.modules.accounting.models import Expense
 
     now = datetime.now(BOGOTA_TZ)
+
+    # Use date range if provided, otherwise default to current month
+    if date_from and date_to:
+        date_from_dt, date_to_dt = _parse_date_range(date_from, date_to)
+    else:
+        date_from_dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        date_to_dt = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
     y, m = now.year, now.month
 
-    # Current month sales (subtotal, cost, gross profit)
+    # Sales in selected range (uses index-friendly range filter)
     cur_sales = db.session.query(
         func.coalesce(func.sum(Sale.subtotal), 0).label("revenue"),
         func.coalesce(func.sum(Sale.total_amount), 0).label("total"),
     ).filter(
         Sale.tenant_id == tenant_id, Sale.status == "completed",
-        func.extract("year", Sale.sale_date) == y,
-        func.extract("month", Sale.sale_date) == m,
+        Sale.sale_date >= date_from_dt,
+        Sale.sale_date <= date_to_dt,
     ).first()
 
     cur_cost = db.session.query(
         func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
     ).join(Sale).filter(
         Sale.tenant_id == tenant_id, Sale.status == "completed",
-        func.extract("year", Sale.sale_date) == y,
-        func.extract("month", Sale.sale_date) == m,
+        Sale.sale_date >= date_from_dt,
+        Sale.sale_date <= date_to_dt,
     ).scalar()
 
-    # Current month expenses
+    # Expenses in selected range
     cur_expenses = db.session.query(
         func.coalesce(func.sum(Expense.total_amount), 0)
     ).filter(
         Expense.tenant_id == tenant_id, Expense.status == "active",
-        func.extract("year", Expense.expense_date) == y,
-        func.extract("month", Expense.expense_date) == m,
+        Expense.expense_date >= date_from_dt,
+        Expense.expense_date <= date_to_dt,
     ).scalar()
 
     revenue = float(cur_sales.revenue or 0)
