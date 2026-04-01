@@ -1475,7 +1475,9 @@ def get_health_summary(tenant_id: str, date_from: str = None, date_to: str = Non
         "breakeven": {
             "total_expenses": total_costs, "total_sales": revenue,
             "coverage_pct": coverage_pct, "gap": round(revenue - total_costs, 2),
-            "has_expenses": total_costs > 0,
+            "has_expenses": expenses > 0,
+            "cost_of_goods": cost,
+            "operating_expenses": expenses,
         },
         "month_comparison": {
             "current": {"label": date_from_dt.strftime("%d/%m") + "—" + date_to_dt.strftime("%d/%m"), "sales": revenue, "gross_profit": gross_profit},

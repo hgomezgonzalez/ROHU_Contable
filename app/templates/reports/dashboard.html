@@ -334,31 +334,35 @@
     bar.style.width = Math.min(pct, 100) + '%';
     badge.textContent = pct.toFixed(0) + '%';
 
+    const cog = h.breakeven.cost_of_goods || 0;
+    const opex = h.breakeven.operating_expenses || 0;
+
     if (pct >= 100) {
       bar.style.background = 'var(--success)';
       badge.className = 'badge badge-success'; badge.style.fontSize = '14px';
       msg.style.color = 'var(--success)';
-      msg.textContent = '¡Cubriste todos tus gastos! Te sobran ' + COP(h.breakeven.gap);
-      detail.textContent = 'Sigue así, el negocio está sano.';
+      msg.textContent = '¡Cubriste costos y gastos! Te sobran ' + COP(h.breakeven.gap);
     } else if (pct >= 60) {
       bar.style.background = 'var(--warning)';
       badge.className = 'badge badge-warning'; badge.style.fontSize = '14px';
       msg.style.color = '#92400E';
-      msg.textContent = 'Cubriste el ' + pct.toFixed(0) + '% de tus gastos';
-      detail.textContent = 'Te faltan ' + COP(Math.abs(h.breakeven.gap)) + ' para cubrir todo.';
+      msg.textContent = 'Cubriste el ' + pct.toFixed(0) + '% de costos y gastos';
     } else {
       bar.style.background = 'var(--danger)';
       badge.className = 'badge badge-danger'; badge.style.fontSize = '14px';
       msg.style.color = 'var(--danger)';
-      msg.textContent = 'Solo cubriste el ' + pct.toFixed(0) + '% de tus gastos';
-      detail.textContent = 'Te faltan ' + COP(Math.abs(h.breakeven.gap)) + '. Revisa gastos o aumenta ventas.';
+      msg.textContent = 'Solo cubriste el ' + pct.toFixed(0) + '% de costos y gastos';
     }
-    if (!h.breakeven.has_expenses) {
-      msg.textContent = 'Registra tus gastos para ver este indicador';
-      detail.textContent = 'Ve a Caja y Bancos > Gastos Operativos';
-      bar.style.width = '0%'; badge.textContent = '—';
+
+    // Build detail line with breakdown
+    let detailParts = ['Ventas: ' + COP(h.breakeven.total_sales), 'Costo mercancía: ' + COP(cog)];
+    if (opex > 0) detailParts.push('Gastos op.: ' + COP(opex));
+    detail.textContent = detailParts.join('  |  ');
+
+    // Warn if no operating expenses registered
+    if (!h.breakeven.has_expenses && h.breakeven.total_sales > 0) {
+      detail.textContent += '  ⚠️ Sin gastos operativos registrados (arriendo, servicios, nómina). Regístrelos en Caja > Gastos.';
     }
-    detail.textContent += '  |  Ventas: ' + COP(h.breakeven.total_sales) + '  |  Gastos: ' + COP(h.breakeven.total_expenses);
 
     // Month comparison
     const sd = h.month_comparison.sales_delta_pct;
