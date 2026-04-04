@@ -225,7 +225,8 @@
         <div class="cart-total-row total"><span>TOTAL</span><span id="cart-total">$0</span></div>
       </div>
       <button class="btn-checkout" id="btn-checkout" onclick="openPaymentModal()" disabled>
-        COBRAR $0
+        <span id="btn-checkout-label">COBRAR $0</span>
+        <span class="shortcut-badge">Ctrl+Enter</span>
       </button>
     </div>
   </div>
@@ -239,7 +240,7 @@
   <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">↑↓</kbd> Navegar</span>
   <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">Enter</kbd> Agregar</span>
   <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">+−</kbd> Cantidad</span>
-  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">F12</kbd> Cobrar</span>
+  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">Ctrl+Enter</kbd> Cobrar</span>
   <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">Esc</kbd> Cancelar</span>
 </div>
 <style>@media(max-width:768px){ [id="kb-hints"] {display:none!important;} }</style>
@@ -603,7 +604,7 @@
     document.getElementById('cart-tax').textContent = COP(tax);
     document.getElementById('cart-total').textContent = COP(currentTotal);
     const btn = document.getElementById('btn-checkout');
-    btn.textContent = `COBRAR ${COP(currentTotal)}`;
+    document.getElementById('btn-checkout-label').textContent = `COBRAR ${COP(currentTotal)}`;
     btn.disabled = currentTotal <= 0;
   }
 
@@ -921,8 +922,8 @@
     const inInput = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
     // F2 or / = focus search
     if ((e.key === 'F2' || (e.key === '/' && !inInput)) && document.activeElement !== searchInput) { e.preventDefault(); searchInput.focus(); }
-    // F12 = open payment modal (COBRAR)
-    if (e.key === 'F12') { e.preventDefault(); openPaymentModal(); }
+    // Ctrl+Enter or F12 = open payment modal (COBRAR)
+    if (e.key === 'F12' || (e.key === 'Enter' && e.ctrlKey)) { e.preventDefault(); openPaymentModal(); }
     // Escape = close modals (if dropdown not open)
     if (e.key === 'Escape' && document.getElementById('search-dropdown').style.display === 'none') {
       closePaymentModal(); closeReceipt(); stopQRScanner();
