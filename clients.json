@@ -5,5 +5,12 @@
     "url": "https://rohu-contable-prod-3fba93dd2eb4.herokuapp.com",
     "admin_email": "hgomezgonzalez@gmail.com",
     "created_at": "2026-03-29"
+  },
+  {
+    "name": "LA GRASA",
+    "app": "rohu-la-grasa",
+    "url": "https://rohu-la-grasa-45adbd28a71d.herokuapp.com/",
+    "admin_email": "julian.sanchez@lagrasa.com",
+    "created_at": "2026-04-04"
   }
 ]
