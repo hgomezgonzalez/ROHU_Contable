@@ -107,6 +107,7 @@ def create_product(
         if inv_value > 0:
             try:
                 from app.modules.accounting.services import create_journal_entry
+                sp = db.session.begin_nested()  # savepoint to isolate accounting
                 create_journal_entry(
                     tenant_id=tenant_id, created_by=created_by,
                     entry_type="ADJUSTMENT",
@@ -120,8 +121,12 @@ def create_product(
                     source_document_type="product_initial_stock",
                     source_document_id=str(product.id),
                 )
+                sp.commit()
             except Exception:
-                pass  # Don't block product creation if accounting fails
+                try:
+                    sp.rollback()
+                except Exception:
+                    pass
 
     db.session.commit()
     return _product_to_dict(product)
