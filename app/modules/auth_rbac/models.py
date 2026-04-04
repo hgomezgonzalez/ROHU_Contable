@@ -121,7 +121,8 @@ class User(db.Model):
     deleted_at = db.Column(db.DateTime(timezone=True))
     version = db.Column(db.Integer, nullable=False, default=1)
 
-    tenant = db.relationship("Tenant", back_populates="users")
+    tenant = db.relationship("Tenant", back_populates="users",
+                             foreign_keys=[tenant_id])
     roles = db.relationship("Role", secondary=user_roles, back_populates="users", lazy="joined")
 
     __table_args__ = (
