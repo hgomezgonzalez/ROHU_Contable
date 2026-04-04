@@ -83,7 +83,8 @@ class Tenant(db.Model):
     deleted_at = db.Column(db.DateTime(timezone=True))
     version = db.Column(db.Integer, nullable=False, default=1)
 
-    users = db.relationship("User", back_populates="tenant", lazy="dynamic")
+    users = db.relationship("User", back_populates="tenant", lazy="dynamic",
+                            foreign_keys="[User.tenant_id]")
 
     __table_args__ = (
         CheckConstraint("fiscal_regime IN ('simplified', 'common', 'simple', 'special')", name="ck_tenants_fiscal_regime"),
