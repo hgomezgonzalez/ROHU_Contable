@@ -125,8 +125,9 @@
     </div>
     <div style="display:flex; gap:8px; margin-top:16px;">
       <button class="btn btn-outline" onclick="closePaymentModal()" style="flex:1;">Cancelar</button>
-      <button id="btn-confirm-sale" class="btn btn-success btn-lg" onclick="confirmSale()" style="flex:2;" disabled>
-        Confirmar Venta
+      <button id="btn-confirm-sale" class="btn btn-success btn-lg" onclick="confirmSale()" style="flex:2; display:flex; align-items:center; justify-content:center; gap:10px;" disabled>
+        <span id="btn-confirm-label">Confirmar Venta</span>
+        <kbd style="background:rgba(255,255,255,0.25); padding:2px 8px; border-radius:4px; font-size:11px; font-weight:500;">Enter</kbd>
       </button>
     </div>
   </div>
@@ -647,7 +648,7 @@
       cashSec.style.display = 'none';
       refSec.style.display = 'none';
       btnConfirm.disabled = false;
-      btnConfirm.textContent = 'Confirmar Venta a Crédito';
+      document.getElementById('btn-confirm-label').textContent = 'Confirmar Venta a Crédito';
       loadCreditCustomers();
     } else {
       btnCash.className = 'btn btn-primary'; btnCash.style.flex = '1';
@@ -655,7 +656,7 @@
       creditSec.style.display = 'none';
       paySec.style.display = 'block';
       cashSec.style.display = '';
-      btnConfirm.textContent = 'Confirmar Venta';
+      document.getElementById('btn-confirm-label').textContent = 'Confirmar Venta';
       onPayMethodChange();
     }
   }
@@ -729,7 +730,7 @@
   // ── Confirm Sale ─────────────────────────────────────────
   async function confirmSale() {
     const btn = document.getElementById('btn-confirm-sale');
-    btn.disabled = true; btn.textContent = 'Procesando...';
+    btn.disabled = true; document.getElementById('btn-confirm-label').textContent = 'Procesando...';
 
     const method = document.getElementById('pay-method').value;
     const received = method === 'cash' ? parseFloat(document.getElementById('pay-received').value) : currentTotal;
@@ -749,7 +750,7 @@
 
     if (currentSaleType === 'credit') {
       const custId = document.getElementById('credit-customer').value;
-      if (!custId) { rohuAlert('Seleccione un cliente para la venta a crédito', 'warning'); btn.disabled = false; btn.textContent = 'Confirmar Venta a Crédito'; return; }
+      if (!custId) { rohuAlert('Seleccione un cliente para la venta a crédito', 'warning'); btn.disabled = false; document.getElementById('btn-confirm-label').textContent = 'Confirmar Venta a Crédito'; return; }
       payload.sale_type = 'credit';
       payload.customer_id = custId;
       payload.credit_days = parseInt(document.getElementById('credit-days').value) || 30;
@@ -793,7 +794,7 @@
       }
     }
     btn.disabled = false;
-    btn.textContent = currentSaleType === 'credit' ? 'Confirmar Venta a Crédito' : 'Confirmar Venta';
+    document.getElementById('btn-confirm-label').textContent = currentSaleType === 'credit' ? 'Confirmar Venta a Crédito' : 'Confirmar Venta';
   }
 
   // ── Receipt ──────────────────────────────────────────────
@@ -896,8 +897,8 @@
   // Payment modal: Enter confirms, Alt+letter changes method
   document.getElementById('payment-modal').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !document.getElementById('btn-confirm-sale').disabled) {
-      // Don't trigger if focus is on a button that has its own click
-      if (document.activeElement.tagName !== 'BUTTON') { e.preventDefault(); confirmSale(); }
+      // Don't trigger if focus is on a select (let it toggle normally)
+      if (document.activeElement.tagName !== 'SELECT') { e.preventDefault(); confirmSale(); }
     }
     if (e.altKey) {
       const map = {e:'cash', n:'nequi', d:'daviplata', t:'transfer', c:'card'};
