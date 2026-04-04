@@ -118,6 +118,7 @@ def create_journal_entry(
             raise ValueError("Línea no puede tener débito Y crédito al mismo tiempo")
 
         entry_lines.append(JournalLine(
+            tenant_id=tenant_id,
             account_id=account.id,
             debit_amount=debit, credit_amount=credit,
             description=line_data.get("description", ""),

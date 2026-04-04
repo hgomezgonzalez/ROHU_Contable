@@ -127,6 +127,7 @@ class JournalLine(db.Model):
     __tablename__ = "journal_lines"
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    tenant_id = db.Column(UUID(as_uuid=True), db.ForeignKey("tenants.id"), nullable=False)
     entry_id = db.Column(UUID(as_uuid=True), db.ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False)
     account_id = db.Column(UUID(as_uuid=True), db.ForeignKey("chart_of_accounts.id"), nullable=False)
 
@@ -139,6 +140,7 @@ class JournalLine(db.Model):
 
     __table_args__ = (
         Index("idx_jl_account", "account_id"),
+        Index("idx_jl_tenant_account", "tenant_id", "account_id"),
         CheckConstraint("debit_amount >= 0", name="ck_jl_debit"),
         CheckConstraint("credit_amount >= 0", name="ck_jl_credit"),
         CheckConstraint(
