@@ -743,8 +743,8 @@ def create_opening_balance(
     already_booked = get_inventory_accounting_balance(tenant_id)
     inventory_to_book = max(inventory_value - max(already_booked, 0), 0)
 
-    # Calculate retained earnings by difference
-    total_assets = cash + bank + receivables + inventory_value
+    # Calculate retained earnings by difference (use inventory_to_book, not inventory_value)
+    total_assets = cash + bank + receivables + inventory_to_book
     total_liabilities = payables
     retained_earnings = total_assets - total_liabilities - capital
     if retained_earnings < 0:
