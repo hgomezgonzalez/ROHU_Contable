@@ -72,6 +72,11 @@ class Tenant(db.Model):
     smtp_user = db.Column(db.String(255))
     smtp_password = db.Column(db.Text)
     smtp_from_email = db.Column(db.String(255))
+    # Opening balance confirmation
+    opening_confirmed = db.Column(db.Boolean, nullable=False, default=False)
+    opening_confirmed_at = db.Column(db.DateTime(timezone=True))
+    opening_confirmed_by = db.Column(UUID(as_uuid=True), db.ForeignKey("users.id"))
+
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now, onupdate=_now)

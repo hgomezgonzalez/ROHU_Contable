@@ -2,14 +2,13 @@
 
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import func
 
 from app.extensions import db
 from app.modules.inventory.models import Product
-from app.modules.inventory.services import move_stock
 from app.modules.pos.models import CashSession, Payment, Sale, SaleItem
 
 

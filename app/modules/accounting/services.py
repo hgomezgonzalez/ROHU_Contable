@@ -286,7 +286,12 @@ def post_sale_credit_note_entry(
     sub = Decimal(str(subtotal)).quantize(TWO_PLACES)
     tax = Decimal(str(tax_amount)).quantize(TWO_PLACES)
     cost = Decimal(str(cost_total)).quantize(TWO_PLACES)
-    cash_account = "1105" if payment_method == "cash" else "1110"
+    if payment_method == "credit":
+        cash_account = "1305"
+    elif payment_method == "cash":
+        cash_account = "1105"
+    else:
+        cash_account = "1110"
 
     # Entry 1: Revenue reversal via 4175
     lines = [
@@ -620,14 +625,16 @@ def monthly_close(tenant_id: str, year: int, month: int, user_id: str) -> dict:
                     "description": f"Cierre anual {acc['name']}",
                 })
 
-        # Net to equity: 3610 (Utilidad) if profit, 3610 (Pérdida) if loss
-        if net_income != 0:
-            puc_code = "3610"  # Utilidad/Pérdida del ejercicio
+        # Net to equity: 3605 (Utilidad, credit-normal) or 3610 (Pérdida, debit-normal)
+        if net_income > 0:
             closing_lines.append({
-                "puc_code": puc_code,
-                "debit": float(abs(net_income)) if net_income < 0 else 0,
-                "credit": float(abs(net_income)) if net_income > 0 else 0,
-                "description": "Utilidad del ejercicio" if net_income > 0 else "Pérdida del ejercicio",
+                "puc_code": "3605", "debit": 0, "credit": float(net_income),
+                "description": "Utilidad del ejercicio",
+            })
+        elif net_income < 0:
+            closing_lines.append({
+                "puc_code": "3610", "debit": float(abs(net_income)), "credit": 0,
+                "description": "Pérdida del ejercicio",
             })
 
         if closing_lines:

@@ -119,6 +119,7 @@ class StockMovement(db.Model):
     stock_before = db.Column(db.Numeric(12, 4), nullable=False)
     stock_after = db.Column(db.Numeric(12, 4), nullable=False)
     unit_cost = db.Column(db.Numeric(18, 6), nullable=False, default=0)
+    cost_average_after = db.Column(db.Numeric(18, 6), nullable=False, default=0)
 
     reference_type = db.Column(db.String(50))
     reference_id = db.Column(UUID(as_uuid=True))
