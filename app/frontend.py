@@ -88,6 +88,11 @@ def cash():
     return render_template("cash/list.html")
 
 
+@frontend_bp.route("/expenses")
+def expenses():
+    return render_template("expenses/list.html")
+
+
 @frontend_bp.route("/customers")
 def customers():
     return render_template("customers/list.html")

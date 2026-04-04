@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+{% set active_page = 'expenses' %}
+{% block title %}Gastos Operativos — ROHU Contable{% endblock %}
+{% block header_title %}Gastos Operativos{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Gastos del Negocio</h1>
+  <div style="display:flex; gap:8px;">
+    <button class="btn btn-primary" onclick="openExpenseModal()">+ Registrar Gasto</button>
+  </div>
+</div>
+
+<!-- KPIs -->
+<div class="kpi-grid" style="margin-bottom:16px;">
+  <div class="card" style="text-align:center;">
+    <div style="font-size:12px; color:var(--text-light); text-transform:uppercase;">Total del Mes</div>
+    <div id="kpi-total" style="font-size:24px; font-weight:700; color:var(--danger);">$0</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="font-size:12px; color:var(--text-light); text-transform:uppercase;">Pendientes de Pago</div>
+    <div id="kpi-pending" style="font-size:24px; font-weight:700; color:var(--warning-dark, #d97706);">$0</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div style="font-size:12px; color:var(--text-light); text-transform:uppercase;">Pagados este Mes</div>
+    <div id="kpi-paid" style="font-size:24px; font-weight:700; color:var(--success);">$0</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom:16px; padding:12px 16px;">
+  <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+    <select id="filter-status" class="form-control" style="width:auto; font-size:13px;" onchange="loadExpenses()">
+      <option value="">Todos</option>
+      <option value="paid">Pagados</option>
+      <option value="pending">Pendientes</option>
+    </select>
+    <select id="filter-puc" class="form-control" style="width:auto; font-size:13px;" onchange="loadExpenses()">
+      <option value="">Todas las categorias</option>
+      <option value="5105">Honorarios</option>
+      <option value="5115">Arrendamiento</option>
+      <option value="5135">Servicios publicos</option>
+      <option value="5145">Mantenimiento</option>
+      <option value="5150">Transporte</option>
+      <option value="5160">Personal</option>
+      <option value="5195">Otros gastos</option>
+    </select>
+    <span style="color:var(--text-light); font-size:12px;" id="expense-count">0 gastos</span>
+  </div>
+</div>
+
+<!-- Expenses Table -->
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Categoria</th>
+          <th>Concepto</th>
+          <th style="text-align:right">Monto</th>
+          <th style="text-align:right">IVA</th>
+          <th>Metodo</th>
+          <th>Estado</th>
+          <th>Fecha</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="expenses-table">
+        <tr><td colspan="9" style="text-align:center; color:var(--text-light); padding:40px;">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div id="pagination" style="display:flex; justify-content:center; gap:8px; padding:12px;"></div>
+</div>
+
+<!-- New Expense Modal -->
+<div id="expense-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; display:none; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:12px; padding:24px; width:95%; max-width:500px; max-height:90vh; overflow-y:auto;">
+    <h3 style="margin:0 0 16px;">Registrar Gasto</h3>
+
+    <label class="form-label">Categoria *</label>
+    <select id="exp-puc" class="form-control" style="margin-bottom:12px;">
+      <option value="">Seleccione...</option>
+      <option value="5115">Arrendamiento / Alquiler</option>
+      <option value="5135">Servicios publicos (agua, luz, internet)</option>
+      <option value="5105">Honorarios (contador, abogado)</option>
+      <option value="5160">Personal / Nomina</option>
+      <option value="5145">Mantenimiento y reparaciones</option>
+      <option value="5150">Transporte y fletes</option>
+      <option value="5195">Otros gastos</option>
+    </select>
+
+    <label class="form-label">Concepto / Descripcion *</label>
+    <input type="text" id="exp-concept" class="form-control" placeholder="Ej: Arriendo local enero" style="margin-bottom:12px;">
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+      <div>
+        <label class="form-label">Monto (sin IVA) *</label>
+        <input type="number" id="exp-amount" class="form-control" placeholder="0" min="0">
+      </div>
+      <div>
+        <label class="form-label">IVA</label>
+        <input type="number" id="exp-tax" class="form-control" placeholder="0" min="0" value="0">
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+      <div>
+        <label class="form-label">Metodo de pago</label>
+        <select id="exp-method" class="form-control">
+          <option value="cash">Efectivo</option>
+          <option value="transfer">Transferencia</option>
+          <option value="card">Tarjeta</option>
+          <option value="nequi">Nequi</option>
+          <option value="daviplata">Daviplata</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Estado</label>
+        <select id="exp-status" class="form-control">
+          <option value="paid">Pagado</option>
+          <option value="pending">Pendiente (causado)</option>
+        </select>
+      </div>
+    </div>
+
+    <label class="form-label">Referencia / Recibo</label>
+    <input type="text" id="exp-ref" class="form-control" placeholder="Ej: Factura #123" style="margin-bottom:12px;">
+
+    <label class="form-label">Notas</label>
+    <textarea id="exp-notes" class="form-control" rows="2" placeholder="Observaciones..." style="margin-bottom:16px;"></textarea>
+
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-outline" onclick="closeExpenseModal()" style="flex:1;">Cancelar</button>
+      <button class="btn btn-primary" id="btn-save-expense" onclick="saveExpense()" style="flex:2;">Guardar Gasto</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pay Modal -->
+<div id="pay-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:12px; padding:24px; width:95%; max-width:400px;">
+    <h3 style="margin:0 0 16px;">Pagar Gasto</h3>
+    <p id="pay-desc" style="color:var(--text-light); margin-bottom:12px;"></p>
+    <label class="form-label">Metodo de pago</label>
+    <select id="pay-method" class="form-control" style="margin-bottom:16px;">
+      <option value="cash">Efectivo</option>
+      <option value="transfer">Transferencia</option>
+      <option value="card">Tarjeta</option>
+      <option value="nequi">Nequi</option>
+    </select>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-outline" onclick="closePayModal()" style="flex:1;">Cancelar</button>
+      <button class="btn btn-success" onclick="confirmPay()" style="flex:2;">Confirmar Pago</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const token = localStorage.getItem('access_token');
+  const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
+  const PAY_NAMES = {cash:'Efectivo', card:'Tarjeta', transfer:'Transferencia', nequi:'Nequi', daviplata:'Daviplata'};
+  const PUC_NAMES = {'5105':'Honorarios','5115':'Arrendamiento','5135':'Servicios','5145':'Mantenimiento','5150':'Transporte','5160':'Personal','5195':'Otros'};
+
+  let currentPage = 1;
+  let payExpenseId = null;
+
+  async function loadExpenses() {
+    try {
+      const resp = await fetch(`/api/v1/accounting/expenses?page=${currentPage}&per_page=20`, {headers});
+      if (resp.status === 401) { window.location.href = '/app/login'; return; }
+      const result = await resp.json();
+      if (!result.success) return;
+
+      const expenses = result.data || [];
+      const status = document.getElementById('filter-status').value;
+      const puc = document.getElementById('filter-puc').value;
+
+      // Client-side filter (API doesn't support filter params yet)
+      let filtered = expenses;
+      if (status) filtered = filtered.filter(e => e.payment_status === status);
+      if (puc) filtered = filtered.filter(e => e.puc_code === puc);
+
+      // KPIs
+      const now = new Date();
+      const thisMonth = expenses.filter(e => {
+        const d = new Date(e.expense_date);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      });
+      const totalMonth = thisMonth.reduce((s, e) => s + (e.total_amount || 0), 0);
+      const pendingMonth = thisMonth.filter(e => e.payment_status === 'pending').reduce((s, e) => s + (e.total_amount || 0), 0);
+      const paidMonth = thisMonth.filter(e => e.payment_status === 'paid').reduce((s, e) => s + (e.total_amount || 0), 0);
+
+      document.getElementById('kpi-total').textContent = COP(totalMonth);
+      document.getElementById('kpi-pending').textContent = COP(pendingMonth);
+      document.getElementById('kpi-paid').textContent = COP(paidMonth);
+      document.getElementById('expense-count').textContent = `${filtered.length} gastos`;
+
+      // Table
+      const tbody = document.getElementById('expenses-table');
+      if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--text-light); padding:40px;">No hay gastos registrados</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = filtered.map((e, i) => `
+        <tr>
+          <td style="color:var(--text-light);">${e.expense_number}</td>
+          <td><span style="background:var(--bg-main);padding:2px 8px;border-radius:4px;font-size:12px;">${PUC_NAMES[e.puc_code] || e.puc_code}</span></td>
+          <td>${e.concept}</td>
+          <td style="text-align:right; font-weight:600;">${COP(e.amount)}</td>
+          <td style="text-align:right; color:var(--text-light);">${e.tax_amount > 0 ? COP(e.tax_amount) : '—'}</td>
+          <td>${PAY_NAMES[e.payment_method] || e.payment_method || '—'}</td>
+          <td>
+            <span class="badge ${e.payment_status === 'paid' ? 'badge-success' : 'badge-warning'}">
+              ${e.payment_status === 'paid' ? 'Pagado' : 'Pendiente'}
+            </span>
+          </td>
+          <td style="font-size:12px; color:var(--text-light);">${new Date(e.expense_date).toLocaleDateString('es-CO')}</td>
+          <td>
+            ${e.payment_status === 'pending' ? `<button class="btn btn-outline" style="font-size:11px; padding:4px 10px;" onclick="openPayModal('${e.id}', '${e.concept}', ${e.total_amount})">Pagar</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+
+      // Pagination
+      if (result.total_pages > 1) {
+        const pg = document.getElementById('pagination');
+        pg.innerHTML = Array.from({length: result.total_pages}, (_, i) =>
+          `<button class="btn ${i+1===currentPage?'btn-primary':'btn-outline'}" style="padding:4px 12px; font-size:12px;" onclick="currentPage=${i+1};loadExpenses()">${i+1}</button>`
+        ).join('');
+      }
+
+    } catch (err) {
+      console.error('Error loading expenses:', err);
+    }
+  }
+
+  function openExpenseModal() { document.getElementById('expense-modal').style.display = 'flex'; }
+  function closeExpenseModal() {
+    document.getElementById('expense-modal').style.display = 'none';
+    ['exp-puc','exp-concept','exp-amount','exp-tax','exp-ref','exp-notes'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = '';
+    });
+  }
+
+  async function saveExpense() {
+    const puc = document.getElementById('exp-puc').value;
+    const concept = document.getElementById('exp-concept').value;
+    const amount = parseFloat(document.getElementById('exp-amount').value);
+    if (!puc || !concept || !amount) {
+      if (typeof rohuAlert === 'function') rohuAlert('Complete categoria, concepto y monto', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('btn-save-expense');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+
+    try {
+      const resp = await fetch('/api/v1/accounting/expenses', {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          puc_code: puc,
+          concept: concept,
+          amount: amount,
+          tax_amount: parseFloat(document.getElementById('exp-tax').value) || 0,
+          payment_status: document.getElementById('exp-status').value,
+          payment_method: document.getElementById('exp-method').value,
+          receipt_reference: document.getElementById('exp-ref').value || undefined,
+          notes: document.getElementById('exp-notes').value || undefined,
+        }),
+      });
+      const result = await resp.json();
+      if (result.success) {
+        closeExpenseModal();
+        loadExpenses();
+        if (typeof rohuAlert === 'function') rohuAlert('Gasto registrado correctamente', 'success');
+      } else {
+        if (typeof rohuAlert === 'function') rohuAlert(result.error?.message || 'Error al guardar', 'error');
+      }
+    } catch (err) {
+      if (typeof rohuAlert === 'function') rohuAlert('Error de conexion', 'error');
+    }
+    btn.disabled = false; btn.textContent = 'Guardar Gasto';
+  }
+
+  function openPayModal(id, desc, amount) {
+    payExpenseId = id;
+    document.getElementById('pay-desc').textContent = `${desc} — ${COP(amount)}`;
+    document.getElementById('pay-modal').style.display = 'flex';
+  }
+  function closePayModal() { document.getElementById('pay-modal').style.display = 'none'; payExpenseId = null; }
+
+  async function confirmPay() {
+    if (!payExpenseId) return;
+    try {
+      const resp = await fetch(`/api/v1/accounting/expenses/${payExpenseId}/pay`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ payment_method: document.getElementById('pay-method').value }),
+      });
+      const result = await resp.json();
+      if (result.success) {
+        closePayModal();
+        loadExpenses();
+        if (typeof rohuAlert === 'function') rohuAlert('Gasto marcado como pagado', 'success');
+      } else {
+        if (typeof rohuAlert === 'function') rohuAlert(result.error?.message || 'Error', 'error');
+      }
+    } catch (err) {
+      if (typeof rohuAlert === 'function') rohuAlert('Error de conexion', 'error');
+    }
+  }
+
+  // Init
+  loadExpenses();
+</script>
+
+<style>
+  @media (max-width: 768px) {
+    .table-wrap table thead { display: none; }
+    .table-wrap table tbody tr {
+      display: block; border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px; margin-bottom: 8px; background: white;
+    }
+    .table-wrap table tbody td {
+      display: flex; justify-content: space-between; padding: 4px 0;
+      border: none; font-size: 13px;
+    }
+    .table-wrap table tbody td::before {
+      content: attr(data-label); font-weight: 600; color: var(--text-light); font-size: 12px;
+    }
+  }
+</style>
+{% endblock %}
