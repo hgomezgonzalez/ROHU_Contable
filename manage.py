@@ -56,12 +56,10 @@ def seed_puc():
     from app.modules.accounting.services import seed_chart_of_accounts
     tenants = Tenant.query.filter_by(is_active=True).all()
     for t in tenants:
-        count = ChartOfAccount.query.filter_by(tenant_id=t.id).count()
-        if count == 0:
-            seed_chart_of_accounts(str(t.id))
-            click.echo(f"PUC sembrado para '{t.name}' ({t.id})")
-        else:
-            click.echo(f"'{t.name}' ya tiene {count} cuentas, omitido.")
+        count_before = ChartOfAccount.query.filter_by(tenant_id=t.id).count()
+        added = seed_chart_of_accounts(str(t.id))
+        count_after = ChartOfAccount.query.filter_by(tenant_id=t.id).count()
+        click.echo(f"'{t.name}': {count_before} existentes, {added} agregadas, {count_after} total.")
     click.echo("Done.")
 
 

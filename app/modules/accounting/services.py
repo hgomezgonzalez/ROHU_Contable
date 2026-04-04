@@ -1269,21 +1269,27 @@ PUC_SEED = [
 
 
 def seed_chart_of_accounts(tenant_id: str) -> int:
-    """Seed the PUC for a tenant. Incremental — adds missing accounts."""
-    existing_codes = set()
-    for row in ChartOfAccount.query.filter_by(tenant_id=tenant_id).all():
-        existing_codes.add(row.puc_code)
+    """Seed the PUC for a tenant. Idempotent — skips existing, handles partial seeds."""
+    existing_codes = {
+        row.puc_code for row in
+        ChartOfAccount.query.filter_by(tenant_id=tenant_id).all()
+    }
 
     added = 0
     for code, name, acc_type, normal in PUC_SEED:
         if code in existing_codes:
             continue
-        account = ChartOfAccount(
-            tenant_id=tenant_id, puc_code=code, name=name,
-            account_type=acc_type, normal_balance=normal, is_system=True,
-        )
-        db.session.add(account)
-        added += 1
+        try:
+            sp = db.session.begin_nested()
+            account = ChartOfAccount(
+                tenant_id=tenant_id, puc_code=code, name=name,
+                account_type=acc_type, normal_balance=normal, is_system=True,
+            )
+            db.session.add(account)
+            sp.commit()
+            added += 1
+        except Exception:
+            sp.rollback()
 
     db.session.commit()
     return added
