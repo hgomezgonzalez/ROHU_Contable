@@ -252,15 +252,27 @@ function showHelpTab(tab) {
 }
 
 function renderHelpModule(h) {
+  const avatar = `<div class="rohu-avatar rohu-avatar-sm">
+    <div class="head"><div style="display:flex;flex-direction:column;align-items:center;">
+      <div class="eyes"><div class="eye"></div><div class="eye"></div></div>
+      <div class="mouth"></div>
+    </div></div>
+    <div class="hand">&#128075;</div>
+  </div>`;
   return `
-    <h3 style="font-size:16px;margin-bottom:4px;">${h.title}</h3>
-    <p style="color:var(--text-light);font-size:13px;margin-bottom:12px;">${h.tagline}</p>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      ${avatar}
+      <div>
+        <h3 style="font-size:16px;margin:0;">${h.title}</h3>
+        <p style="color:var(--text-light);font-size:13px;margin:0;">${h.tagline}</p>
+      </div>
+    </div>
     <div style="font-size:13px;line-height:1.8;">
-      <strong>Cómo usarlo:</strong>
+      <strong>&#128161; Como usarlo:</strong>
       <ol style="padding-left:20px;margin:8px 0;">
         ${h.steps.map(s => `<li>${s}</li>`).join('')}
       </ol>
-      ${h.tip ? `<div style="background:#FEF3C7;padding:8px 12px;border-radius:6px;margin-top:8px;font-size:12px;"><strong>Consejo:</strong> ${h.tip}</div>` : ''}
+      ${h.tip ? `<div style="background:#FEF3C7;padding:8px 12px;border-radius:6px;margin-top:8px;font-size:12px;">&#128173; <strong>Consejo:</strong> ${h.tip}</div>` : ''}
     </div>
   `;
 }

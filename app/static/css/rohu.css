@@ -714,6 +714,55 @@ tr:hover { background: #F1F5F9; }
   .help-drawer.open { transform: translateY(0); }
 }
 
+/* ── ROHU Avatar (CSS animated assistant) ────────────── */
+.rohu-avatar {
+  display: inline-block; position: relative; width: 64px; height: 64px;
+}
+.rohu-avatar .head {
+  width: 52px; height: 52px; background: #1E3A8A; border-radius: 50%;
+  position: absolute; top: 0; left: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.rohu-avatar .eyes {
+  display: flex; gap: 10px; margin-top: -4px;
+}
+.rohu-avatar .eye {
+  width: 8px; height: 10px; background: white; border-radius: 50%;
+  animation: rohu-blink 3.5s infinite;
+}
+.rohu-avatar .mouth {
+  width: 14px; height: 7px; border-bottom: 3px solid white;
+  border-radius: 0 0 10px 10px; margin-top: 2px;
+}
+.rohu-avatar .hand {
+  position: absolute; bottom: 2px; right: -2px; font-size: 20px;
+  animation: rohu-wave 2s ease-in-out infinite;
+  transform-origin: 70% 70%;
+}
+@keyframes rohu-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+@keyframes rohu-wave {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-8deg); }
+  45% { transform: rotate(14deg); }
+  60% { transform: rotate(-4deg); }
+  75% { transform: rotate(10deg); }
+}
+.rohu-avatar-sm { transform: scale(0.7); display: inline-block; vertical-align: middle; margin: -8px 4px -8px 0; }
+
+/* Guide card with avatar */
+.guide-card {
+  background: linear-gradient(135deg, #EFF6FF 0%, #F0F9FF 100%);
+  border: 1px solid #BFDBFE; border-radius: 12px;
+  padding: 16px 20px; display: flex; gap: 16px; align-items: flex-start;
+}
+.guide-card .guide-text { flex: 1; font-size: 13px; color: #1E40AF; line-height: 1.7; }
+.guide-card .guide-text strong { color: #1E3A8A; }
+.guide-card ol { margin: 8px 0 0 16px; padding: 0; }
+
 @media (max-width: 600px) {
   .page-title { font-size: var(--fs-lg); }
   .card-value { font-size: var(--fs-xl); }
