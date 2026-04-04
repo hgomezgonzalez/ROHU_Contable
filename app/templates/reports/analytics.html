@@ -20,6 +20,13 @@
     <button class="btn btn-outline analytics-period" data-days="90" style="padding:4px 14px;font-size:12px;border-radius:20px;white-space:nowrap;">90 días</button>
     <button class="btn btn-outline analytics-period" data-days="180" style="padding:4px 14px;font-size:12px;border-radius:20px;white-space:nowrap;">6 meses</button>
     <button class="btn btn-outline analytics-period" data-days="365" style="padding:4px 14px;font-size:12px;border-radius:20px;white-space:nowrap;">1 año</button>
+    <button class="btn btn-outline analytics-period" data-days="0" id="btn-custom-range" style="padding:4px 14px;font-size:12px;border-radius:20px;white-space:nowrap;">Personalizado</button>
+  </div>
+  <div id="custom-range" style="display:none; gap:8px; align-items:center; margin-left:8px;">
+    <input type="date" id="analytics-from" class="form-control" style="width:auto; font-size:12px; padding:4px 8px;">
+    <span style="font-size:12px; color:var(--text-light);">a</span>
+    <input type="date" id="analytics-to" class="form-control" style="width:auto; font-size:12px; padding:4px 8px;">
+    <button class="btn btn-primary" onclick="applyCustomAnalytics()" style="padding:4px 14px; font-size:12px;">Aplicar</button>
   </div>
 </div>
 <style>.analytics-period.active{background:var(--primary)!important;color:white!important;border-color:var(--primary)!important;}</style>
@@ -50,7 +57,7 @@
 <!-- Row 1: Cash Flow + CxC vs CxP -->
 <div class="grid-2-1">
   <div class="card">
-    <div class="card-title">Flujo de Caja (últimos 30 días)</div>
+    <div class="card-title" id="title-cashflow">Flujo de Caja (últimos 30 días)</div>
     <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-cashflow')" title="Expandir">⛶</button><canvas id="chart-cashflow" height="70"></canvas></div>
   </div>
   <div class="card">
@@ -75,11 +82,11 @@
 <!-- Row 3: Inventory Rotation -->
 <div class="grid-2">
   <div class="card">
-    <div class="card-title">Productos Más Vendidos (30 días)</div>
+    <div class="card-title" id="title-fast">Productos Más Vendidos (30 días)</div>
     <div class="chart-wrap"><button class="chart-expand-btn" onclick="rohuExpandChart('chart-fast')" title="Expandir">⛶</button><canvas id="chart-fast" height="70"></canvas></div>
   </div>
   <div class="card">
-    <div class="card-title">Inventario Sin Movimiento (+30 días)</div>
+    <div class="card-title" id="title-deadstock">Inventario Sin Movimiento (+30 días)</div>
     <div id="dead-stock-value" style="font-size:22px; font-weight:700; color:var(--danger); margin-bottom:8px;">—</div>
     <div class="table-wrap">
       <table>
@@ -175,7 +182,8 @@
       }
 
       // Margins
-      const mg = await fetch('/api/v1/reports/analytics/margins', {headers}).then(r=>r.json());
+      const mgRange = getDateRange();
+      const mg = await fetch(`/api/v1/reports/analytics/margins?date_from=${mgRange.date_from}&date_to=${mgRange.date_to}`, {headers}).then(r=>r.json());
       if (mg.success && mg.data.length) {
         if (charts.margins) charts.margins.destroy();
         charts.margins = new Chart(document.getElementById('chart-margins'), {
@@ -232,20 +240,66 @@
   }
 
   let currentDays = 30;
+  let customFrom = null, customTo = null;
+
+  function getDateRange() {
+    if (customFrom && customTo) return { date_from: customFrom, date_to: customTo };
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - currentDays);
+    return { date_from: from.toISOString().split('T')[0], date_to: to.toISOString().split('T')[0] };
+  }
+
+  function getPeriodLabel() {
+    if (customFrom && customTo) return `${customFrom} a ${customTo}`;
+    if (currentDays <= 30) return 'últimos 30 días';
+    if (currentDays <= 90) return 'últimos 90 días';
+    if (currentDays <= 180) return 'últimos 6 meses';
+    return 'último año';
+  }
+
+  function updateDynamicTitles() {
+    const label = getPeriodLabel();
+    const el1 = document.getElementById('title-cashflow');
+    const el2 = document.getElementById('title-fast');
+    const el3 = document.getElementById('title-deadstock');
+    if (el1) el1.textContent = `Flujo de Caja (${label})`;
+    if (el2) el2.textContent = `Productos Más Vendidos (${label})`;
+    if (el3) el3.textContent = `Inventario Sin Movimiento (+${currentDays || 30} días)`;
+  }
 
   // Period preset click handlers
   document.querySelectorAll('.analytics-period').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.analytics-period').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      currentDays = parseInt(btn.dataset.days);
+      const days = parseInt(btn.dataset.days);
+      if (days === 0) {
+        document.getElementById('custom-range').style.display = 'flex';
+        return;
+      }
+      document.getElementById('custom-range').style.display = 'none';
+      customFrom = null; customTo = null;
+      currentDays = days;
+      updateDynamicTitles();
       loadAll();
     });
   });
 
+  function applyCustomAnalytics() {
+    customFrom = document.getElementById('analytics-from').value;
+    customTo = document.getElementById('analytics-to').value;
+    if (!customFrom || !customTo) return;
+    const diff = Math.ceil((new Date(customTo) - new Date(customFrom)) / 86400000);
+    currentDays = Math.max(diff, 1);
+    updateDynamicTitles();
+    loadAll();
+  }
+
   async function loadHealthTrend() {
     try {
-      const resp = await fetch('/api/v1/reports/health-summary', {headers});
+      const range = getDateRange();
+      const resp = await fetch(`/api/v1/reports/health-summary?date_from=${range.date_from}&date_to=${range.date_to}`, {headers});
       const r = await resp.json();
       if (!r.success) return;
       const h = r.data;

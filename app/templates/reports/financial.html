@@ -46,7 +46,7 @@
 <div class="card" style="margin-bottom:16px;">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
     <div class="card-title" style="margin:0;">Balance de Prueba</div>
-    <a href="/api/v1/reports/trial-balance/export" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
+    <a id="btn-export-tb" href="/api/v1/reports/trial-balance/export" class="btn btn-outline no-print" style="font-size:12px;">Exportar CSV</a>
   </div>
   <div class="table-wrap">
     <table>
@@ -127,6 +127,10 @@
     const year = document.getElementById('fin-year').value;
     const month = document.getElementById('fin-month').value;
     const MONTHS = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+    // Update export CSV link with current year/month
+    const exportBtn = document.getElementById('btn-export-tb');
+    if (exportBtn) exportBtn.href = `/api/v1/reports/trial-balance/export?year=${year}&month=${month}`;
 
     // Balance
     const bResp = await fetch(`/api/v1/accounting/trial-balance?year=${year}&month=${month}`, {headers});

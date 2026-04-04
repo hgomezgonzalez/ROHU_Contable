@@ -26,14 +26,28 @@
   <h1 class="page-title">Soporte Tributario</h1>
   <div class="dian-header-controls" style="display:flex; gap:8px; align-items:center;">
     <select id="sel-year" class="form-control" style="width:auto;" onchange="loadAll()">
-      <option value="2026" selected>2026</option><option value="2025">2025</option>
     </select>
     <select id="sel-month" class="form-control" style="width:auto;" onchange="loadAll()">
-      <option value="1">Ene</option><option value="2">Feb</option><option value="3" selected>Mar</option>
+      <option value="1">Ene</option><option value="2">Feb</option><option value="3">Mar</option>
       <option value="4">Abr</option><option value="5">May</option><option value="6">Jun</option>
       <option value="7">Jul</option><option value="8">Ago</option><option value="9">Sep</option>
       <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dic</option>
     </select>
+    <script>
+      // Dynamic year selector (current year - 3 years back)
+      (function() {
+        const sel = document.getElementById('sel-year');
+        const now = new Date();
+        for (let y = now.getFullYear(); y >= now.getFullYear() - 3; y--) {
+          const opt = document.createElement('option');
+          opt.value = y; opt.textContent = y;
+          if (y === now.getFullYear()) opt.selected = true;
+          sel.appendChild(opt);
+        }
+        // Set current month as default
+        document.getElementById('sel-month').value = now.getMonth() + 1;
+      })();
+    </script>
     <button class="btn btn-outline no-print" onclick="window.print()">Imprimir</button>
   </div>
 </div>
