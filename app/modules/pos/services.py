@@ -329,6 +329,7 @@ def checkout(
     try:
         from app.modules.accounting.services import post_sale_entry
         fiscal = tenant_obj.fiscal_regime if tenant_obj else "simplified"
+        sp = db.session.begin_nested()  # savepoint before accounting
         post_sale_entry(
             tenant_id=tenant_id, created_by=cashier_id,
             sale_id=str(sale.id),
@@ -337,24 +338,19 @@ def checkout(
             payment_method="credit" if is_credit else payment_method,
             fiscal_regime=fiscal,
         )
+        sp.commit()
     except Exception as e:
-        # Log full traceback to server logs only (never to DB — SEC-006)
+        # Rollback only the accounting savepoint — sale + stock remain intact
+        try:
+            sp.rollback()
+        except Exception:
+            pass
+
         import logging
-        logger = logging.getLogger(__name__)
-        logger.error(
+        logging.getLogger(__name__).error(
             "Accounting entry failed for sale %s: %s",
             sale.id, str(e), exc_info=True,
         )
-        try:
-            from app.modules.accounting.models import AccountingError
-            error_record = AccountingError(
-                tenant_id=tenant_id,
-                sale_id=sale.id,
-                error_message=type(e).__name__ + ": " + str(e)[:480],
-            )
-            db.session.add(error_record)
-        except Exception:
-            pass  # If error logging also fails, just log it
 
     # Commit everything atomically
     db.session.commit()
