@@ -235,6 +235,7 @@ def create_opening():
             payables=float(data.get("payables", 0)),
             capital=float(data.get("capital", 0)),
             include_inventory=data.get("include_inventory", True),
+            equity_account=data.get("equity_account", "3105"),
         )
         return jsonify(success=True, data=result)
     except ValueError as e:
@@ -255,3 +256,76 @@ def list_withholdings():
 def seed_withholdings():
     count = acc.seed_withholdings(g.tenant_id)
     return jsonify(success=True, data={"withholdings_seeded": count})
+
+
+# ── Accounting Errors ────────────────────────────────────────────
+
+@accounting_bp.route("/errors", methods=["GET"])
+@require_permission("chart_of_accounts", "manage")
+def list_accounting_errors():
+    from app.modules.accounting.models import AccountingError
+    errors = AccountingError.query.filter_by(
+        tenant_id=g.tenant_id, status="pending"
+    ).order_by(AccountingError.created_at.desc()).all()
+    return jsonify(success=True, data=[{
+        "id": str(e.id),
+        "sale_id": str(e.sale_id) if e.sale_id else None,
+        "error_message": e.error_message,
+        "status": e.status,
+        "created_at": e.created_at.isoformat(),
+    } for e in errors])
+
+
+@accounting_bp.route("/reprocess-pending", methods=["POST"])
+@require_permission("chart_of_accounts", "manage")
+def reprocess_pending():
+    """Reprocess failed accounting entries for completed sales."""
+    from app.modules.accounting.models import AccountingError
+    from app.modules.pos.models import Sale
+    from app.modules.auth_rbac.models import Tenant
+    from app.extensions import db
+
+    errors = AccountingError.query.filter_by(
+        tenant_id=g.tenant_id, status="pending"
+    ).all()
+
+    tenant_obj = Tenant.query.get(g.tenant_id)
+    fiscal = tenant_obj.fiscal_regime if tenant_obj else "simplified"
+    resolved = 0
+    failed = 0
+
+    for error in errors:
+        if not error.sale_id:
+            continue
+        sale = Sale.query.filter_by(id=error.sale_id, tenant_id=g.tenant_id).first()
+        if not sale or sale.status != "completed":
+            continue
+        try:
+            # Calculate cost from sale items
+            cost_total = sum(
+                float(item.unit_cost) * float(item.quantity) for item in sale.items
+            )
+            payment_method = sale.payments[0].method if sale.payments else "cash"
+            acc.post_sale_entry(
+                tenant_id=str(g.tenant_id), created_by=str(g.current_user.id),
+                sale_id=str(sale.id),
+                subtotal=float(sale.subtotal), tax_amount=float(sale.tax_amount),
+                total_amount=float(sale.total_amount), cost_total=cost_total,
+                payment_method="credit" if sale.sale_type == "credit" else payment_method,
+                fiscal_regime=fiscal,
+            )
+            error.status = "resolved"
+            error.resolved_at = db.func.now()
+            error.resolved_by = g.current_user.id
+            resolved += 1
+        except Exception as e:
+            error.error_message = f"Reprocess failed: {str(e)[:400]}"
+            error.status = "failed"
+            failed += 1
+
+    db.session.commit()
+    return jsonify(success=True, data={
+        "total_processed": len(errors),
+        "resolved": resolved,
+        "failed": failed,
+    })

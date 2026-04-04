@@ -162,6 +162,11 @@ def checkout(
     total_tax = Decimal("0")
     total_discount = Decimal("0")
 
+    # Determine fiscal regime to handle IVA correctly
+    from app.modules.auth_rbac.models import Tenant
+    tenant_obj = Tenant.query.get(tenant_id)
+    is_simplified = (tenant_obj.fiscal_regime == "simplified") if tenant_obj else True
+
     sale_items = []
     stock_ops = []
 
@@ -192,7 +197,9 @@ def checkout(
         line_subtotal = (unit_price * qty).quantize(TWO_PLACES)
         line_discount = (line_subtotal * discount_pct / 100).quantize(TWO_PLACES)
         taxable_base = line_subtotal - line_discount
-        line_tax = (taxable_base * product.tax_rate / 100).quantize(TWO_PLACES)
+        # Simplified regime (No responsable de IVA): tax is always 0
+        effective_tax_rate = Decimal("0") if is_simplified else product.tax_rate
+        line_tax = (taxable_base * effective_tax_rate / 100).quantize(TWO_PLACES)
         line_total = (taxable_base + line_tax).quantize(TWO_PLACES)
 
         sale_item = SaleItem(
@@ -202,7 +209,7 @@ def checkout(
             quantity=qty,
             unit_price=unit_price,
             unit_cost=unit_cost,
-            tax_rate=product.tax_rate,
+            tax_rate=effective_tax_rate,
             discount_pct=discount_pct,
             subtotal=taxable_base,
             tax_amount=line_tax,
@@ -321,8 +328,6 @@ def checkout(
 
     try:
         from app.modules.accounting.services import post_sale_entry
-        from app.modules.auth_rbac.models import Tenant
-        tenant_obj = Tenant.query.get(tenant_id)
         fiscal = tenant_obj.fiscal_regime if tenant_obj else "simplified"
         post_sale_entry(
             tenant_id=tenant_id, created_by=cashier_id,
@@ -332,8 +337,24 @@ def checkout(
             payment_method="credit" if is_credit else payment_method,
             fiscal_regime=fiscal,
         )
-    except Exception:
-        pass  # Accounting failure should not block the sale
+    except Exception as e:
+        # Log full traceback to server logs only (never to DB — SEC-006)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(
+            "Accounting entry failed for sale %s: %s",
+            sale.id, str(e), exc_info=True,
+        )
+        try:
+            from app.modules.accounting.models import AccountingError
+            error_record = AccountingError(
+                tenant_id=tenant_id,
+                sale_id=sale.id,
+                error_message=type(e).__name__ + ": " + str(e)[:480],
+            )
+            db.session.add(error_record)
+        except Exception:
+            pass  # If error logging also fails, just log it
 
     # Commit everything atomically
     db.session.commit()

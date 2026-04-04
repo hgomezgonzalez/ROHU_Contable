@@ -111,7 +111,8 @@ class JournalEntry(db.Model):
             "entry_type IN ('SALE', 'SALE_COST', 'PURCHASE', 'PAYMENT', "
             "'ADJUSTMENT', 'REVERSAL', 'MANUAL', 'CLOSING', "
             "'CASH_RECEIPT', 'CASH_DISBURSEMENT', 'TRANSFER', "
-            "'EXPENSE', 'SUPPLIER_PAYMENT', 'CREDIT_NOTE_PURCHASE', 'DEBIT_NOTE', 'SALES_DEBIT_NOTE')",
+            "'EXPENSE', 'SUPPLIER_PAYMENT', 'CREDIT_NOTE_PURCHASE', "
+            "'DEBIT_NOTE', 'SALES_DEBIT_NOTE', 'OPENING')",
             name="ck_je_type"
         ),
     )
@@ -227,3 +228,27 @@ class WithholdingConfig(db.Model):
 
     def __repr__(self):
         return f"<WithholdingConfig {self.type} {self.rate}%>"
+
+
+class AccountingError(db.Model):
+    """Tracks failed accounting entries for reprocessing."""
+
+    __tablename__ = "accounting_errors"
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    tenant_id = db.Column(UUID(as_uuid=True), db.ForeignKey("tenants.id"), nullable=False)
+    sale_id = db.Column(UUID(as_uuid=True), db.ForeignKey("sales.id"), nullable=True)
+
+    error_message = db.Column(db.String(500), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="pending")
+    resolved_at = db.Column(db.DateTime(timezone=True))
+    resolved_by = db.Column(UUID(as_uuid=True), db.ForeignKey("users.id"))
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
+
+    __table_args__ = (
+        Index("idx_ae_tenant_status", "tenant_id", "status"),
+        CheckConstraint(
+            "status IN ('pending', 'resolved', 'failed')",
+            name="ck_ae_status"
+        ),
+    )

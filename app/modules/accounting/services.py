@@ -175,20 +175,14 @@ def post_sale_entry(
          "description": "Ingreso por ventas"},
     ]
 
-    # Add IVA line only if tenant is VAT responsible
+    # Add IVA line only if tenant is VAT responsible and tax > 0
     if tax > 0 and fiscal_regime != "simplified":
         revenue_lines.append({
             "puc_code": "2408", "debit": 0, "credit": float(tax),
             "description": "IVA generado 19%",
         })
-    elif tax > 0:
-        # Simplified regime: IVA included in income
-        revenue_lines[1]["credit"] = float(total)
-        revenue_lines.pop(0)
-        revenue_lines.insert(0, {
-            "puc_code": cash_account, "debit": float(total), "credit": 0,
-            "description": f"Cobro venta",
-        })
+    # Simplified regime: tax should be 0 (enforced at checkout).
+    # No special handling needed — subtotal == total when tax == 0.
 
     entry1 = create_journal_entry(
         tenant_id=tenant_id, created_by=created_by,
@@ -665,14 +659,59 @@ def monthly_close(tenant_id: str, year: int, month: int, user_id: str) -> dict:
 
 # ── Opening Balance (Saldos Iniciales) ──────────────────────────
 
+
+def get_inventory_accounting_balance(tenant_id: str) -> float:
+    """Return the current accounting balance of account 1435 (Inventory) from journal lines.
+    Positive = debit balance (normal for assets). Negative = inconsistency."""
+    account = ChartOfAccount.query.filter_by(
+        tenant_id=tenant_id, puc_code="1435"
+    ).first()
+    if not account:
+        return 0.0
+
+    result = db.session.query(
+        func.coalesce(func.sum(JournalLine.debit_amount), 0).label("total_debit"),
+        func.coalesce(func.sum(JournalLine.credit_amount), 0).label("total_credit"),
+    ).join(JournalEntry, JournalLine.entry_id == JournalEntry.id).filter(
+        JournalEntry.tenant_id == tenant_id,
+        JournalLine.account_id == account.id,
+    ).first()
+
+    return float((result.total_debit or 0) - (result.total_credit or 0))
+
+
+def get_inventory_physical_value(tenant_id: str) -> float:
+    """Return the total physical inventory value (stock * cost_average)."""
+    from app.modules.inventory.models import Product
+    products = Product.query.filter_by(tenant_id=tenant_id, is_active=True).filter(
+        Product.deleted_at.is_(None)
+    ).all()
+    total = sum(
+        float(p.stock_current) * float(p.cost_average or p.purchase_price or 0)
+        for p in products
+    )
+    return round(total, 2)
+
+
 def create_opening_balance(
     tenant_id: str, user_id: str, opening_date: str,
     cash: float = 0, bank: float = 0,
     receivables: float = 0, payables: float = 0,
     capital: float = 0, include_inventory: bool = True,
+    equity_account: str = "3105",
 ) -> dict:
-    """Create the opening balance entry for a tenant. Only one per tenant."""
+    """Create the opening balance entry for a tenant. Only one per tenant.
+
+    Args:
+        equity_account: PUC code for equity counterpart.
+            '3105' = Capital social (new business),
+            '3710' = Utilidades acumuladas (existing business).
+    """
     from app.modules.inventory.models import Product
+
+    # Validate equity account choice
+    if equity_account not in ("3105", "3710"):
+        equity_account = "3105"
 
     # Check no existing OPENING
     existing = JournalEntry.query.filter_by(
@@ -690,10 +729,11 @@ def create_opening_balance(
     # Calculate inventory from existing products
     inventory_value = 0
     if include_inventory:
-        products = Product.query.filter_by(tenant_id=tenant_id, is_active=True).all()
-        for p in products:
-            inventory_value += float(p.stock_current) * float(p.cost_average or p.purchase_price or 0)
-        inventory_value = round(inventory_value, 2)
+        inventory_value = get_inventory_physical_value(tenant_id)
+
+    # Account for any inventory already booked (e.g., from product creation entries)
+    already_booked = get_inventory_accounting_balance(tenant_id)
+    inventory_to_book = max(inventory_value - max(already_booked, 0), 0)
 
     # Calculate retained earnings by difference
     total_assets = cash + bank + receivables + inventory_value
@@ -709,14 +749,15 @@ def create_opening_balance(
         lines.append({"puc_code": "1105", "debit": cash, "credit": 0, "description": "Saldo inicial caja"})
     if bank > 0:
         lines.append({"puc_code": "1110", "debit": bank, "credit": 0, "description": "Saldo inicial bancos"})
-    if inventory_value > 0:
-        lines.append({"puc_code": "1435", "debit": inventory_value, "credit": 0, "description": "Inventario inicial (calculado)"})
+    if inventory_to_book > 0:
+        lines.append({"puc_code": "1435", "debit": inventory_to_book, "credit": 0, "description": "Inventario inicial (calculado)"})
     if receivables > 0:
         lines.append({"puc_code": "1305", "debit": receivables, "credit": 0, "description": "Saldo inicial clientes (CxC)"})
     if payables > 0:
         lines.append({"puc_code": "2205", "debit": 0, "credit": payables, "description": "Saldo inicial proveedores (CxP)"})
     if capital > 0:
-        lines.append({"puc_code": "3105", "debit": 0, "credit": capital, "description": "Capital social"})
+        equity_label = "Capital social" if equity_account == "3105" else "Utilidades acumuladas"
+        lines.append({"puc_code": equity_account, "debit": 0, "credit": capital, "description": equity_label})
     if retained_earnings > 0:
         lines.append({"puc_code": "3710", "debit": 0, "credit": retained_earnings, "description": "Utilidades acumuladas"})
 
@@ -732,6 +773,8 @@ def create_opening_balance(
         entry_date=dt,
     )
 
+    db.session.commit()
+
     return {
         "entry": entry,
         "summary": {
@@ -740,6 +783,8 @@ def create_opening_balance(
             "capital": capital,
             "retained_earnings": retained_earnings,
             "inventory_value": inventory_value,
+            "inventory_already_booked": already_booked,
+            "inventory_booked_now": inventory_to_book,
         }
     }
 

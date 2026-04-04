@@ -18,6 +18,23 @@ def _date_in_bogota(column):
     """SQL expression: convert timestamptz column to date in Bogota timezone."""
     return func.date(func.timezone("America/Bogota", column))
 
+
+def _bogota_period_filter(column, year, month):
+    """SQL filter: extract year/month from column converted to Bogota timezone.
+    Ensures consistent period filtering across all reports (Dashboard, DIAN, Annual).
+    """
+    col_bogota = func.timezone("America/Bogota", column)
+    return and_(
+        func.extract("year", col_bogota) == year,
+        func.extract("month", col_bogota) == month,
+    )
+
+
+def _bogota_year_filter(column, year):
+    """SQL filter: extract year from column converted to Bogota timezone."""
+    col_bogota = func.timezone("America/Bogota", column)
+    return func.extract("year", col_bogota) == year
+
 from app.extensions import db
 from app.modules.pos.models import Sale, SaleItem, Payment, CreditNote
 from app.modules.inventory.models import Product, StockMovement
@@ -58,6 +75,12 @@ def _parse_date_range(date_from: str = None, date_to: str = None):
 
 def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_to: str = None) -> dict:
     """Main dashboard with KPIs, top products, alerts. Supports date range."""
+    # Determine fiscal regime for IVA display
+    from app.modules.auth_rbac.models import Tenant
+    tenant_obj = Tenant.query.get(tenant_id)
+    fiscal_regime = tenant_obj.fiscal_regime if tenant_obj else "simplified"
+    is_vat_responsible = fiscal_regime != "simplified"
+
     # Build date range filter
     if date and not date_from:
         # Legacy single-date: convert to range (full day)
@@ -231,10 +254,22 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
         - float(total_purchase_cn)
     )
 
+    # Pending accounting errors count
+    accounting_errors_count = 0
+    try:
+        from app.modules.accounting.models import AccountingError
+        accounting_errors_count = AccountingError.query.filter_by(
+            tenant_id=tenant_id, status="pending"
+        ).count()
+    except Exception:
+        pass
+
     return {
         "date_from": date_from_dt.isoformat(),
         "date_to": date_to_dt.isoformat(),
         "date": date_from_dt.strftime("%Y-%m-%d"),
+        "fiscal_regime": fiscal_regime,
+        "is_vat_responsible": is_vat_responsible,
         "sales": {
             "count": sales_kpi.count or 0,
             "revenue": total_with_tax,
@@ -242,7 +277,7 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
             "cost": total_cost,
             "gross_profit": gross_profit,
             "margin_pct": margin_pct,
-            "tax": total_tax,
+            "tax": total_tax if is_vat_responsible else 0,
             "avg_ticket": round(total_with_tax / max(sales_kpi.count or 1, 1), 2),
         },
         "purchases": {
@@ -276,6 +311,7 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
                 for p in low_stock
             ],
             "pending_purchase_orders": pending_po,
+            "accounting_errors": accounting_errors_count,
         },
     }
 
@@ -601,6 +637,12 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
         AccountingPeriod, ChartOfAccount, JournalEntry, JournalLine,
     )
 
+    # Check fiscal regime
+    from app.modules.auth_rbac.models import Tenant
+    tenant_obj = Tenant.query.get(tenant_id)
+    fiscal_regime = tenant_obj.fiscal_regime if tenant_obj else "simplified"
+    is_vat_responsible = fiscal_regime != "simplified"
+
     # IVA generated (2408 — credit account)
     iva_gen = (
         db.session.query(
@@ -626,7 +668,7 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
     deductible = float((iva_gen.debit or 0))
     net_payable = generated - deductible
 
-    # Sales and purchases totals
+    # Sales and purchases totals — using Bogota timezone for consistent filtering
     sales_total = (
         db.session.query(
             func.count(Sale.id).label("count"),
@@ -637,8 +679,7 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
         .filter(
             Sale.tenant_id == tenant_id,
             Sale.status == "completed",
-            func.extract("year", Sale.sale_date) == year,
-            func.extract("month", Sale.sale_date) == month,
+            _bogota_period_filter(Sale.sale_date, year, month),
         )
         .first()
     )
@@ -653,8 +694,7 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
         .filter(
             PurchaseOrder.tenant_id == tenant_id,
             PurchaseOrder.status == "received",
-            func.extract("year", PurchaseOrder.received_at) == year,
-            func.extract("month", PurchaseOrder.received_at) == month,
+            _bogota_period_filter(PurchaseOrder.received_at, year, month),
         )
         .first()
     )
@@ -667,8 +707,7 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
         func.coalesce(func.sum(SaleItem.tax_amount), 0).label("tax"),
     ).join(Sale).filter(
         Sale.tenant_id == tenant_id, Sale.status == "completed",
-        func.extract("year", Sale.sale_date) == year,
-        func.extract("month", Sale.sale_date) == month,
+        _bogota_period_filter(Sale.sale_date, year, month),
     ).group_by(SaleItem.tax_rate).all()
 
     iva_by_rate = []
@@ -693,8 +732,10 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
         AccountingPeriod.month == month,
     ).scalar()
 
-    return {
+    result = {
         "period": f"{year}-{month:02d}",
+        "fiscal_regime": fiscal_regime,
+        "is_vat_responsible": is_vat_responsible,
         "iva_generated": generated,
         "iva_deductible": deductible,
         "iva_net_payable": net_payable,
@@ -713,6 +754,54 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
             "iva": float(purchases_total.tax or 0),
             "total": float(purchases_total.total or 0),
         },
+    }
+    if not is_vat_responsible:
+        result["warning"] = "No responsable de IVA (Ley 2010/2019). Los valores de IVA generado deben ser $0."
+    return result
+
+
+# ── Inventory Reconciliation ─────────────────────────────────────
+
+def get_inventory_reconciliation(tenant_id: str) -> dict:
+    """Compare accounting balance of 1435 vs physical inventory value.
+    Returns overall totals and per-product detail.
+    Single product query to avoid duplicate DB load."""
+    from app.modules.accounting.services import get_inventory_accounting_balance
+
+    book_value = get_inventory_accounting_balance(tenant_id)
+
+    # Single query for both physical value and product details
+    products = Product.query.filter_by(
+        tenant_id=tenant_id, is_active=True,
+    ).filter(Product.deleted_at.is_(None)).order_by(Product.name).all()
+
+    physical_value = 0.0
+    product_details = []
+    for p in products:
+        stock = float(p.stock_current)
+        cost_avg = float(p.cost_average or p.purchase_price or 0)
+        value = round(stock * cost_avg, 2)
+        physical_value += value
+        product_details.append({
+            "product_id": str(p.id),
+            "name": p.name,
+            "sku": p.sku,
+            "stock_current": stock,
+            "cost_average": cost_avg,
+            "physical_value": value,
+        })
+
+    physical_value = round(physical_value, 2)
+    difference = round(book_value - physical_value, 2)
+
+    return {
+        "book_value": book_value,
+        "physical_value": physical_value,
+        "difference": difference,
+        "is_reconciled": abs(difference) < 1,
+        "status": "reconciled" if abs(difference) < 1 else "discrepancy",
+        "products": product_details,
+        "product_count": len(product_details),
     }
 
 
@@ -995,10 +1084,10 @@ def get_annual_tax_summary(tenant_id: str, year: int) -> dict:
     iva_descontable = d_gen  # debits of 2408 are the deductible IVA
     iva_neto = iva_generado - iva_descontable
 
-    # Sales and purchases counts
+    # Sales and purchases counts — using Bogota timezone
     sales_count = Sale.query.filter(
         Sale.tenant_id == tenant_id, Sale.status == "completed",
-        func.extract("year", Sale.sale_date) == year,
+        _bogota_year_filter(Sale.sale_date, year),
     ).count()
 
     return {

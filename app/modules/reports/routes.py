@@ -88,6 +88,13 @@ def dian_iva():
     return jsonify(success=True, data=data)
 
 
+@reports_bp.route("/inventory-reconciliation", methods=["GET"])
+@require_permission("reports", "read")
+def inventory_reconciliation():
+    data = rpt.get_inventory_reconciliation(g.tenant_id)
+    return jsonify(success=True, data=data)
+
+
 # ── CSV Exports ───────────────────────────────────────────────────
 
 @reports_bp.route("/trial-balance/export", methods=["GET"])
