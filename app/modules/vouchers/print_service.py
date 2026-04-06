@@ -1,13 +1,8 @@
-"""Voucher print service — PDF/QR generation for thermal and A4 printers."""
+"""Voucher print service — QR generation and print data builder."""
 
 import base64
 import io
 from datetime import datetime, timezone
-
-
-def generate_voucher_qr_data(voucher_code: str) -> str:
-    """Generate the data string to encode in QR code."""
-    return voucher_code
 
 
 def generate_voucher_qr_image(voucher_code: str) -> bytes:
@@ -34,17 +29,16 @@ def generate_voucher_qr_base64(voucher_code: str) -> str:
     return ""
 
 
-def build_voucher_print_data(voucher: dict, tenant: dict) -> dict:
-    """
-    Build all data needed to render a voucher for printing.
+def build_voucher_print_data(voucher: dict, tenant: dict, color_hex: str = "#1E3A8A") -> dict:
+    """Build all data needed to render a voucher card for printing/email."""
+    issuer_name = tenant.get("trade_name") or tenant.get("name", "")
+    issuer_nit = tenant.get("tax_id", "")
 
-    Returns a dict with fields for the Jinja2 template.
-    """
     disclaimer = (
-        f"Este bono es emitido por {tenant.get('name', '')} "
-        f"({tenant.get('nit', '')}). "
+        f"Este bono es emitido por {issuer_name} "
+        f"(NIT: {issuer_nit}). "
         f"Válido hasta {voucher.get('expires_at', '')[:10]}. "
-        f"Canjeable únicamente en {tenant.get('name', '')}. "
+        f"Canjeable únicamente en {issuer_name}. "
         f"No tiene valor de cambio en efectivo salvo política expresa del emisor."
     )
 
@@ -53,14 +47,17 @@ def build_voucher_print_data(voucher: dict, tenant: dict) -> dict:
         "face_value": voucher["face_value"],
         "face_value_formatted": f"${voucher['face_value']:,.0f}",
         "status": voucher["status"],
+        "remaining_balance": voucher.get("remaining_balance", voucher["face_value"]),
         "issued_at": voucher.get("issued_at", ""),
         "expires_at": voucher.get("expires_at", ""),
         "expires_at_short": voucher.get("expires_at", "")[:10] if voucher.get("expires_at") else "",
         "qr_base64": generate_voucher_qr_base64(voucher["code"]),
-        "issuer_name": tenant.get("name", ""),
-        "issuer_nit": tenant.get("nit", ""),
+        "issuer_name": issuer_name,
+        "issuer_nit": issuer_nit,
         "issuer_address": tenant.get("address", ""),
         "issuer_phone": tenant.get("phone", ""),
+        "logo_url": tenant.get("logo_url", ""),
+        "color_hex": color_hex,
         "disclaimer": disclaimer,
         "print_timestamp": datetime.now(timezone.utc).isoformat(),
     }

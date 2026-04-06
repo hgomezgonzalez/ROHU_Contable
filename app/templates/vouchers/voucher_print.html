@@ -2,57 +2,286 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bono {{ voucher.code }}</title>
   <style>
-    @page { size: 80mm auto; margin: 2mm; }
-    @media print { body { margin: 0; } }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Courier New', monospace; font-size: 12px; width: 76mm; padding: 2mm; }
-    .voucher-ticket { border: 2px dashed #333; padding: 8px; text-align: center; }
-    .voucher-header { font-size: 14px; font-weight: bold; margin-bottom: 6px; text-transform: uppercase; }
-    .voucher-issuer { font-size: 10px; margin-bottom: 8px; }
-    .voucher-value { font-size: 28px; font-weight: bold; margin: 12px 0; color: #1E3A8A; }
-    .voucher-code { font-size: 16px; font-weight: bold; letter-spacing: 2px; margin: 8px 0; }
-    .voucher-qr { margin: 10px auto; }
-    .voucher-qr img { width: 120px; height: 120px; }
-    .voucher-dates { font-size: 10px; margin: 8px 0; }
-    .voucher-disclaimer { font-size: 8px; margin-top: 10px; padding-top: 6px; border-top: 1px dashed #999; text-align: justify; line-height: 1.3; }
-    .separator { border: none; border-top: 1px dashed #999; margin: 6px 0; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #F1F5F9; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+
+    .voucher-card {
+      width: 480px; max-width: 95vw; border-radius: 16px; overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.1);
+      background: white; position: relative;
+    }
+
+    .voucher-header {
+      background: linear-gradient(135deg, {{ voucher.color_hex or '#1E3A8A' }}, {{ voucher.color_hex or '#1E3A8A' }}dd);
+      padding: 28px 28px 24px; color: white; position: relative; overflow: hidden;
+    }
+    .voucher-header::before {
+      content: ''; position: absolute; top: -40px; right: -40px;
+      width: 160px; height: 160px; border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+    }
+    .voucher-header::after {
+      content: ''; position: absolute; bottom: -60px; left: -20px;
+      width: 200px; height: 200px; border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+    }
+
+    .voucher-brand {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 20px; position: relative; z-index: 1;
+    }
+    .voucher-logo {
+      width: 48px; height: 48px; border-radius: 10px; background: rgba(255,255,255,0.2);
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+      backdrop-filter: blur(4px);
+    }
+    .voucher-logo img { width: 100%; height: 100%; object-fit: contain; }
+    .voucher-logo-placeholder {
+      font-size: 20px; font-weight: 800; color: white; letter-spacing: 1px;
+    }
+    .voucher-issuer-name {
+      font-size: 18px; font-weight: 700; letter-spacing: 0.5px; text-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    .voucher-label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.8;
+      margin-bottom: 6px; position: relative; z-index: 1;
+    }
+    .voucher-value {
+      font-size: 42px; font-weight: 800; letter-spacing: -1px; position: relative; z-index: 1;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .voucher-body {
+      padding: 24px 28px; display: flex; gap: 20px; align-items: center;
+    }
+    .voucher-info { flex: 1; }
+    .voucher-info-row {
+      display: flex; justify-content: space-between; padding: 8px 0;
+      border-bottom: 1px solid #F1F5F9; font-size: 13px;
+    }
+    .voucher-info-row:last-child { border-bottom: none; }
+    .voucher-info-label { color: #64748B; font-weight: 500; }
+    .voucher-info-value { color: #0F172A; font-weight: 600; }
+
+    .voucher-qr {
+      flex-shrink: 0; text-align: center;
+    }
+    .voucher-qr img {
+      width: 120px; height: 120px; border-radius: 8px;
+      border: 3px solid #E2E8F0; padding: 4px; background: white;
+    }
+    .voucher-qr-label {
+      font-size: 10px; color: #94A3B8; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px;
+    }
+
+    .voucher-code-bar {
+      background: #F8FAFC; padding: 14px 28px; text-align: center;
+      border-top: 1px dashed #E2E8F0;
+    }
+    .voucher-code-text {
+      font-family: 'Courier New', monospace; font-size: 18px; font-weight: 700;
+      color: #0F172A; letter-spacing: 3px;
+    }
+
+    .voucher-footer {
+      padding: 12px 28px 16px; background: #F8FAFC;
+      border-top: 1px solid #E2E8F0;
+    }
+    .voucher-disclaimer {
+      font-size: 10px; color: #94A3B8; line-height: 1.5; text-align: center;
+    }
+
+    /* Action buttons — hidden in print */
+    .voucher-actions {
+      display: flex; gap: 10px; justify-content: center; margin-top: 24px; flex-wrap: wrap;
+    }
+    .voucher-actions button {
+      padding: 10px 20px; border: none; border-radius: 8px; font-size: 13px;
+      font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-print { background: #1E3A8A; color: white; }
+    .btn-print:hover { background: #162D6B; }
+    .btn-email { background: #059669; color: white; }
+    .btn-email:hover { background: #047857; }
+    .btn-back { background: #E2E8F0; color: #0F172A; }
+    .btn-back:hover { background: #CBD5E1; }
+
+    .powered-by {
+      text-align: center; margin-top: 16px; font-size: 10px; color: #CBD5E1;
+    }
+
+    /* Email modal */
+    .email-modal {
+      display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .email-modal-card {
+      background: white; border-radius: 16px; padding: 28px; max-width: 400px; width: 90%;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+    }
+    .email-modal input {
+      width: 100%; padding: 10px 14px; border: 1px solid #E2E8F0; border-radius: 8px;
+      font-size: 14px; margin: 12px 0 16px;
+    }
+    .email-modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .email-modal-btns button {
+      padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; border: none;
+    }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .voucher-actions, .powered-by, .email-modal { display: none !important; }
+      .voucher-card { box-shadow: none; border: 1px solid #E2E8F0; }
+    }
+    @page { size: auto; margin: 10mm; }
   </style>
 </head>
 <body>
-  <div class="voucher-ticket">
-    <div class="voucher-header">BONO DE DESCUENTO</div>
-    <div class="voucher-issuer">
-      {{ voucher.issuer_name }}<br>
-      NIT: {{ voucher.issuer_nit }}
+
+  {% if voucher and voucher.code %}
+  <div class="voucher-card" id="voucher-card">
+    <!-- Header with gradient -->
+    <div class="voucher-header">
+      <div class="voucher-brand">
+        <div class="voucher-logo">
+          {% if voucher.logo_url %}
+            <img src="{{ voucher.logo_url }}" alt="{{ voucher.issuer_name }}">
+          {% else %}
+            <span class="voucher-logo-placeholder">{{ voucher.issuer_name[:2] | upper }}</span>
+          {% endif %}
+        </div>
+        <div class="voucher-issuer-name">{{ voucher.issuer_name }}</div>
+      </div>
+      <div class="voucher-label">Bono de Descuento</div>
+      <div class="voucher-value">{{ voucher.face_value_formatted }}</div>
     </div>
 
-    <hr class="separator">
-
-    <div class="voucher-value">{{ voucher.face_value_formatted }}</div>
-    <div class="voucher-code">{{ voucher.code }}</div>
-
-    {% if voucher.qr_base64 %}
-    <div class="voucher-qr">
-      <img src="data:image/png;base64,{{ voucher.qr_base64 }}" alt="QR {{ voucher.code }}">
+    <!-- Body with info + QR -->
+    <div class="voucher-body">
+      <div class="voucher-info">
+        <div class="voucher-info-row">
+          <span class="voucher-info-label">Estado</span>
+          <span class="voucher-info-value">
+            {% if voucher.status == 'issued' %}Emitido
+            {% elif voucher.status == 'sold' %}Activo
+            {% elif voucher.status == 'partially_redeemed' %}Parcialmente usado
+            {% elif voucher.status == 'redeemed' %}Usado
+            {% elif voucher.status == 'expired' %}Vencido
+            {% else %}{{ voucher.status }}{% endif %}
+          </span>
+        </div>
+        <div class="voucher-info-row">
+          <span class="voucher-info-label">Valido hasta</span>
+          <span class="voucher-info-value">{{ voucher.expires_at_short or '—' }}</span>
+        </div>
+        <div class="voucher-info-row">
+          <span class="voucher-info-label">NIT Emisor</span>
+          <span class="voucher-info-value">{{ voucher.issuer_nit or '—' }}</span>
+        </div>
+      </div>
+      <div class="voucher-qr">
+        {% if voucher.qr_base64 %}
+          <img src="data:image/png;base64,{{ voucher.qr_base64 }}" alt="QR {{ voucher.code }}">
+        {% endif %}
+        <div class="voucher-qr-label">Escanear para redimir</div>
+      </div>
     </div>
-    {% endif %}
 
-    <div class="voucher-dates">
-      Emitido: {{ voucher.issued_at[:10] if voucher.issued_at else '-' }}<br>
-      Valido hasta: <strong>{{ voucher.expires_at_short }}</strong>
+    <!-- Code bar -->
+    <div class="voucher-code-bar">
+      <div class="voucher-code-text">{{ voucher.code }}</div>
     </div>
 
-    <hr class="separator">
+    <!-- Footer disclaimer -->
+    <div class="voucher-footer">
+      <div class="voucher-disclaimer">{{ voucher.disclaimer }}</div>
+    </div>
+  </div>
 
-    <div class="voucher-disclaimer">
-      {{ voucher.disclaimer }}
+  <!-- Action buttons (hidden in print) -->
+  <div class="voucher-actions">
+    <button class="btn-print" onclick="window.print()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Imprimir
+    </button>
+    <button class="btn-email" onclick="showEmailModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      Enviar por email
+    </button>
+    <button class="btn-back" onclick="window.close()">Cerrar</button>
+  </div>
+  <div class="powered-by">ROHU Contable</div>
+
+  <!-- Email modal -->
+  <div class="email-modal" id="email-modal">
+    <div class="email-modal-card">
+      <h3 style="font-size:16px;margin-bottom:4px;">Enviar bono por email</h3>
+      <p style="font-size:12px;color:#64748B;">El destinatario recibira la tarjeta del bono con el codigo QR para redimir.</p>
+      <input type="email" id="email-to" placeholder="correo@destinatario.com" required>
+      <div class="email-modal-btns">
+        <button style="background:#E2E8F0;color:#0F172A;" onclick="document.getElementById('email-modal').style.display='none'">Cancelar</button>
+        <button style="background:#059669;color:white;" onclick="sendEmail()">Enviar</button>
+      </div>
+      <div id="email-status" style="margin-top:12px;font-size:12px;text-align:center;"></div>
     </div>
   </div>
 
   <script>
-    window.onload = function() { window.print(); };
+    function showEmailModal() {
+      document.getElementById('email-modal').style.display = 'flex';
+      document.getElementById('email-to').focus();
+    }
+
+    async function sendEmail() {
+      const email = document.getElementById('email-to').value.trim();
+      if (!email) return;
+      const statusEl = document.getElementById('email-status');
+      statusEl.textContent = 'Enviando...';
+      statusEl.style.color = '#3B82F6';
+
+      const token = new URLSearchParams(window.location.search).get('token') || '';
+      const voucherId = '{{ voucher.code }}'.trim();
+
+      try {
+        // Get voucher ID from the API using code
+        const lookupResp = await fetch('/api/v1/vouchers/by-code/' + encodeURIComponent(voucherId), {
+          headers: {'Authorization': 'Bearer ' + token}
+        });
+        const lookupData = await lookupResp.json();
+        if (!lookupData.success) throw new Error('Bono no encontrado');
+
+        const resp = await fetch('/api/v1/vouchers/' + lookupData.data.id + '/send-email', {
+          method: 'POST',
+          headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+          body: JSON.stringify({email: email}),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          statusEl.textContent = 'Enviado correctamente';
+          statusEl.style.color = '#059669';
+          setTimeout(() => { document.getElementById('email-modal').style.display = 'none'; }, 2000);
+        } else {
+          statusEl.textContent = data.error?.message || 'Error al enviar';
+          statusEl.style.color = '#EF4444';
+        }
+      } catch(e) {
+        statusEl.textContent = 'Error: ' + e.message;
+        statusEl.style.color = '#EF4444';
+      }
+    }
   </script>
+
+  {% else %}
+  <div style="text-align:center;padding:40px;">
+    <h2>Bono no disponible</h2>
+    <p style="color:#64748B;">No se pudo cargar la informacion del bono.</p>
+  </div>
+  {% endif %}
+
 </body>
 </html>

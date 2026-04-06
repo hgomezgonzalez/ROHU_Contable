@@ -161,6 +161,7 @@ def voucher_print(voucher_id):
         pass
 
     from app.modules.auth_rbac.models import Tenant
+    from app.modules.vouchers.models import VoucherType
     from app.modules.vouchers.print_service import build_voucher_print_data
     from app.modules.vouchers.services import get_voucher
 
@@ -169,13 +170,17 @@ def voucher_print(voucher_id):
         if not v:
             return "<h3>Bono no encontrado</h3>", 404
         tenant = Tenant.query.get(tenant_id)
+        vt = VoucherType.query.get(v["voucher_type_id"])
         t_dict = {
             "name": tenant.name,
-            "nit": tenant.nit or "",
+            "trade_name": tenant.trade_name or tenant.name,
+            "tax_id": tenant.tax_id or "",
             "address": tenant.address or "",
             "phone": tenant.phone or "",
+            "logo_url": tenant.logo_url or "",
         }
-        print_data = build_voucher_print_data(v, t_dict)
+        color = vt.color_hex if vt and vt.color_hex else "#1E3A8A"
+        print_data = build_voucher_print_data(v, t_dict, color_hex=color)
         return render_template("vouchers/voucher_print.html", voucher=print_data)
     except Exception as e:
         return f"<h3>Error: {e}</h3>", 500

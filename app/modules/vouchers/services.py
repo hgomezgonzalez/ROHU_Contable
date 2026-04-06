@@ -565,6 +565,67 @@ def record_print(tenant_id: str, voucher_id: str, printed_by: str) -> dict:
     return _voucher_to_dict(voucher)
 
 
+# ── Send Voucher Email ───────────────────────────────────────────
+
+
+def send_voucher_email(tenant_id: str, voucher_id: str, to_email: str, sent_by: str) -> dict:
+    """Send voucher card via email using the tenant's SMTP config."""
+    from flask import render_template
+
+    from app.core.email_service import send_email
+    from app.modules.auth_rbac.models import Tenant
+    from app.modules.vouchers.print_service import build_voucher_print_data
+
+    voucher = Voucher.query.filter_by(id=voucher_id, tenant_id=tenant_id).first()
+    if not voucher:
+        raise VoucherNotFoundError()
+
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        raise ValueError("Tenant no encontrado")
+
+    if not tenant.smtp_host:
+        raise ValueError("El negocio no tiene configurado el correo SMTP. Configure en Mi Negocio > SMTP.")
+
+    vt = VoucherType.query.get(voucher.voucher_type_id)
+    t_dict = {
+        "name": tenant.name,
+        "trade_name": tenant.trade_name or tenant.name,
+        "tax_id": tenant.tax_id or "",
+        "address": tenant.address or "",
+        "phone": tenant.phone or "",
+        "logo_url": tenant.logo_url or "",
+    }
+    color = vt.color_hex if vt and vt.color_hex else "#1E3A8A"
+    print_data = build_voucher_print_data(_voucher_to_dict(voucher), t_dict, color_hex=color)
+
+    issuer_name = tenant.trade_name or tenant.name
+    subject = f"Bono de Descuento {print_data['face_value_formatted']} — {issuer_name}"
+    body_html = render_template("vouchers/voucher_email.html", voucher=print_data)
+
+    send_email(
+        smtp_host=tenant.smtp_host,
+        smtp_port=tenant.smtp_port or 587,
+        smtp_user=tenant.smtp_user,
+        smtp_password=tenant.smtp_password,
+        from_email=tenant.smtp_from_email or tenant.smtp_user,
+        to_email=to_email,
+        subject=subject,
+        body_html=body_html,
+    )
+
+    _log_transaction(
+        voucher=voucher,
+        transaction_type="adjusted",
+        amount_change=Decimal("0"),
+        performed_by=sent_by,
+        notes=f"Bono enviado por email a {to_email}",
+    )
+    db.session.commit()
+
+    return {"sent_to": to_email, "voucher_code": voucher.code}
+
+
 # ── Queries ──────────────────────────────────────────────────────
 
 

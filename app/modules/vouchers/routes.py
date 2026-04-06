@@ -280,3 +280,28 @@ def record_print(voucher_id):
         return jsonify(success=True, data=result)
     except VoucherError as e:
         return _handle_voucher_error(e)
+
+
+# ── Send Email ───────────────────────────────────────────────────
+
+
+@vouchers_bp.route("/<voucher_id>/send-email", methods=["POST"])
+@require_permission("vouchers", "manage")
+def send_email(voucher_id):
+    data = request.get_json() or {}
+    email = data.get("email", "").strip()
+    if not email or "@" not in email:
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "Email valido es requerido"}), 400
+
+    try:
+        result = voucher_svc.send_voucher_email(
+            tenant_id=g.tenant_id,
+            voucher_id=voucher_id,
+            to_email=email,
+            sent_by=str(g.current_user.id),
+        )
+        return jsonify(success=True, data=result)
+    except VoucherError as e:
+        return _handle_voucher_error(e)
+    except Exception as e:
+        return jsonify(success=False, error={"code": "EMAIL_ERROR", "message": str(e)}), 500
