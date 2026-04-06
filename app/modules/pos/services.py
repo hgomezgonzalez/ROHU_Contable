@@ -372,6 +372,7 @@ def checkout(
 
         fiscal = tenant_obj.fiscal_regime if tenant_obj else "simplified"
         sp = db.session.begin_nested()  # savepoint before accounting
+        voucher_amt = float(voucher_redemption_result["accounting"]["amount"]) if voucher_redemption_result else 0
         post_sale_entry(
             tenant_id=tenant_id,
             created_by=cashier_id,
@@ -382,9 +383,10 @@ def checkout(
             cost_total=cost_total,
             payment_method="credit" if is_credit else payment_method,
             fiscal_regime=fiscal,
+            voucher_amount=voucher_amt,
         )
 
-        # Voucher-specific accounting entries
+        # Voucher SALE accounting (selling a voucher = creates liability)
         if voucher_sale_result:
             from app.modules.accounting.services import post_voucher_sale_entry
 
@@ -396,18 +398,8 @@ def checkout(
                 amount=voucher_sale_result["accounting"]["amount"],
             )
 
-        if voucher_redemption_result:
-            from app.modules.accounting.services import post_voucher_redemption_entry
-
-            post_voucher_redemption_entry(
-                tenant_id=tenant_id,
-                created_by=cashier_id,
-                sale_id=str(sale.id),
-                voucher_id=voucher_redemption_result["voucher_id"],
-                amount=voucher_redemption_result["accounting"]["amount"],
-                tax_amount=float(sale.tax_amount),
-                subtotal=float(sale.subtotal),
-            )
+        # Voucher REDEMPTION accounting is handled by post_sale_entry via voucher_amount
+        # (debit splits between 291001 and cash account in a single balanced entry)
 
         sp.commit()
     except Exception as e:

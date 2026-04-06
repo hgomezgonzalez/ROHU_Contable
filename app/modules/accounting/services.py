@@ -159,10 +159,11 @@ def post_sale_entry(
     cost_total: float,
     payment_method: str = "cash",
     fiscal_regime: str = "simplified",
+    voucher_amount: float = 0,
 ) -> dict:
     """
     Auto-generate journal entries for a sale.
-    Entry 1: Revenue + IVA
+    Entry 1: Revenue + IVA (debit splits between cash/bank and voucher if applicable)
     Entry 2: Cost of goods sold
     """
     entries = []
@@ -170,6 +171,7 @@ def post_sale_entry(
     tax = Decimal(str(tax_amount)).quantize(TWO_PLACES)
     total = Decimal(str(total_amount)).quantize(TWO_PLACES)
     cost = Decimal(str(cost_total)).quantize(TWO_PLACES)
+    v_amount = Decimal(str(voucher_amount)).quantize(TWO_PLACES)
 
     # Determine debit account: 1305 Clientes for credit, 1105/1110 for cash
     if payment_method == "credit":
@@ -179,12 +181,23 @@ def post_sale_entry(
     else:
         cash_account = "1110"
 
-    # Entry 1: Revenue
-    debit_desc = "Cuenta por cobrar cliente" if payment_method == "credit" else "Cobro venta"
-    revenue_lines = [
-        {"puc_code": cash_account, "debit": float(total), "credit": 0, "description": debit_desc},
-        {"puc_code": "4135", "debit": 0, "credit": float(sub), "description": "Ingreso por ventas"},
-    ]
+    # Entry 1: Revenue — debit side splits if voucher is used
+    cash_portion = total - v_amount
+    revenue_lines = []
+
+    if v_amount > 0:
+        # Voucher portion: debit 291001 (release liability)
+        revenue_lines.append(
+            {"puc_code": "291001", "debit": float(v_amount), "credit": 0, "description": "Redencion bono de descuento"}
+        )
+    if cash_portion > 0:
+        debit_desc = "Cuenta por cobrar cliente" if payment_method == "credit" else "Cobro venta"
+        revenue_lines.append(
+            {"puc_code": cash_account, "debit": float(cash_portion), "credit": 0, "description": debit_desc}
+        )
+
+    # Credit side: income + IVA (always on the full amount)
+    revenue_lines.append({"puc_code": "4135", "debit": 0, "credit": float(sub), "description": "Ingreso por ventas"})
 
     # Add IVA line only if tenant is VAT responsible and tax > 0
     if tax > 0 and fiscal_regime != "simplified":

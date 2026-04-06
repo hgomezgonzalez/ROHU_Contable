@@ -82,7 +82,6 @@
           <option value="daviplata">Daviplata</option>
           <option value="transfer">Transferencia</option>
           <option value="card">Tarjeta</option>
-          <option value="voucher">Bono de Descuento</option>
         </select>
       </div>
     </div>
@@ -124,6 +123,59 @@
         <input type="text" id="pay-reference" class="form-control" placeholder="Ej: NEQ-123456">
       </div>
     </div>
+    <!-- Voucher Section -->
+    <div id="voucher-apply-section" style="margin-top:8px;">
+      <button type="button" id="btn-apply-voucher" onclick="toggleVoucherPanel()" style="width:100%;padding:10px;border:2px dashed #10B981;border-radius:8px;background:#ECFDF5;color:#065F46;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        ¿El cliente tiene un bono? Aplicar bono de descuento
+      </button>
+    </div>
+
+    <!-- Voucher Scan/Validate Panel (hidden by default) -->
+    <div id="voucher-panel" style="display:none;margin-top:8px;padding:14px;background:#F0FDF4;border:2px solid #A7F3D0;border-radius:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-size:13px;font-weight:700;color:#065F46;">Aplicar Bono de Descuento</span>
+        <button onclick="cancelVoucher()" style="background:none;border:none;color:#64748B;cursor:pointer;font-size:16px;">&times;</button>
+      </div>
+      <div id="voucher-input-area">
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="voucher-code-input" class="form-control" placeholder="Codigo del bono" style="flex:1;text-transform:uppercase;letter-spacing:1px;font-size:14px;" onkeydown="if(event.key==='Enter'){event.preventDefault();doValidateVoucher();}">
+          <button class="btn btn-sm btn-primary" onclick="doValidateVoucher()" style="white-space:nowrap;">Verificar</button>
+          <button class="btn btn-sm btn-outline" onclick="scanVoucherQR()" title="Escanear QR">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </button>
+        </div>
+        <div id="voucher-scan-area" style="margin-top:8px;display:none;"></div>
+        <div id="voucher-status" style="margin-top:8px;"></div>
+      </div>
+
+      <!-- Applied voucher badge (shown after validation) -->
+      <div id="voucher-applied" style="display:none;">
+        <div style="background:white;border-radius:8px;padding:12px;border:1px solid #A7F3D0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;color:#065F46;font-weight:600;">Bono aplicado</span>
+            <button onclick="cancelVoucher()" style="font-size:11px;color:#EF4444;background:none;border:none;cursor:pointer;text-decoration:underline;">Quitar bono</button>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;">
+            <span style="color:#64748B;">Codigo:</span>
+            <strong id="voucher-applied-code" style="font-family:monospace;letter-spacing:1px;"></strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;">
+            <span style="color:#64748B;">Saldo del bono:</span>
+            <span id="voucher-applied-balance"></span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:#059669;margin-top:6px;padding-top:6px;border-top:1px dashed #A7F3D0;">
+            <span>Descuento aplicado:</span>
+            <span id="voucher-applied-amount"></span>
+          </div>
+          <div id="voucher-remainder-info" style="display:none;margin-top:6px;padding-top:6px;border-top:1px dashed #FCD34D;font-size:13px;font-weight:600;color:#92400E;display:flex;justify-content:space-between;">
+            <span>Restante a pagar:</span>
+            <span id="voucher-remainder-amount"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div style="display:flex; gap:8px; margin-top:16px;">
       <button class="btn btn-outline" onclick="closePaymentModal()" style="flex:1;">Cancelar</button>
       <button id="btn-confirm-sale" class="btn btn-success btn-lg" onclick="confirmSale()" style="flex:2; display:flex; align-items:center; justify-content:center; gap:10px;" disabled>
@@ -254,7 +306,10 @@
   const token = localStorage.getItem('access_token');
   const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
   const COP = n => '$' + Number(n).toLocaleString('es-CO', {minimumFractionDigits: 0});
-  const PAY_NAMES = {cash:'Efectivo',card:'Tarjeta',transfer:'Transferencia',nequi:'Nequi',daviplata:'Daviplata'};
+  const PAY_NAMES = {cash:'Efectivo',card:'Tarjeta',transfer:'Transferencia',nequi:'Nequi',daviplata:'Daviplata',voucher:'Bono'};
+
+  // Voucher state
+  let voucherState = {code:'', balance:0, appliedAmount:0, remainder:0, valid:false};
 
   let cart = [];
   let searchTimeout = null;
@@ -622,10 +677,10 @@
     document.getElementById('change-display').textContent = 'Ingrese el monto recibido';
     document.getElementById('btn-confirm-sale').disabled = true;
     document.getElementById('pay-method').value = 'cash';
+    cancelVoucher();
     setSaleType('cash');
     onPayMethodChange();
     document.getElementById('payment-modal').style.display = 'flex';
-    // Autofocus on received amount
     setTimeout(() => document.getElementById('pay-received').focus(), 50);
   }
 
@@ -704,13 +759,22 @@
 
   function calcChange() {
     const received = parseFloat(document.getElementById('pay-received').value) || 0;
-    const change = received - currentTotal;
+    // If voucher is applied, calculate against remainder
+    const amountToPay = voucherState.valid ? voucherState.remainder : currentTotal;
+    if (amountToPay <= 0 && voucherState.valid) {
+      // Voucher covers everything
+      document.getElementById('change-display').className = 'change-display change-ok';
+      document.getElementById('change-display').innerHTML = 'Bono cubre el <strong>100%</strong>';
+      document.getElementById('btn-confirm-sale').disabled = false;
+      return;
+    }
+    const change = received - amountToPay;
     const el = document.getElementById('change-display');
     const btn = document.getElementById('btn-confirm-sale');
 
     if (received <= 0) {
       el.className = 'change-display change-pending';
-      el.textContent = 'Ingrese el monto recibido';
+      el.textContent = voucherState.valid ? `Cobrar ${COP(amountToPay)} restante` : 'Ingrese el monto recibido';
       btn.disabled = true;
     } else if (change < 0) {
       el.className = 'change-display change-pending';
@@ -727,6 +791,132 @@
     document.getElementById('buyer-fields').style.display =
       document.getElementById('pay-is-company').checked ? '' : 'none';
   }
+
+  // ── Voucher Functions ──────────────────────────────────────
+  function toggleVoucherPanel() {
+    if (!navigator.onLine) { rohuAlert('Los bonos requieren conexion a internet para validarse.', 'warning'); return; }
+    const panel = document.getElementById('voucher-panel');
+    const btn = document.getElementById('btn-apply-voucher');
+    if (panel.style.display === 'none') {
+      panel.style.display = 'block';
+      btn.style.display = 'none';
+      document.getElementById('voucher-code-input').focus();
+    } else {
+      cancelVoucher();
+    }
+  }
+
+  function cancelVoucher() {
+    voucherState = {code:'', balance:0, appliedAmount:0, remainder:0, valid:false};
+    document.getElementById('voucher-panel').style.display = 'none';
+    document.getElementById('voucher-applied').style.display = 'none';
+    document.getElementById('voucher-input-area').style.display = '';
+    document.getElementById('voucher-status').innerHTML = '';
+    document.getElementById('voucher-code-input').value = '';
+    document.getElementById('btn-apply-voucher').style.display = '';
+    document.getElementById('voucher-scan-area').style.display = 'none';
+    // Recalculate change for normal payment
+    if (document.getElementById('pay-method').value === 'cash') calcChange();
+  }
+
+  async function doValidateVoucher() {
+    const code = document.getElementById('voucher-code-input').value.trim().toUpperCase();
+    if (!code) return;
+    if (!navigator.onLine) { rohuAlert('Requiere conexion a internet', 'warning'); return; }
+
+    const statusEl = document.getElementById('voucher-status');
+    statusEl.innerHTML = '<div style="color:#3B82F6;font-size:12px;">Verificando bono...</div>';
+
+    try {
+      const r = await (await fetch('/api/v1/vouchers/validate', {
+        method:'POST', headers, body: JSON.stringify({code})
+      })).json();
+
+      if (!r.success || !r.data.valid) {
+        const errs = r.data?.errors?.join(', ') || r.error?.message || 'Bono no valido';
+        statusEl.innerHTML = `<div style="color:#EF4444;font-size:12px;padding:8px;background:#FEF2F2;border-radius:6px;">&#10007; ${esc(errs)}</div>`;
+        return;
+      }
+
+      // Valid — calculate amounts
+      const balance = r.data.remaining_balance;
+      const applied = Math.min(balance, currentTotal);
+      const remainder = currentTotal - applied;
+
+      voucherState = {code, balance, appliedAmount: applied, remainder, valid: true};
+
+      // Show applied badge
+      document.getElementById('voucher-input-area').style.display = 'none';
+      document.getElementById('voucher-applied').style.display = 'block';
+      document.getElementById('voucher-applied-code').textContent = code;
+      document.getElementById('voucher-applied-balance').textContent = COP(balance);
+      document.getElementById('voucher-applied-amount').textContent = '-' + COP(applied);
+
+      if (remainder > 0) {
+        document.getElementById('voucher-remainder-info').style.display = 'flex';
+        document.getElementById('voucher-remainder-amount').textContent = COP(remainder);
+        // Update the payment section to show remainder
+        document.getElementById('pay-total').innerHTML = COP(currentTotal) +
+          `<div style="font-size:12px;color:#059669;font-weight:normal;">Bono: -${COP(applied)}</div>` +
+          `<div style="font-size:14px;color:#92400E;">Restante: ${COP(remainder)}</div>`;
+        // Recalc change based on remainder
+        recalcChangeForRemainder();
+      } else {
+        document.getElementById('voucher-remainder-info').style.display = 'none';
+        document.getElementById('pay-total').innerHTML = COP(currentTotal) +
+          `<div style="font-size:12px;color:#059669;font-weight:normal;">Bono cubre el total</div>`;
+        // Bono covers everything — enable confirm
+        document.getElementById('btn-confirm-sale').disabled = false;
+        document.getElementById('change-display').className = 'change-display change-ok';
+        document.getElementById('change-display').innerHTML = 'Bono cubre el <strong>100%</strong> de la venta';
+      }
+    } catch (e) {
+      statusEl.innerHTML = '<div style="color:#EF4444;font-size:12px;">Error de conexion</div>';
+    }
+  }
+
+  function recalcChangeForRemainder() {
+    const method = document.getElementById('pay-method').value;
+    if (method === 'cash') {
+      const received = parseFloat(document.getElementById('pay-received').value) || 0;
+      const change = received - voucherState.remainder;
+      const el = document.getElementById('change-display');
+      const btn = document.getElementById('btn-confirm-sale');
+      if (received <= 0) {
+        el.className = 'change-display change-pending';
+        el.textContent = `Cobrar ${COP(voucherState.remainder)} en efectivo`;
+        btn.disabled = true;
+      } else if (change < 0) {
+        el.className = 'change-display change-pending';
+        el.innerHTML = `Faltan <strong>${COP(Math.abs(change))}</strong>`;
+        btn.disabled = true;
+      } else {
+        el.className = 'change-display change-ok';
+        el.innerHTML = `Cambio: <strong>${COP(change)}</strong>`;
+        btn.disabled = false;
+      }
+    } else {
+      document.getElementById('btn-confirm-sale').disabled = false;
+      document.getElementById('change-display').className = 'change-display change-ok';
+      document.getElementById('change-display').textContent = `${PAY_NAMES[method] || method}: ${COP(voucherState.remainder)}`;
+    }
+  }
+
+  function scanVoucherQR() {
+    if (typeof Html5Qrcode === 'undefined') { rohuAlert('Scanner QR no disponible', 'error'); return; }
+    const area = document.getElementById('voucher-scan-area');
+    if (area.style.display !== 'none') { area.style.display = 'none'; return; }
+    area.style.display = 'block';
+    area.innerHTML = '<div id="voucher-qr-reader" style="width:100%;"></div>';
+    const scanner = new Html5Qrcode('voucher-qr-reader');
+    scanner.start({facingMode:'environment'}, {fps:10, qrbox:{width:250,height:250}},
+      (text) => { scanner.stop(); area.style.display='none'; document.getElementById('voucher-code-input').value=text; doValidateVoucher(); },
+      () => {}
+    ).catch(() => { area.innerHTML = '<div style="color:#EF4444;font-size:12px;">No se pudo acceder a la camara</div>'; });
+  }
+
+  // Override calcChange to account for voucher
+  const _origCalcChange = calcChange;
 
   // ── Confirm Sale ─────────────────────────────────────────
   async function confirmSale() {
@@ -756,12 +946,25 @@
       payload.customer_id = custId;
       payload.credit_days = parseInt(document.getElementById('credit-days').value) || 30;
       payload.payments = [];
-      // Use customer name from selector
       const opt = document.getElementById('credit-customer').options[document.getElementById('credit-customer').selectedIndex];
       payload.customer_name = opt.dataset.name || buyerName;
     } else {
       payload.sale_type = 'cash';
-      payload.payments = [{method, amount: currentTotal, received_amount: received, reference: reference || undefined}];
+
+      // Build payments array considering voucher
+      if (voucherState.valid && voucherState.appliedAmount > 0) {
+        payload.voucher_redemption = {
+          code: voucherState.code,
+          amount: voucherState.appliedAmount,
+          idempotency_key: crypto.randomUUID(),
+        };
+        payload.payments = [{method: 'voucher', amount: voucherState.appliedAmount}];
+        if (voucherState.remainder > 0) {
+          payload.payments.push({method, amount: voucherState.remainder, received_amount: received, reference: reference || undefined});
+        }
+      } else {
+        payload.payments = [{method, amount: currentTotal, received_amount: received, reference: reference || undefined}];
+      }
     }
 
     try {
@@ -802,7 +1005,8 @@
   function showReceipt(sale) {
     const t = tenantInfo || {};
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const pay = sale.payments[0] || {};
+    const pay = sale.payments?.find(p => p.method !== 'voucher') || sale.payments?.[0] || {};
+    const voucherPay = sale.payments?.find(p => p.method === 'voucher');
     const change = (pay.received_amount || 0) - (pay.amount || 0);
     const date = new Date(sale.sale_date).toLocaleString('es-CO');
 
@@ -837,7 +1041,8 @@
         </div>
         <div class="r-total">${COP(sale.total_amount)}</div>
         <div style="margin-top:8px; font-size:12px;">
-          <div>Método: ${PAY_NAMES[pay.method] || pay.method}</div>
+          ${voucherPay ? `<div style="color:#059669;font-weight:600;">Bono aplicado: ${COP(voucherPay.amount)}</div>` : ''}
+          <div>Metodo: ${PAY_NAMES[pay.method] || pay.method}${voucherPay && pay.method !== 'voucher' ? ` (${COP(pay.amount)})` : ''}</div>
           ${pay.received_amount ? `<div>Recibido: ${COP(pay.received_amount)}</div>` : ''}
         </div>
         ${change > 0 ? `<div class="r-change">CAMBIO: ${COP(change)}</div>` : ''}
