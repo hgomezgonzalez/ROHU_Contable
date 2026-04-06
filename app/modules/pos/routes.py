@@ -92,6 +92,8 @@ def checkout():
             sale_type=sale_type,
             customer_id=data.get("customer_id"),
             credit_days=data.get("credit_days", 0),
+            voucher_sale=data.get("voucher_sale"),
+            voucher_redemption=data.get("voucher_redemption"),
         )
         return jsonify(success=True, data=sale), 201
     except ValueError as e:

@@ -109,6 +109,8 @@ def checkout(
     cash_session_id: str = None,
     sale_type: str = "cash", customer_id: str = None,
     credit_days: int = 0,
+    voucher_sale: dict = None,
+    voucher_redemption: dict = None,
 ) -> dict:
     """
     Process a complete sale. ACID: Sale + StockMovements or nothing.
@@ -118,6 +120,8 @@ def checkout(
     sale_type: "cash" (default) or "credit"
     customer_id: required for credit sales
     credit_days: payment terms for credit sales
+    voucher_sale: {"code": str, "buyer_name": str, ...} — selling a voucher
+    voucher_redemption: {"code": str, "amount": float} — redeeming a voucher as payment
     """
     # Idempotency check
     if idempotency_key:
@@ -319,6 +323,34 @@ def checkout(
         )
         db.session.add(movement)
 
+    # ── Voucher Sale: activate a voucher as part of this sale ────────
+    voucher_sale_result = None
+    if voucher_sale:
+        from app.modules.vouchers.services import sell_voucher
+        voucher_sale_result = sell_voucher(
+            tenant_id=tenant_id,
+            code=voucher_sale["code"],
+            sale_id=str(sale.id),
+            cashier_id=cashier_id,
+            idempotency_key=voucher_sale.get("idempotency_key", str(uuid.uuid4())),
+            buyer_name=voucher_sale.get("buyer_name"),
+            buyer_customer_id=voucher_sale.get("buyer_customer_id"),
+            buyer_id_document=voucher_sale.get("buyer_id_document"),
+        )
+
+    # ── Voucher Redemption: apply a voucher as payment ────────────
+    voucher_redemption_result = None
+    if voucher_redemption:
+        from app.modules.vouchers.services import redeem_voucher
+        voucher_redemption_result = redeem_voucher(
+            tenant_id=tenant_id,
+            code=voucher_redemption["code"],
+            sale_id=str(sale.id),
+            amount=voucher_redemption["amount"],
+            cashier_id=cashier_id,
+            idempotency_key=voucher_redemption.get("idempotency_key", str(uuid.uuid4())),
+        )
+
     # Auto-post accounting entries (same transaction)
     cost_total = sum(
         float(op["unit_cost"]) * float(op["quantity"]) for op in stock_ops
@@ -337,6 +369,28 @@ def checkout(
             payment_method="credit" if is_credit else payment_method,
             fiscal_regime=fiscal,
         )
+
+        # Voucher-specific accounting entries
+        if voucher_sale_result:
+            from app.modules.accounting.services import post_voucher_sale_entry
+            post_voucher_sale_entry(
+                tenant_id=tenant_id, created_by=cashier_id,
+                sale_id=str(sale.id),
+                voucher_id=voucher_sale_result["voucher_id"],
+                amount=voucher_sale_result["accounting"]["amount"],
+            )
+
+        if voucher_redemption_result:
+            from app.modules.accounting.services import post_voucher_redemption_entry
+            post_voucher_redemption_entry(
+                tenant_id=tenant_id, created_by=cashier_id,
+                sale_id=str(sale.id),
+                voucher_id=voucher_redemption_result["voucher_id"],
+                amount=voucher_redemption_result["accounting"]["amount"],
+                tax_amount=float(sale.tax_amount),
+                subtotal=float(sale.subtotal),
+            )
+
         sp.commit()
     except Exception as e:
         # Rollback only the accounting savepoint — sale + stock remain intact
@@ -353,7 +407,13 @@ def checkout(
 
     # Commit everything atomically
     db.session.commit()
-    return _sale_to_dict(sale)
+
+    result = _sale_to_dict(sale)
+    if voucher_sale_result:
+        result["voucher_sale"] = voucher_sale_result
+    if voucher_redemption_result:
+        result["voucher_redemption"] = voucher_redemption_result
+    return result
 
 
 # ── Sale Queries ──────────────────────────────────────────────────

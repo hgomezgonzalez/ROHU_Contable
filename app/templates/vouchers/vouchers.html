@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Bonos de Descuento — ROHU{% endblock %}
+{% block head %}
+<script src="{{ url_for('static', filename='js/html5-qrcode.min.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Bonos de Descuento</h1>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="showCreateTypeModal()">+ Tipo de Bono</button>
+  </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-grid" id="voucher-stats" style="margin-bottom:24px;">
+  <div class="stat-card">
+    <div class="stat-label">En Circulacion</div>
+    <div class="stat-value" id="stat-circulation">$0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Vendidos</div>
+    <div class="stat-value" id="stat-sold">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Redimidos</div>
+    <div class="stat-value" id="stat-redeemed">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Vencidos</div>
+    <div class="stat-value" id="stat-expired">0</div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab active" data-tab="types" onclick="switchTab('types')">Tipos de Bono</button>
+  <button class="tab" data-tab="vouchers" onclick="switchTab('vouchers')">Inventario de Bonos</button>
+</div>
+
+<!-- Voucher Types Tab -->
+<div id="tab-types" class="tab-content active">
+  <div class="table-container">
+    <table class="data-table" id="types-table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Valor Nominal</th>
+          <th>Vigencia</th>
+          <th>Emitidos</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="types-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Vouchers Inventory Tab -->
+<div id="tab-vouchers" class="tab-content" style="display:none;">
+  <div class="table-filters" style="margin-bottom:16px;">
+    <select id="filter-status" onchange="loadVouchers()">
+      <option value="">Todos los estados</option>
+      <option value="issued">Emitidos</option>
+      <option value="sold">Vendidos</option>
+      <option value="partially_redeemed">Parcialmente redimidos</option>
+      <option value="redeemed">Redimidos</option>
+      <option value="expired">Vencidos</option>
+      <option value="cancelled">Cancelados</option>
+    </select>
+  </div>
+  <div class="table-container">
+    <table class="data-table" id="vouchers-table">
+      <thead>
+        <tr>
+          <th>Codigo</th>
+          <th>Tipo</th>
+          <th>Valor</th>
+          <th>Saldo</th>
+          <th>Estado</th>
+          <th>Vence</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="vouchers-tbody"></tbody>
+    </table>
+  </div>
+  <div id="vouchers-pagination" class="pagination"></div>
+</div>
+
+<!-- Create Type Modal -->
+<div id="create-type-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Nuevo Tipo de Bono</h2>
+      <button class="modal-close" onclick="closeModal('create-type-modal')">&times;</button>
+    </div>
+    <form id="create-type-form" onsubmit="return createVoucherType(event)">
+      <div class="form-group">
+        <label for="vt-name">Nombre</label>
+        <input type="text" id="vt-name" required maxlength="100" placeholder="Ej: Bono Navidad $50.000">
+      </div>
+      <div class="form-group">
+        <label for="vt-face-value">Valor Nominal (COP)</label>
+        <input type="number" id="vt-face-value" required min="1000" step="1000" placeholder="50000">
+      </div>
+      <div class="form-group">
+        <label for="vt-validity">Vigencia (dias, minimo 90)</label>
+        <input type="number" id="vt-validity" required min="90" max="730" value="180">
+      </div>
+      <div class="form-group">
+        <label for="vt-max-issuable">Cantidad maxima a emitir (vacio = ilimitado)</label>
+        <input type="number" id="vt-max-issuable" min="1">
+      </div>
+      <div class="form-group">
+        <label for="vt-color">Color del bono</label>
+        <input type="color" id="vt-color" value="#1E3A8A">
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('create-type-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear Tipo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Emit Vouchers Modal -->
+<div id="emit-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Emitir Bonos</h2>
+      <button class="modal-close" onclick="closeModal('emit-modal')">&times;</button>
+    </div>
+    <form id="emit-form" onsubmit="return emitVouchers(event)">
+      <input type="hidden" id="emit-type-id">
+      <div class="form-group">
+        <label>Tipo de bono</label>
+        <div id="emit-type-info" class="info-box"></div>
+      </div>
+      <div class="form-group">
+        <label for="emit-quantity">Cantidad a emitir</label>
+        <input type="number" id="emit-quantity" required min="1" max="200" value="1">
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('emit-modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Emitir</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Voucher Detail Modal -->
+<div id="detail-modal" class="modal" style="display:none;">
+  <div class="modal-content modal-lg">
+    <div class="modal-header">
+      <h2>Detalle del Bono</h2>
+      <button class="modal-close" onclick="closeModal('detail-modal')">&times;</button>
+    </div>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/voucher-admin.js') }}"></script>
+{% endblock %}

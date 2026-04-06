@@ -269,6 +269,7 @@ def _register_blueprints(app: Flask) -> None:
     from app.modules.invoicing.blueprint import invoicing_bp
     from app.modules.customers.blueprint import customers_bp
     from app.modules.cash.blueprint import cash_bp
+    from app.modules.vouchers.blueprint import vouchers_bp
     from app.frontend import frontend_bp
 
     app.register_blueprint(auth_bp)
@@ -280,6 +281,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(invoicing_bp)
     app.register_blueprint(customers_bp)
     app.register_blueprint(cash_bp)
+    app.register_blueprint(vouchers_bp)
     app.register_blueprint(frontend_bp)
 
     # Root redirect

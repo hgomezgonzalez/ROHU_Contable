@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Bono {{ voucher.code }}</title>
+  <style>
+    @page { size: 80mm auto; margin: 2mm; }
+    @media print { body { margin: 0; } }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Courier New', monospace; font-size: 12px; width: 76mm; padding: 2mm; }
+    .voucher-ticket { border: 2px dashed #333; padding: 8px; text-align: center; }
+    .voucher-header { font-size: 14px; font-weight: bold; margin-bottom: 6px; text-transform: uppercase; }
+    .voucher-issuer { font-size: 10px; margin-bottom: 8px; }
+    .voucher-value { font-size: 28px; font-weight: bold; margin: 12px 0; color: #1E3A8A; }
+    .voucher-code { font-size: 16px; font-weight: bold; letter-spacing: 2px; margin: 8px 0; }
+    .voucher-qr { margin: 10px auto; }
+    .voucher-qr img { width: 120px; height: 120px; }
+    .voucher-dates { font-size: 10px; margin: 8px 0; }
+    .voucher-disclaimer { font-size: 8px; margin-top: 10px; padding-top: 6px; border-top: 1px dashed #999; text-align: justify; line-height: 1.3; }
+    .separator { border: none; border-top: 1px dashed #999; margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <div class="voucher-ticket">
+    <div class="voucher-header">BONO DE DESCUENTO</div>
+    <div class="voucher-issuer">
+      {{ voucher.issuer_name }}<br>
+      NIT: {{ voucher.issuer_nit }}
+    </div>
+
+    <hr class="separator">
+
+    <div class="voucher-value">{{ voucher.face_value_formatted }}</div>
+    <div class="voucher-code">{{ voucher.code }}</div>
+
+    {% if voucher.qr_base64 %}
+    <div class="voucher-qr">
+      <img src="data:image/png;base64,{{ voucher.qr_base64 }}" alt="QR {{ voucher.code }}">
+    </div>
+    {% endif %}
+
+    <div class="voucher-dates">
+      Emitido: {{ voucher.issued_at[:10] if voucher.issued_at else '-' }}<br>
+      Valido hasta: <strong>{{ voucher.expires_at_short }}</strong>
+    </div>
+
+    <hr class="separator">
+
+    <div class="voucher-disclaimer">
+      {{ voucher.disclaimer }}
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>

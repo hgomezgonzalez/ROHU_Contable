@@ -130,6 +130,46 @@ def collection_letter(customer_id):
         return f"<h3>Error: {e}</h3>", 404
 
 
+@frontend_bp.route("/vouchers")
+def vouchers():
+    return render_template("vouchers/vouchers.html")
+
+
+@frontend_bp.route("/vouchers/<voucher_id>/print")
+def voucher_print(voucher_id):
+    """Render voucher ticket for printing (standalone page)."""
+    from flask import request as req
+    token = req.args.get("token", "") or req.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        from flask_jwt_extended import decode_token
+        import json
+        decoded = decode_token(token) if token else None
+        if decoded:
+            identity = json.loads(decoded["sub"])
+            tenant_id = identity["tenant_id"]
+        else:
+            # For browser-based printing, get from localStorage via JS redirect
+            return render_template("vouchers/voucher_print.html", voucher={})
+    except Exception:
+        pass
+
+    from app.modules.vouchers.services import get_voucher
+    from app.modules.vouchers.print_service import build_voucher_print_data
+    from app.modules.auth_rbac.models import Tenant
+
+    try:
+        v = get_voucher(tenant_id, voucher_id)
+        if not v:
+            return "<h3>Bono no encontrado</h3>", 404
+        tenant = Tenant.query.get(tenant_id)
+        t_dict = {"name": tenant.name, "nit": tenant.nit or "",
+                   "address": tenant.address or "", "phone": tenant.phone or ""}
+        print_data = build_voucher_print_data(v, t_dict)
+        return render_template("vouchers/voucher_print.html", voucher=print_data)
+    except Exception as e:
+        return f"<h3>Error: {e}</h3>", 500
+
+
 @frontend_bp.route("/admin/users")
 def admin_users():
     return render_template("admin/users.html")

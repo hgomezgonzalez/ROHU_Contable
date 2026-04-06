@@ -1131,6 +1131,9 @@ PUC_SEED = [
     ("2805", "Anticipos y avances recibidos", "liability", "credit"),
     ("2810", "Depósitos recibidos", "liability", "credit"),
     ("2895", "Diversos", "liability", "credit"),
+    ("2910", "Bonos de descuento", "liability", "credit"),
+    ("291001", "Bonos de descuento por redimir", "liability", "credit"),
+    ("291002", "Bonos vencidos en cuarentena", "liability", "credit"),
 
     # ════════════════════════════════════════════════════════════
     # CLASE 3 — PATRIMONIO
@@ -1151,6 +1154,7 @@ PUC_SEED = [
     # CLASE 4 — INGRESOS
     # ════════════════════════════════════════════════════════════
     ("4135", "Comercio al por mayor y menor", "income", "credit"),
+    ("413505", "Redención de bonos de descuento", "income", "credit"),
     ("413505", "Ventas gravadas 19%", "income", "credit"),
     ("413510", "Ventas gravadas 5%", "income", "credit"),
     ("413515", "Ventas excluidas de IVA", "income", "credit"),
@@ -1166,6 +1170,7 @@ PUC_SEED = [
     ("4250", "Recuperaciones", "income", "credit"),
     ("4255", "Indemnizaciones", "income", "credit"),
     ("4295", "Ingresos diversos", "income", "credit"),
+    ("429505", "Bonos vencidos no redimidos", "income", "credit"),
 
     # ════════════════════════════════════════════════════════════
     # CLASE 5 — GASTOS
@@ -1293,6 +1298,107 @@ def seed_chart_of_accounts(tenant_id: str) -> int:
 
     db.session.commit()
     return added
+
+
+# ── Auto-posting: Voucher Sale (Pasivo diferido) ─────────────────
+
+def post_voucher_sale_entry(
+    tenant_id: str, created_by: str, sale_id: str,
+    voucher_id: str, amount: float,
+) -> dict:
+    """
+    Journal entry for selling a voucher.
+    DB 1105 Caja / CR 291001 Bonos por redimir — NO IVA.
+    """
+    return create_journal_entry(
+        tenant_id=tenant_id, created_by=created_by,
+        entry_type="VOUCHER_SALE",
+        description=f"Venta de bono de descuento",
+        source_document_type="sale", source_document_id=sale_id,
+        lines=[
+            {"puc_code": "1105", "debit": amount, "credit": 0,
+             "description": "Cobro venta de bono"},
+            {"puc_code": "291001", "debit": 0, "credit": amount,
+             "description": "Obligación por bono vendido"},
+        ],
+    )
+
+
+def post_voucher_redemption_entry(
+    tenant_id: str, created_by: str, sale_id: str,
+    voucher_id: str, amount: float,
+    tax_amount: float = 0, subtotal: float = 0,
+) -> dict:
+    """
+    Journal entry for redeeming a voucher.
+    DB 291001 Bonos por redimir / CR 4135 Ingresos + CR 2408 IVA.
+    The IVA is on the products, not on the voucher value.
+    """
+    lines = [
+        {"puc_code": "291001", "debit": amount, "credit": 0,
+         "description": "Liberación pasivo por bono redimido"},
+    ]
+
+    if tax_amount > 0:
+        net_income = amount - tax_amount
+        lines.append(
+            {"puc_code": "4135", "debit": 0, "credit": net_income,
+             "description": "Ingreso por redención de bono"}
+        )
+        lines.append(
+            {"puc_code": "2408", "debit": 0, "credit": tax_amount,
+             "description": "IVA sobre productos de la venta"}
+        )
+    else:
+        lines.append(
+            {"puc_code": "4135", "debit": 0, "credit": amount,
+             "description": "Ingreso por redención de bono"}
+        )
+
+    return create_journal_entry(
+        tenant_id=tenant_id, created_by=created_by,
+        entry_type="VOUCHER_REDEMPTION",
+        description=f"Redención de bono de descuento",
+        source_document_type="sale", source_document_id=sale_id,
+        lines=lines,
+    )
+
+
+def post_voucher_expiry_entry(
+    tenant_id: str, created_by: str, voucher_id: str,
+    amount: float, quarantine: bool = True,
+) -> dict:
+    """
+    Journal entry for expired voucher.
+    Step 1 (quarantine): DB 291001 / CR 291002
+    Step 2 (recognition): DB 291002 / CR 429505
+    """
+    if quarantine:
+        return create_journal_entry(
+            tenant_id=tenant_id, created_by=created_by,
+            entry_type="VOUCHER_EXPIRY",
+            description="Bono expirado - transferencia a cuarentena",
+            source_document_type="voucher", source_document_id=voucher_id,
+            lines=[
+                {"puc_code": "291001", "debit": amount, "credit": 0,
+                 "description": "Liberación pasivo bono expirado"},
+                {"puc_code": "291002", "debit": 0, "credit": amount,
+                 "description": "Bono en cuarentena (30 días)"},
+            ],
+        )
+    else:
+        return create_journal_entry(
+            tenant_id=tenant_id, created_by=created_by,
+            entry_type="VOUCHER_EXPIRY",
+            description="Bono expirado - reconocimiento ingreso no operacional",
+            source_document_type="voucher", source_document_id=voucher_id,
+            lines=[
+                {"puc_code": "291002", "debit": amount, "credit": 0,
+                 "description": "Salida de cuarentena"},
+                {"puc_code": "429505", "debit": 0, "credit": amount,
+                 "description": "Ingreso no operacional por bono vencido"},
+            ],
+        )
 
 
 def get_chart_of_accounts(tenant_id: str) -> list:
