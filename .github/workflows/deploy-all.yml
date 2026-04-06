@@ -37,6 +37,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Ensure VOUCHER_HMAC_SECRET exists
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          # Check if VOUCHER_HMAC_SECRET is already set
+          EXISTING=$(heroku config:get VOUCHER_HMAC_SECRET -a ${{ matrix.app }} 2>/dev/null || echo "")
+          if [ -z "$EXISTING" ]; then
+            SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            heroku config:set VOUCHER_HMAC_SECRET="$SECRET" -a ${{ matrix.app }}
+            echo "VOUCHER_HMAC_SECRET configured for ${{ matrix.app }}"
+          else
+            echo "VOUCHER_HMAC_SECRET already set for ${{ matrix.app }}"
+          fi
+
       - name: Deploy to ${{ matrix.app }}
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
@@ -45,14 +59,34 @@ jobs:
           git push heroku-${{ matrix.app }} main --force
           echo "Deployed to ${{ matrix.app }}"
 
+      - name: Wait for release phase
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          echo "Waiting for release phase (migrations + seed-puc)..."
+          for i in $(seq 1 12); do
+            STATUS=$(heroku releases -a ${{ matrix.app }} -n 1 --json | python3 -c "import sys,json; r=json.load(sys.stdin)[0]; print(r.get('status',''))" 2>/dev/null || echo "pending")
+            echo "  Attempt $i: release status = $STATUS"
+            if [ "$STATUS" = "succeeded" ]; then
+              echo "Release phase completed"
+              break
+            elif [ "$STATUS" = "failed" ]; then
+              echo "Release phase FAILED"
+              heroku logs -a ${{ matrix.app }} -n 50 --source app --dyno release
+              exit 1
+            fi
+            sleep 10
+          done
+
       - name: Health check ${{ matrix.app }}
         run: |
-          sleep 30  # Wait for release phase
-          URL="https://${{ matrix.app }}.herokuapp.com/health"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+          URL="https://${{ matrix.app }}.herokuapp.com/health/full"
+          STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" "$URL" || echo "000")
           if [ "$STATUS" = "200" ]; then
             echo "✅ ${{ matrix.app }} is healthy"
+            python3 -c "import json; d=json.load(open('/tmp/health.json')); print(json.dumps(d.get('checks',{}), indent=2))"
           else
             echo "❌ ${{ matrix.app }} health check failed (status: $STATUS)"
+            cat /tmp/health.json 2>/dev/null || true
             exit 1
           fi
