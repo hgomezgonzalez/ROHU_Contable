@@ -626,6 +626,9 @@ def seed_roles_and_permissions() -> None:
         ("cash_disbursements", "approve", "cash"),
         ("cash_transfers", "create", "cash"),
         ("cash_transfers", "read", "cash"),
+        ("vouchers", "read", "vouchers"),
+        ("vouchers", "manage", "vouchers"),
+        ("vouchers", "redeem", "vouchers"),
     ]
 
     # Upsert permissions (create missing ones)
@@ -660,6 +663,8 @@ def seed_roles_and_permissions() -> None:
             perm_objects["cash_receipts:void"],
             perm_objects["cash_transfers:create"],
             perm_objects["cash_transfers:read"],
+            perm_objects["vouchers:read"],
+            perm_objects["vouchers:redeem"],
         ],
         "accountant": [
             perm_objects["journal_entries:create"],
