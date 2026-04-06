@@ -30,7 +30,8 @@ def create_app(config_name: str = "development") -> Flask:
     # App version and deploy timestamp
     import os
 
-    APP_VERSION = "1.2.1"
+    APP_VERSION = "1.2.2"
+    DEPLOY_COMMIT = os.getenv("SOURCE_VERSION", "")[:8]
     DEPLOY_TIME = os.getenv("DEPLOY_TIME", None)
     if not DEPLOY_TIME:
         from datetime import datetime, timezone
@@ -100,7 +101,13 @@ def create_app(config_name: str = "development") -> Flask:
 
     @app.route("/health")
     def health():
-        return {"status": "ok", "service": "rohu-contable", "version": APP_VERSION, "deployed_at": DEPLOY_TIME}
+        return {
+            "status": "ok",
+            "service": "rohu-contable",
+            "version": APP_VERSION,
+            "commit": DEPLOY_COMMIT,
+            "deployed_at": DEPLOY_TIME,
+        }
 
     @app.route("/health/full")
     def health_full():

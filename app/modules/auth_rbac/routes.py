@@ -449,7 +449,9 @@ def list_saas_clients():
     import json
     import os
 
-    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json")
+    clients_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json"
+    )
     try:
         with open(clients_file, "r") as f:
             clients = json.load(f)
@@ -458,6 +460,63 @@ def list_saas_clients():
         return jsonify(success=True, data=[])
     except Exception as e:
         return jsonify(success=False, error={"code": "FILE_ERROR", "message": str(e)}), 500
+
+
+@auth_bp.route("/sync-status", methods=["GET"])
+@require_permission("tenants", "manage")
+def sync_status():
+    """Check sync status of all replicas by comparing their /health commit hash with this app's."""
+    import json
+    import os
+
+    import requests as http
+
+    # Get this app's commit
+    main_commit = os.getenv("SOURCE_VERSION", "")[:8]
+
+    clients_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json"
+    )
+    try:
+        with open(clients_file, "r") as f:
+            clients = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        clients = []
+
+    results = []
+    for c in clients:
+        app_name = c.get("app", "")
+        url = c.get("url", "").rstrip("/")
+        health_url = f"{url}/health" if url else f"https://{app_name}.herokuapp.com/health"
+
+        entry = {
+            "name": c.get("name", app_name),
+            "app": app_name,
+            "url": url,
+            "admin_email": c.get("admin_email", ""),
+            "created_at": c.get("created_at", ""),
+        }
+
+        try:
+            resp = http.get(health_url, timeout=8)
+            if resp.status_code == 200:
+                data = resp.json()
+                replica_commit = data.get("commit", "")
+                entry["status"] = "online"
+                entry["version"] = data.get("version", "?")
+                entry["commit"] = replica_commit
+                entry["deployed_at"] = data.get("deployed_at", "")
+                entry["synced"] = (replica_commit == main_commit) if main_commit and replica_commit else None
+            else:
+                entry["status"] = "error"
+                entry["synced"] = False
+        except Exception:
+            entry["status"] = "offline"
+            entry["synced"] = False
+
+        results.append(entry)
+
+    return jsonify(success=True, data={"main_commit": main_commit, "clients": results})
 
 
 @auth_bp.route("/deploy-all", methods=["POST"])

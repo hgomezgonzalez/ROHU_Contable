@@ -1,12 +1,16 @@
 {% extends "base.html" %}
 {% set active_page = 'admin_tenants' %}
 {% block title %}Clientes SaaS — ROHU Contable{% endblock %}
-{% block header_title %}Administración de Clientes SaaS{% endblock %}
+{% block header_title %}Administracion de Clientes SaaS{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Clientes SaaS</h1>
-  <div style="display:flex; gap:8px;">
+  <div style="display:flex; gap:8px; align-items:center;">
+    <button class="btn btn-sm btn-outline" id="btn-check-sync" onclick="checkSyncStatus()" title="Verificar sincronizacion">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:2px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Verificar
+    </button>
     <button class="btn btn-primary" id="btn-sync" onclick="startDeploy()" style="background:#059669;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
       Sincronizar Replicas
@@ -18,6 +22,7 @@
 <div class="alert alert-warning" style="margin-bottom:16px;">
   Desde aqui puede ver y gestionar las instancias desplegadas de ROHU Contable.
   Cada cliente tiene su propia aplicacion y base de datos independiente.
+  Los cambios se realizan en esta app principal y se sincronizan a las replicas.
 </div>
 
 <!-- Deploy Progress Panel -->
@@ -25,9 +30,7 @@
   <div class="card" id="deploy-card" style="border-left:4px solid #3B82F6; padding:20px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
       <div style="display:flex; align-items:center; gap:10px;">
-        <div id="deploy-icon" style="font-size:22px;">
-          <svg id="deploy-spinner" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.5" style="width:22px;height:22px;animation:spin 1s linear infinite;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-        </div>
+        <svg id="deploy-spinner" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.5" style="width:22px;height:22px;animation:spin 1s linear infinite;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         <div>
           <div id="deploy-title" style="font-weight:700; font-size:15px; color:#0F172A;">Desplegando cambios...</div>
           <div id="deploy-subtitle" style="font-size:12px; color:#64748B; margin-top:2px;">Sincronizando codigo con todas las replicas</div>
@@ -35,16 +38,10 @@
       </div>
       <div id="deploy-summary" style="font-size:13px; font-weight:600; color:#64748B; background:#F1F5F9; padding:4px 12px; border-radius:20px;"></div>
     </div>
-
-    <!-- Progress bar -->
     <div style="background:#E2E8F0; border-radius:6px; height:6px; margin-bottom:16px; overflow:hidden;">
       <div id="deploy-progress-bar" style="height:100%; background:linear-gradient(90deg,#3B82F6,#059669); border-radius:6px; transition:width 0.5s ease; width:0%;"></div>
     </div>
-
-    <!-- Apps list -->
     <div id="deploy-apps" style="display:flex; flex-direction:column; gap:8px;"></div>
-
-    <!-- Elapsed time -->
     <div id="deploy-time" style="text-align:right; font-size:11px; color:#94A3B8; margin-top:12px;"></div>
   </div>
 </div>
@@ -58,8 +55,8 @@
           <th>Negocio</th>
           <th>App Heroku</th>
           <th>URL</th>
-          <th>Admin</th>
-          <th>Creado</th>
+          <th>Version</th>
+          <th>Sincronizada</th>
           <th>Estado</th>
         </tr>
       </thead>
@@ -126,7 +123,7 @@
   let deployStartTime = null;
   let timerInterval = null;
 
-  // ── Load Clients Table ────────────────────────────────────────
+  // ── Load Clients with sync status ─────────────────────────────
   async function loadClients() {
     try {
       const resp = await fetch('/api/v1/auth/saas-clients', {headers});
@@ -143,14 +140,81 @@
           <td><strong>${esc(c.name)}</strong></td>
           <td><code style="font-size:11px;">${esc(c.app)}</code></td>
           <td><a href="${esc(c.url)}" target="_blank" style="font-size:12px;">${c.url ? 'Abrir' : '—'}</a></td>
-          <td style="font-size:12px;">${esc(c.admin_email || '—')}</td>
-          <td style="font-size:12px;">${esc(c.created_at || '—')}</td>
-          <td><span class="badge badge-success">Activo</span></td>
+          <td id="ver-${esc(c.app)}" style="font-size:12px;color:var(--text-light);">—</td>
+          <td id="sync-${esc(c.app)}"><span class="badge badge-muted" style="font-size:10px;">Sin verificar</span></td>
+          <td id="status-${esc(c.app)}"><span class="badge badge-muted">—</span></td>
         </tr>
       `).join('');
     } catch(e) {
       document.getElementById('clients-table').innerHTML = '<tr><td colspan="6">Error de conexion</td></tr>';
     }
+  }
+
+  // ── Check Sync Status ─────────────────────────────────────────
+  async function checkSyncStatus() {
+    const btn = document.getElementById('btn-check-sync');
+    btn.disabled = true;
+    btn.classList.add('btn-loading');
+
+    try {
+      const resp = await fetch('/api/v1/auth/sync-status', {headers});
+      const r = await resp.json();
+      if (!r.success) {
+        await rohuAlert(r.error?.message || 'Error verificando sincronizacion', 'error');
+        btn.disabled = false;
+        btn.classList.remove('btn-loading');
+        return;
+      }
+
+      const mainCommit = r.data.main_commit;
+      let allSynced = true;
+
+      r.data.clients.forEach(c => {
+        const verEl = document.getElementById(`ver-${c.app}`);
+        const syncEl = document.getElementById(`sync-${c.app}`);
+        const statusEl = document.getElementById(`status-${c.app}`);
+
+        if (!verEl) return;
+
+        // Version
+        verEl.textContent = c.version ? `v${c.version}` : '—';
+        if (c.commit) verEl.textContent += ` (${c.commit})`;
+
+        // Status
+        if (c.status === 'online') {
+          statusEl.innerHTML = '<span class="badge badge-success">En linea</span>';
+        } else if (c.status === 'offline') {
+          statusEl.innerHTML = '<span class="badge badge-danger">Offline</span>';
+        } else {
+          statusEl.innerHTML = '<span class="badge badge-warning">Error</span>';
+        }
+
+        // Sync
+        if (c.synced === true) {
+          syncEl.innerHTML = '<span class="badge badge-success" style="font-size:10px;">Sincronizada</span>';
+        } else if (c.synced === false) {
+          syncEl.innerHTML = '<span class="badge badge-warning" style="font-size:10px;">Pendiente</span>';
+          allSynced = false;
+        } else {
+          syncEl.innerHTML = '<span class="badge badge-muted" style="font-size:10px;">No verificable</span>';
+        }
+      });
+
+      if (allSynced && r.data.clients.length > 0) {
+        await rohuAlert('Todas las replicas estan sincronizadas con la version actual.', 'success');
+      } else if (!allSynced) {
+        await rohuAlert(
+          'Hay replicas <strong>pendientes de sincronizar</strong>.<br><br>' +
+          '<span style="font-size:12px;color:#64748B;">Use el boton "Sincronizar Replicas" para actualizar todas las apps.</span>',
+          'warning'
+        );
+      }
+
+    } catch(e) {
+      await rohuAlert('Error de conexion al verificar', 'error');
+    }
+    btn.disabled = false;
+    btn.classList.remove('btn-loading');
   }
 
   // ── Deploy All ────────────────────────────────────────────────
@@ -182,11 +246,8 @@
         return;
       }
 
-      // Start timer
       deployStartTime = new Date();
       timerInterval = setInterval(updateTimer, 1000);
-
-      // Show progress panel and start polling
       showDeployPanel(r.data);
       pollInterval = setInterval(pollDeployStatus, 4000);
 
@@ -198,9 +259,7 @@
   }
 
   function showDeployPanel(state) {
-    const panel = document.getElementById('deploy-panel');
-    panel.style.display = 'block';
-    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    document.getElementById('deploy-panel').style.display = 'block';
     updateDeployUI(state);
   }
 
@@ -213,120 +272,82 @@
       updateDeployUI(r.data);
 
       if (!r.data.running) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-        clearInterval(timerInterval);
-        timerInterval = null;
+        clearInterval(pollInterval); pollInterval = null;
+        clearInterval(timerInterval); timerInterval = null;
+        document.getElementById('btn-sync').disabled = false;
+        document.getElementById('btn-sync').classList.remove('btn-loading');
 
-        const btn = document.getElementById('btn-sync');
-        btn.disabled = false;
-        btn.classList.remove('btn-loading');
-
-        // Show completion notification
         if (r.data.failed > 0) {
-          await rohuAlert(
-            `Despliegue completado con <strong>${r.data.failed} error(es)</strong>.<br>` +
-            `${r.data.completed} de ${r.data.total} apps actualizadas.`,
-            'warning'
-          );
+          await rohuAlert(`Despliegue completado con <strong>${r.data.failed} error(es)</strong>.`, 'warning');
         } else {
-          await rohuAlert(
-            `Todas las replicas actualizadas correctamente.<br>` +
-            `<strong>${r.data.completed} apps</strong> desplegadas.`,
-            'success'
-          );
+          await rohuAlert(`Todas las replicas actualizadas correctamente.<br><strong>${r.data.completed} apps</strong> desplegadas.`, 'success');
         }
+        // Refresh sync status after deploy
+        setTimeout(checkSyncStatus, 3000);
       }
-    } catch(e) {
-      // Continue polling on transient errors
-    }
+    } catch(e) { /* continue polling */ }
   }
 
   function updateDeployUI(state) {
-    const appsDiv = document.getElementById('deploy-apps');
+    const card = document.getElementById('deploy-card');
     const title = document.getElementById('deploy-title');
     const subtitle = document.getElementById('deploy-subtitle');
     const summary = document.getElementById('deploy-summary');
-    const card = document.getElementById('deploy-card');
-    const progressBar = document.getElementById('deploy-progress-bar');
+    const bar = document.getElementById('deploy-progress-bar');
     const spinner = document.getElementById('deploy-spinner');
+    const appsDiv = document.getElementById('deploy-apps');
 
     const total = state.total || 1;
-    const completed = (state.completed || 0) + (state.failed || 0);
-    const pct = Math.round((completed / total) * 100);
-
-    progressBar.style.width = pct + '%';
+    const done = (state.completed || 0) + (state.failed || 0);
+    bar.style.width = Math.round((done / total) * 100) + '%';
 
     if (state.running) {
       title.textContent = 'Desplegando cambios...';
-      subtitle.textContent = 'Sincronizando codigo, migraciones y seeds en cada replica';
+      subtitle.textContent = 'Sincronizando codigo, migraciones y seeds';
       card.style.borderLeftColor = '#3B82F6';
-      progressBar.style.background = 'linear-gradient(90deg,#3B82F6,#059669)';
       spinner.style.display = '';
     } else if (state.failed > 0) {
       title.textContent = 'Despliegue completado con errores';
-      subtitle.textContent = `${state.failed} app(s) fallaron durante el despliegue`;
+      subtitle.textContent = `${state.failed} app(s) fallaron`;
       card.style.borderLeftColor = '#EF4444';
-      progressBar.style.background = '#EF4444';
       spinner.style.display = 'none';
     } else {
       title.textContent = 'Despliegue completado';
-      subtitle.textContent = 'Todas las replicas estan actualizadas';
+      subtitle.textContent = 'Todas las replicas actualizadas';
       card.style.borderLeftColor = '#059669';
-      progressBar.style.background = '#059669';
       spinner.style.display = 'none';
     }
 
     summary.textContent = `${state.completed || 0} / ${total}`;
-
     if (!state.apps) return;
 
-    const statusConfig = {
-      pending:   {icon: '&#9679;', color: '#94A3B8', bg: '#F1F5F9', spin: false},
-      building:  {icon: '&#9881;', color: '#3B82F6', bg: '#EFF6FF', spin: true},
-      releasing: {icon: '&#8635;', color: '#F59E0B', bg: '#FFFBEB', spin: true},
-      healthy:   {icon: '&#10003;', color: '#059669', bg: '#ECFDF5', spin: false},
-      failed:    {icon: '&#10007;', color: '#EF4444', bg: '#FEF2F2', spin: false},
+    const cfg = {
+      pending:   {icon: '&#9679;', color: '#94A3B8', bg: '#F1F5F9'},
+      building:  {icon: '&#9881;', color: '#3B82F6', bg: '#EFF6FF'},
+      releasing: {icon: '&#8635;', color: '#F59E0B', bg: '#FFFBEB'},
+      healthy:   {icon: '&#10003;', color: '#059669', bg: '#ECFDF5'},
+      failed:    {icon: '&#10007;', color: '#EF4444', bg: '#FEF2F2'},
     };
 
-    const statusLabels = {
-      pending: 'En espera',
-      building: 'Construyendo',
-      releasing: 'Migrando',
-      healthy: 'Completado',
-      failed: 'Error',
-    };
-
-    appsDiv.innerHTML = Object.entries(state.apps).map(([appName, app]) => {
-      const cfg = statusConfig[app.status] || statusConfig.pending;
-      const label = statusLabels[app.status] || app.status;
+    appsDiv.innerHTML = Object.entries(state.apps).map(([app, d]) => {
+      const c = cfg[d.status] || cfg.pending;
+      const spin = ['building','releasing'].includes(d.status);
       return `
-        <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:${cfg.bg}; border-radius:10px; border-left:3px solid ${cfg.color}; transition:all 0.3s;">
-          <div style="width:28px;height:28px;border-radius:50%;background:${cfg.color}15;display:flex;align-items:center;justify-content:center;flex-shrink:0;${cfg.spin ? 'animation:spin 1.5s linear infinite;' : ''}">
-            <span style="color:${cfg.color};font-size:16px;font-weight:bold;">${cfg.icon}</span>
-          </div>
-          <div style="flex:1; min-width:0;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-weight:600; font-size:13px; color:#0F172A;">${esc(app.name || appName)}</span>
-              <span style="font-size:10px; font-weight:600; color:${cfg.color}; background:${cfg.color}15; padding:2px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:0.5px;">${esc(label)}</span>
-            </div>
-            <div style="font-size:12px; color:#64748B; margin-top:2px;">${esc(app.detail || '')}</div>
-          </div>
-          <code style="font-size:10px; color:#94A3B8; flex-shrink:0;">${esc(appName)}</code>
-        </div>
-      `;
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:${c.bg};border-radius:8px;border-left:3px solid ${c.color};">
+          <span style="color:${c.color};font-size:16px;font-weight:bold;${spin?'animation:spin 1.5s linear infinite;':''}">${c.icon}</span>
+          <div style="flex:1;"><strong style="font-size:13px;">${esc(d.name||app)}</strong><div style="font-size:11px;color:${c.color};">${esc(d.detail||'')}</div></div>
+          <code style="font-size:10px;color:#94A3B8;">${esc(app)}</code>
+        </div>`;
     }).join('');
   }
 
   function updateTimer() {
     if (!deployStartTime) return;
-    const elapsed = Math.floor((new Date() - deployStartTime) / 1000);
-    const min = Math.floor(elapsed / 60);
-    const sec = elapsed % 60;
-    document.getElementById('deploy-time').textContent = `Tiempo transcurrido: ${min}:${sec.toString().padStart(2,'0')}`;
+    const s = Math.floor((new Date() - deployStartTime) / 1000);
+    document.getElementById('deploy-time').textContent = `Tiempo: ${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
   }
 
-  // ── Check if deploy is already running on page load ───────────
+  // ── Check existing deploy on page load ────────────────────────
   async function checkExistingDeploy() {
     try {
       const resp = await fetch('/api/v1/auth/deploy-status', {headers});
@@ -335,12 +356,11 @@
         deployStartTime = new Date(r.data.started_at);
         timerInterval = setInterval(updateTimer, 1000);
         showDeployPanel(r.data);
-        const btn = document.getElementById('btn-sync');
-        btn.disabled = true;
-        btn.classList.add('btn-loading');
+        document.getElementById('btn-sync').disabled = true;
+        document.getElementById('btn-sync').classList.add('btn-loading');
         pollInterval = setInterval(pollDeployStatus, 4000);
       }
-    } catch(e) { /* ignore */ }
+    } catch(e) {}
   }
 
   // ── New Client Modal ──────────────────────────────────────────
@@ -350,7 +370,6 @@
     const nit = document.getElementById('nc-nit').value.trim();
     const email = document.getElementById('nc-email').value.trim();
     const password = document.getElementById('nc-password').value;
-
     const cmd = `./scripts/add-client.sh "${name}" "${nit}" "${email}" "${password}"`;
     document.getElementById('nc-command-text').textContent = cmd;
     document.getElementById('nc-command-box').style.display = 'block';
@@ -358,16 +377,14 @@
 
   function copyCommand() {
     const text = document.getElementById('nc-command-text').textContent;
-    navigator.clipboard.writeText(text).then(() => {
-      rohuAlert('Comando copiado al portapapeles', 'success');
-    });
+    navigator.clipboard.writeText(text).then(() => rohuAlert('Comando copiado al portapapeles', 'success'));
   }
 
   // ── Init ──────────────────────────────────────────────────────
   loadClients();
   checkExistingDeploy();
+  // Auto-check sync status on load
+  setTimeout(checkSyncStatus, 1500);
 </script>
-<style>
-  @keyframes spin { to { transform: rotate(360deg); } }
-</style>
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 {% endblock %}
