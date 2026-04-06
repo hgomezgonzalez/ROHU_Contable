@@ -60,6 +60,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://rohu_test:rohu_test@localhost:5432/ROHU_test
       JWT_SECRET_KEY: test-secret-key-ci
       SECRET_KEY: test-secret-key-ci
+      VOUCHER_HMAC_SECRET: test-voucher-hmac-secret-ci-0123456789abcdef
 
     steps:
       - uses: actions/checkout@v4
