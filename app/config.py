@@ -26,7 +26,7 @@ class BaseConfig:
     TIMEZONE = os.getenv("TIMEZONE", "America/Bogota")
 
     # Heroku deploy integration
-    HEROKU_API_KEY = os.getenv("HEROKU_API_KEY", "")
+    HEROKU_API_KEY = os.getenv("ROHU_HEROKU_KEY", "")
     GITHUB_REPO = os.getenv("GITHUB_REPO", "hgomezgonzalez/ROHU_Contable")
 
     # Connection pool — critical for production stability

@@ -55,7 +55,7 @@ def start_deploy_all() -> dict:
 
     from flask import current_app
 
-    api_key = current_app.config.get("HEROKU_API_KEY") or os.getenv("HEROKU_API_KEY", "")
+    api_key = current_app.config.get("HEROKU_API_KEY") or os.getenv("ROHU_HEROKU_KEY", "")
     github_repo = current_app.config.get("GITHUB_REPO") or os.getenv("GITHUB_REPO", "hgomezgonzalez/ROHU_Contable")
 
     if not api_key:
