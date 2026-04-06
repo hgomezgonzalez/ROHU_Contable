@@ -465,14 +465,14 @@ def list_saas_clients():
 @auth_bp.route("/sync-status", methods=["GET"])
 @require_permission("tenants", "manage")
 def sync_status():
-    """Check sync status of all replicas by comparing their /health commit hash with this app's."""
+    """Check sync status of all replicas by comparing their /health version with this app's."""
     import json
     import os
 
     import requests as http
 
-    # Get this app's commit
-    main_commit = os.getenv("SOURCE_VERSION", "")[:8]
+    # Get this app's version
+    main_version = "1.2.2"
 
     clients_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json"
@@ -501,12 +501,11 @@ def sync_status():
             resp = http.get(health_url, timeout=8)
             if resp.status_code == 200:
                 data = resp.json()
-                replica_commit = data.get("commit", "")
+                replica_version = data.get("version", "")
                 entry["status"] = "online"
-                entry["version"] = data.get("version", "?")
-                entry["commit"] = replica_commit
+                entry["version"] = replica_version
                 entry["deployed_at"] = data.get("deployed_at", "")
-                entry["synced"] = (replica_commit == main_commit) if main_commit and replica_commit else None
+                entry["synced"] = replica_version == main_version
             else:
                 entry["status"] = "error"
                 entry["synced"] = False
@@ -516,7 +515,7 @@ def sync_status():
 
         results.append(entry)
 
-    return jsonify(success=True, data={"main_commit": main_commit, "clients": results})
+    return jsonify(success=True, data={"main_version": main_version, "clients": results})
 
 
 @auth_bp.route("/deploy-all", methods=["POST"])

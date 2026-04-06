@@ -36,11 +36,20 @@ def _heroku_headers(api_key: str) -> dict:
     return {**HEROKU_HEADERS, "Authorization": f"Bearer {api_key}"}
 
 
+def _get_current_app_name() -> str:
+    """Get the Heroku app name of the current instance."""
+    return os.getenv("HEROKU_APP_NAME", "rohu-contable-prod")
+
+
 def _read_clients() -> list:
-    # __file__ = app/modules/auth_rbac/deploy_service.py → need 4 levels up to reach project root
-    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json")
+    """Read clients.json excluding the current app (don't deploy to self)."""
+    clients_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json"
+    )
     with open(clients_file, "r") as f:
-        return json.load(f)
+        all_clients = json.load(f)
+    current_app = _get_current_app_name()
+    return [c for c in all_clients if c.get("app") != current_app]
 
 
 def get_deploy_status() -> dict:
