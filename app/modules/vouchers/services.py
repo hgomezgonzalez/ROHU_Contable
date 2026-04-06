@@ -568,7 +568,15 @@ def record_print(tenant_id: str, voucher_id: str, printed_by: str) -> dict:
 # ── Send Voucher Email ───────────────────────────────────────────
 
 
-def send_voucher_email(tenant_id: str, voucher_id: str, to_email: str, sent_by: str) -> dict:
+def send_voucher_email(
+    tenant_id: str,
+    voucher_id: str,
+    to_email: str,
+    sent_by: str,
+    from_name: str = "",
+    to_name: str = "",
+    message: str = "",
+) -> dict:
     """Send voucher card via email using the tenant's SMTP config."""
     from flask import render_template
 
@@ -585,7 +593,10 @@ def send_voucher_email(tenant_id: str, voucher_id: str, to_email: str, sent_by: 
         raise ValueError("Tenant no encontrado")
 
     if not tenant.smtp_host:
-        raise ValueError("El negocio no tiene configurado el correo SMTP. Configure en Mi Negocio > SMTP.")
+        raise ValueError(
+            "El negocio no tiene configurado el correo SMTP. "
+            "Vaya a Mi Negocio > Notificaciones y configure el servidor SMTP."
+        )
 
     vt = VoucherType.query.get(voucher.voucher_type_id)
     t_dict = {
@@ -597,13 +608,23 @@ def send_voucher_email(tenant_id: str, voucher_id: str, to_email: str, sent_by: 
         "logo_url": tenant.logo_url or "",
     }
     color = vt.color_hex if vt and vt.color_hex else "#1E3A8A"
-    print_data = build_voucher_print_data(_voucher_to_dict(voucher), t_dict, color_hex=color)
+    print_data = build_voucher_print_data(
+        _voucher_to_dict(voucher),
+        t_dict,
+        color_hex=color,
+        from_name=from_name,
+        to_name=to_name,
+        message=message,
+    )
 
     issuer_name = tenant.trade_name or tenant.name
     subject = f"Bono de Descuento {print_data['face_value_formatted']} — {issuer_name}"
+    if to_name:
+        subject = f"Bono para {to_name} — {print_data['face_value_formatted']} de {issuer_name}"
+
     body_html = render_template("vouchers/voucher_email.html", voucher=print_data)
 
-    send_email(
+    result = send_email(
         smtp_host=tenant.smtp_host,
         smtp_port=tenant.smtp_port or 587,
         smtp_user=tenant.smtp_user,
@@ -614,12 +635,15 @@ def send_voucher_email(tenant_id: str, voucher_id: str, to_email: str, sent_by: 
         body_html=body_html,
     )
 
+    if not result.get("success"):
+        raise ValueError(result.get("error", "Error al enviar email. Verifique la configuracion SMTP."))
+
     _log_transaction(
         voucher=voucher,
         transaction_type="adjusted",
         amount_change=Decimal("0"),
         performed_by=sent_by,
-        notes=f"Bono enviado por email a {to_email}",
+        notes=f"Bono enviado a {to_name or to_email} de parte de {from_name or 'admin'}",
     )
     db.session.commit()
 

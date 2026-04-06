@@ -29,7 +29,14 @@ def generate_voucher_qr_base64(voucher_code: str) -> str:
     return ""
 
 
-def build_voucher_print_data(voucher: dict, tenant: dict, color_hex: str = "#1E3A8A") -> dict:
+def build_voucher_print_data(
+    voucher: dict,
+    tenant: dict,
+    color_hex: str = "#1E3A8A",
+    from_name: str = "",
+    to_name: str = "",
+    message: str = "",
+) -> dict:
     """Build all data needed to render a voucher card for printing/email."""
     issuer_name = tenant.get("trade_name") or tenant.get("name", "")
     issuer_nit = tenant.get("tax_id", "")
@@ -41,6 +48,9 @@ def build_voucher_print_data(voucher: dict, tenant: dict, color_hex: str = "#1E3
         f"Canjeable únicamente en {issuer_name}. "
         f"No tiene valor de cambio en efectivo salvo política expresa del emisor."
     )
+
+    # Use tenant logo or ROHU default
+    logo_url = tenant.get("logo_url", "")
 
     return {
         "code": voucher["code"],
@@ -56,8 +66,11 @@ def build_voucher_print_data(voucher: dict, tenant: dict, color_hex: str = "#1E3
         "issuer_nit": issuer_nit,
         "issuer_address": tenant.get("address", ""),
         "issuer_phone": tenant.get("phone", ""),
-        "logo_url": tenant.get("logo_url", ""),
+        "logo_url": logo_url,
         "color_hex": color_hex,
+        "from_name": from_name,
+        "to_name": to_name,
+        "gift_message": message,
         "disclaimer": disclaimer,
         "print_timestamp": datetime.now(timezone.utc).isoformat(),
     }

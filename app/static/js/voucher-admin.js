@@ -300,13 +300,70 @@ function openPrintPage(id) {
 }
 
 async function promptSendEmail(id) {
-  const email = await rohuPrompt("Email del destinatario:", "correo@destinatario.com");
-  if (!email) return;
+  // Build custom send modal
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;animation:rohuFadeIn 0.2s ease;";
+  overlay.innerHTML = `
+    <div style="background:white;border-radius:16px;width:100%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,0.25);animation:rohuSlideUp 0.25s ease;overflow:hidden;">
+      <div style="height:4px;background:linear-gradient(90deg,#059669,#10B981,#06B6D4);"></div>
+      <div style="padding:24px;">
+        <div style="text-align:center;margin-bottom:16px;">
+          <div style="width:56px;height:56px;border-radius:50%;background:#ECFDF5;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" style="width:28px;height:28px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          </div>
+          <div style="font-weight:700;font-size:16px;color:#059669;">Enviar Bono por Email</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div><label style="font-size:12px;font-weight:600;">De parte de *</label>
+            <input type="text" id="send-from" class="form-control" placeholder="Ej: Juan Perez" style="margin-top:4px;"></div>
+          <div><label style="font-size:12px;font-weight:600;">Para *</label>
+            <input type="text" id="send-to-name" class="form-control" placeholder="Ej: Maria Garcia" style="margin-top:4px;"></div>
+          <div><label style="font-size:12px;font-weight:600;">Email del destinatario *</label>
+            <input type="email" id="send-email" class="form-control" placeholder="correo@destinatario.com" style="margin-top:4px;"></div>
+          <div><label style="font-size:12px;font-weight:600;">Mensaje (opcional)</label>
+            <textarea id="send-msg" class="form-control" placeholder="Ej: Feliz cumpleanos!" rows="2" style="margin-top:4px;resize:vertical;"></textarea></div>
+        </div>
+        <div id="send-status" style="margin-top:10px;font-size:12px;text-align:center;"></div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;">
+          <button class="btn btn-outline" onclick="this.closest('[style*=fixed]').remove()">Cancelar</button>
+          <button class="btn btn-primary" style="background:#059669;" id="btn-do-send" onclick="doSendEmail('${id}',this)">Enviar Bono</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector("#send-from").focus();
+}
+
+async function doSendEmail(id, btn) {
+  const overlay = btn.closest("[style*=fixed]");
+  const fromName = overlay.querySelector("#send-from").value.trim();
+  const toName = overlay.querySelector("#send-to-name").value.trim();
+  const email = overlay.querySelector("#send-email").value.trim();
+  const message = overlay.querySelector("#send-msg").value.trim();
+  const statusEl = overlay.querySelector("#send-status");
+
+  if (!fromName || !toName || !email) { statusEl.textContent = "Complete todos los campos obligatorios"; statusEl.style.color = "#EF4444"; return; }
+
+  btn.disabled = true; btn.textContent = "Enviando...";
+  statusEl.textContent = "Enviando bono..."; statusEl.style.color = "#3B82F6";
+
   try {
-    const r = (await (await fetch(`${API}/${id}/send-email`, { method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ email }) })).json());
-    if (r.success) await rohuAlert(`Bono enviado a <strong>${esc(email)}</strong>`, "success");
-    else await rohuAlert(r.error?.message || "Error al enviar", "error");
-  } catch (e) { await rohuAlert("Error de conexion", "error"); }
+    const r = (await (await fetch(`${API}/${id}/send-email`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ email, from_name: fromName, to_name: toName, message })
+    })).json());
+    if (r.success) {
+      overlay.remove();
+      await rohuAlert(`Bono enviado correctamente a <strong>${esc(toName)}</strong> (${esc(email)})<br><br><span style="font-size:12px;color:#64748B;">De parte de: ${esc(fromName)}</span>`, "success");
+    } else {
+      statusEl.textContent = r.error?.message || "Error al enviar"; statusEl.style.color = "#EF4444";
+      btn.disabled = false; btn.textContent = "Enviar Bono";
+    }
+  } catch (e) {
+    statusEl.textContent = "Error de conexion"; statusEl.style.color = "#EF4444";
+    btn.disabled = false; btn.textContent = "Enviar Bono";
+  }
 }
 
 // ── Redeem Tab ──────────────────────────────────────────────────

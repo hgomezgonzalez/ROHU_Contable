@@ -4,77 +4,103 @@
 <body style="margin:0;padding:0;background:#F1F5F9;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:32px 16px;">
 <tr><td align="center">
-<table width="480" cellpadding="0" cellspacing="0" style="background:white;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+<table width="500" cellpadding="0" cellspacing="0" style="background:white;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
 
   <!-- Header gradient -->
   <tr>
-    <td style="background:{{ voucher.color_hex or '#1E3A8A' }};padding:28px;color:white;">
+    <td style="background:{{ voucher.color_hex or '#1E3A8A' }};padding:28px 30px 24px;color:white;">
       <table width="100%" cellpadding="0" cellspacing="0">
         <tr>
           <td>
-            {% if voucher.logo_url %}
-            <img src="{{ voucher.logo_url }}" alt="{{ voucher.issuer_name }}" style="height:40px;margin-bottom:12px;">
-            {% endif %}
-            <div style="font-size:18px;font-weight:700;margin-bottom:16px;">{{ voucher.issuer_name }}</div>
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;opacity:0.8;margin-bottom:6px;">Bono de Descuento</div>
-            <div style="font-size:38px;font-weight:800;">{{ voucher.face_value_formatted }}</div>
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="width:50px;height:50px;border-radius:12px;background:rgba(255,255,255,0.2);text-align:center;vertical-align:middle;border:2px solid rgba(255,255,255,0.3);overflow:hidden;">
+                {% if voucher.logo_url %}
+                <img src="{{ voucher.logo_url }}" alt="" style="width:46px;height:46px;object-fit:contain;">
+                {% else %}
+                <span style="font-size:20px;font-weight:800;color:white;">{{ voucher.issuer_name[:2] | upper }}</span>
+                {% endif %}
+              </td>
+              <td style="padding-left:12px;">
+                <div style="font-size:18px;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,0.2);">{{ voucher.issuer_name }}</div>
+              </td>
+            </tr></table>
+            <div style="margin-top:18px;">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:2.5px;opacity:0.75;">Bono de Descuento</div>
+              <div style="font-size:42px;font-weight:800;text-shadow:0 2px 8px rgba(0,0,0,0.15);margin-top:4px;">{{ voucher.face_value_formatted }}</div>
+            </div>
           </td>
         </tr>
       </table>
     </td>
   </tr>
 
-  <!-- Body -->
+  <!-- Gift from/to -->
+  {% if voucher.from_name or voucher.to_name %}
   <tr>
-    <td style="padding:24px 28px;">
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <tr>
-          <td style="vertical-align:top;">
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td style="padding:8px 0;border-bottom:1px solid #F1F5F9;">
-                  <span style="font-size:12px;color:#64748B;">Valido hasta</span><br>
-                  <strong style="font-size:14px;color:#0F172A;">{{ voucher.expires_at_short or '—' }}</strong>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:8px 0;border-bottom:1px solid #F1F5F9;">
-                  <span style="font-size:12px;color:#64748B;">Emisor</span><br>
-                  <strong style="font-size:14px;color:#0F172A;">{{ voucher.issuer_name }} ({{ voucher.issuer_nit }})</strong>
-                </td>
-              </tr>
-            </table>
-          </td>
-          <td width="140" style="vertical-align:top;text-align:center;padding-left:16px;">
-            {% if voucher.qr_base64 %}
-            <img src="data:image/png;base64,{{ voucher.qr_base64 }}" alt="QR" style="width:120px;height:120px;border:3px solid #E2E8F0;border-radius:8px;padding:4px;">
-            <div style="font-size:9px;color:#94A3B8;margin-top:6px;text-transform:uppercase;letter-spacing:1px;">Escanear para redimir</div>
-            {% endif %}
-          </td>
-        </tr>
-      </table>
+    <td style="padding:16px 30px;background:linear-gradient(135deg,#ECFDF5,#F0FDF4);border-bottom:1px solid #D1FAE5;">
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        {% if voucher.from_name %}
+        <td style="width:50%;">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#059669;font-weight:600;">De</div>
+          <div style="font-size:15px;font-weight:700;color:#065F46;">{{ voucher.from_name }}</div>
+        </td>
+        {% endif %}
+        {% if voucher.to_name %}
+        <td style="width:50%;">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#059669;font-weight:600;">Para</div>
+          <div style="font-size:15px;font-weight:700;color:#065F46;">{{ voucher.to_name }}</div>
+        </td>
+        {% endif %}
+      </tr></table>
+      {% if voucher.gift_message %}
+      <div style="margin-top:10px;font-size:13px;color:#065F46;font-style:italic;line-height:1.5;padding:8px 12px;background:rgba(5,150,105,0.08);border-radius:8px;">"{{ voucher.gift_message }}"</div>
+      {% endif %}
+    </td>
+  </tr>
+  {% endif %}
+
+  <!-- Body: info + QR -->
+  <tr>
+    <td style="padding:20px 30px;">
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="vertical-align:top;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td style="padding:7px 0;border-bottom:1px solid #F1F5F9;">
+              <span style="font-size:12px;color:#64748B;">Valido hasta</span><br>
+              <strong style="font-size:14px;color:#0F172A;">{{ voucher.expires_at_short or '—' }}</strong>
+            </td></tr>
+            <tr><td style="padding:7px 0;">
+              <span style="font-size:12px;color:#64748B;">Emisor</span><br>
+              <strong style="font-size:14px;color:#0F172A;">{{ voucher.issuer_name }} (NIT {{ voucher.issuer_nit }})</strong>
+            </td></tr>
+          </table>
+        </td>
+        <td width="150" style="vertical-align:top;text-align:center;padding-left:16px;">
+          {% if voucher.qr_base64 %}
+          <img src="data:image/png;base64,{{ voucher.qr_base64 }}" alt="QR" style="width:130px;height:130px;border:3px solid #E2E8F0;border-radius:10px;padding:4px;">
+          <div style="font-size:9px;color:#94A3B8;margin-top:6px;text-transform:uppercase;letter-spacing:1.5px;">Escanear para redimir</div>
+          {% endif %}
+        </td>
+      </tr></table>
     </td>
   </tr>
 
   <!-- Code -->
   <tr>
-    <td style="background:#F8FAFC;padding:14px 28px;text-align:center;border-top:1px dashed #E2E8F0;">
-      <span style="font-family:'Courier New',monospace;font-size:18px;font-weight:700;color:#0F172A;letter-spacing:3px;">{{ voucher.code }}</span>
+    <td style="background:#F8FAFC;padding:14px 30px;text-align:center;border-top:1px dashed #E2E8F0;">
+      <span style="font-family:'Courier New',monospace;font-size:20px;font-weight:700;color:#0F172A;letter-spacing:4px;">{{ voucher.code }}</span>
     </td>
   </tr>
 
   <!-- Disclaimer -->
   <tr>
-    <td style="padding:12px 28px 16px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
-      <p style="font-size:10px;color:#94A3B8;line-height:1.5;text-align:center;margin:0;">{{ voucher.disclaimer }}</p>
+    <td style="padding:14px 30px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
+      <p style="font-size:9px;color:#94A3B8;line-height:1.5;text-align:center;margin:0;">{{ voucher.disclaimer }}</p>
+      <p style="font-size:9px;color:#CBD5E1;text-align:center;margin:6px 0 0;">Generado con ROHU Contable</p>
     </td>
   </tr>
 
 </table>
-
-<!-- Powered by -->
-<p style="text-align:center;font-size:10px;color:#CBD5E1;margin-top:16px;">Generado con ROHU Contable</p>
-
 </td></tr>
 </table>
 </body>

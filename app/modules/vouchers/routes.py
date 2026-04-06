@@ -299,6 +299,9 @@ def send_email(voucher_id):
             voucher_id=voucher_id,
             to_email=email,
             sent_by=str(g.current_user.id),
+            from_name=data.get("from_name", ""),
+            to_name=data.get("to_name", ""),
+            message=data.get("message", ""),
         )
         return jsonify(success=True, data=result)
     except VoucherError as e:
