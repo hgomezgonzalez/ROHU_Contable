@@ -1,163 +1,172 @@
 {% extends "base.html" %}
+{% set active_page = 'vouchers' %}
 {% block title %}Bonos de Descuento — ROHU{% endblock %}
+{% block header_title %}Bonos de Descuento{% endblock %}
+
 {% block head %}
 <script src="{{ url_for('static', filename='js/html5-qrcode.min.js') }}"></script>
+<style>
+  .voucher-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .voucher-mini-card {
+    border-radius: 12px; overflow: hidden; cursor: pointer;
+    box-shadow: var(--shadow); transition: transform 0.2s, box-shadow 0.2s;
+    background: white;
+  }
+  .voucher-mini-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .voucher-mini-header { padding: 16px 18px; color: white; position: relative; overflow: hidden; }
+  .voucher-mini-header::after {
+    content: ''; position: absolute; top: -30px; right: -30px;
+    width: 100px; height: 100px; border-radius: 50%; background: rgba(255,255,255,0.1);
+  }
+  .voucher-mini-body { padding: 12px 18px; }
+  .type-card {
+    border-radius: 12px; overflow: hidden; background: white;
+    box-shadow: var(--shadow); transition: transform 0.2s;
+  }
+  .type-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .type-header { padding: 20px; color: white; position: relative; overflow: hidden; }
+  .type-header::after {
+    content: ''; position: absolute; top: -40px; right: -40px;
+    width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,0.08);
+  }
+  .how-to-card {
+    background: linear-gradient(135deg, #1E3A8A 0%, #10B981 100%);
+    border-radius: 12px; padding: 20px 24px; color: white; margin-bottom: 20px;
+  }
+  .how-to-steps { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+  .how-to-step {
+    flex: 1; min-width: 140px; background: rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 12px; text-align: center; backdrop-filter: blur(4px);
+  }
+  .how-to-step .step-num {
+    width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.3);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; margin-bottom: 6px;
+  }
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <h1>Bonos de Descuento</h1>
-  <div class="page-actions">
-    <button class="btn btn-primary" onclick="showCreateTypeModal()">+ Tipo de Bono</button>
+<!-- How it works banner -->
+<div class="how-to-card">
+  <div style="font-weight:700;font-size:16px;">Como funcionan los Bonos de Descuento</div>
+  <div class="how-to-steps">
+    <div class="how-to-step">
+      <div class="step-num">1</div>
+      <div style="font-size:12px;font-weight:600;">Crear Tipo</div>
+      <div style="font-size:10px;opacity:0.8;">Define valor y vigencia</div>
+    </div>
+    <div class="how-to-step">
+      <div class="step-num">2</div>
+      <div style="font-size:12px;font-weight:600;">Emitir Bonos</div>
+      <div style="font-size:10px;opacity:0.8;">Genera codigos QR unicos</div>
+    </div>
+    <div class="how-to-step">
+      <div class="step-num">3</div>
+      <div style="font-size:12px;font-weight:600;">Imprimir / Enviar</div>
+      <div style="font-size:10px;opacity:0.8;">Tarjeta digital o email</div>
+    </div>
+    <div class="how-to-step">
+      <div class="step-num">4</div>
+      <div style="font-size:12px;font-weight:600;">Vender en POS</div>
+      <div style="font-size:10px;opacity:0.8;">El bono se activa al venderlo</div>
+    </div>
+    <div class="how-to-step">
+      <div class="step-num">5</div>
+      <div style="font-size:12px;font-weight:600;">Redimir en POS</div>
+      <div style="font-size:10px;opacity:0.8;">Escanea QR como pago</div>
+    </div>
   </div>
 </div>
 
 <!-- Stats Cards -->
-<div class="stats-grid" id="voucher-stats" style="margin-bottom:24px;">
-  <div class="stat-card">
-    <div class="stat-label">En Circulacion</div>
-    <div class="stat-value" id="stat-circulation">$0</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Vendidos</div>
-    <div class="stat-value" id="stat-sold">0</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Redimidos</div>
-    <div class="stat-value" id="stat-redeemed">0</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Vencidos</div>
-    <div class="stat-value" id="stat-expired">0</div>
-  </div>
+<div class="stats-grid" style="margin-bottom:24px;">
+  <div class="stat-card"><div class="stat-label">En Circulacion</div><div class="stat-value" id="stat-circulation">$0</div></div>
+  <div class="stat-card"><div class="stat-label">Vendidos</div><div class="stat-value" id="stat-sold">0</div></div>
+  <div class="stat-card"><div class="stat-label">Redimidos</div><div class="stat-value" id="stat-redeemed">0</div></div>
+  <div class="stat-card"><div class="stat-label">Vencidos</div><div class="stat-value" id="stat-expired">0</div></div>
 </div>
 
 <!-- Tabs -->
-<div class="tabs">
+<div class="tabs" style="margin-bottom:16px;">
   <button class="tab active" data-tab="types" onclick="switchTab('types')">Tipos de Bono</button>
   <button class="tab" data-tab="vouchers" onclick="switchTab('vouchers')">Inventario de Bonos</button>
+  <button class="tab" data-tab="redeem" onclick="switchTab('redeem')">Redimir Bono</button>
 </div>
 
-<!-- Voucher Types Tab -->
+<!-- TAB: Tipos de Bono -->
 <div id="tab-types" class="tab-content active">
-  <div class="table-container">
-    <table class="data-table" id="types-table">
-      <thead>
-        <tr>
-          <th>Nombre</th>
-          <th>Valor Nominal</th>
-          <th>Vigencia</th>
-          <th>Emitidos</th>
-          <th>Estado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody id="types-tbody"></tbody>
-    </table>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+    <button class="btn btn-primary" onclick="showCreateTypePopup()">+ Nuevo Tipo de Bono</button>
+  </div>
+  <div id="types-grid" class="voucher-grid">
+    <div style="color:var(--text-light);text-align:center;padding:40px;">Cargando tipos de bono...</div>
   </div>
 </div>
 
-<!-- Vouchers Inventory Tab -->
+<!-- TAB: Inventario de Bonos -->
 <div id="tab-vouchers" class="tab-content" style="display:none;">
-  <div class="table-filters" style="margin-bottom:16px;">
-    <select id="filter-status" onchange="loadVouchers()">
+  <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+    <select id="filter-status" onchange="loadVouchers()" class="form-control" style="max-width:220px;">
       <option value="">Todos los estados</option>
       <option value="issued">Emitidos</option>
-      <option value="sold">Vendidos</option>
+      <option value="sold">Activos (vendidos)</option>
       <option value="partially_redeemed">Parcialmente redimidos</option>
       <option value="redeemed">Redimidos</option>
       <option value="expired">Vencidos</option>
-      <option value="cancelled">Cancelados</option>
     </select>
   </div>
-  <div class="table-container">
-    <table class="data-table" id="vouchers-table">
-      <thead>
-        <tr>
-          <th>Codigo</th>
-          <th>Tipo</th>
-          <th>Valor</th>
-          <th>Saldo</th>
-          <th>Estado</th>
-          <th>Vence</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody id="vouchers-tbody"></tbody>
-    </table>
-  </div>
-  <div id="vouchers-pagination" class="pagination"></div>
+  <div id="vouchers-grid" class="voucher-grid"></div>
+  <div id="vouchers-pagination" style="display:flex;gap:4px;justify-content:center;margin-top:16px;"></div>
 </div>
 
-<!-- Create Type Modal -->
-<div id="create-type-modal" class="modal" style="display:none;">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2>Nuevo Tipo de Bono</h2>
-      <button class="modal-close" onclick="closeModal('create-type-modal')">&times;</button>
+<!-- TAB: Redimir Bono -->
+<div id="tab-redeem" class="tab-content" style="display:none;">
+  <div class="card" style="max-width:500px;margin:0 auto;text-align:center;padding:32px;">
+    <div style="width:64px;height:64px;border-radius:50%;background:#DBEAFE;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1E3A8A" stroke-width="2" style="width:32px;height:32px;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
     </div>
-    <form id="create-type-form" onsubmit="return createVoucherType(event)">
-      <div class="form-group">
-        <label for="vt-name">Nombre</label>
-        <input type="text" id="vt-name" required maxlength="100" placeholder="Ej: Bono Navidad $50.000">
-      </div>
-      <div class="form-group">
-        <label for="vt-face-value">Valor Nominal (COP)</label>
-        <input type="number" id="vt-face-value" required min="1000" step="1000" placeholder="50000">
-      </div>
-      <div class="form-group">
-        <label for="vt-validity">Vigencia (dias, minimo 90)</label>
-        <input type="number" id="vt-validity" required min="90" max="730" value="180">
-      </div>
-      <div class="form-group">
-        <label for="vt-max-issuable">Cantidad maxima a emitir (vacio = ilimitado)</label>
-        <input type="number" id="vt-max-issuable" min="1">
-      </div>
-      <div class="form-group">
-        <label for="vt-color">Color del bono</label>
-        <input type="color" id="vt-color" value="#1E3A8A">
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('create-type-modal')">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Crear Tipo</button>
-      </div>
-    </form>
+    <h3 style="margin-bottom:8px;">Redimir un Bono</h3>
+    <p style="font-size:13px;color:var(--text-light);margin-bottom:20px;">
+      Ingrese el codigo del bono o escanee el QR para verificar su validez y saldo disponible.
+    </p>
+    <div class="form-group" style="margin-bottom:12px;">
+      <input type="text" id="redeem-code" class="form-control" placeholder="Codigo del bono (ej: ROH01-K7M2P9X4N1-A3F7)" style="text-align:center;font-size:16px;letter-spacing:1px;text-transform:uppercase;">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center;">
+      <button class="btn btn-primary" onclick="validateRedeemCode()">Verificar Bono</button>
+      <button class="btn btn-outline" onclick="startRedeemQRScan()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Escanear QR
+      </button>
+    </div>
+    <div id="redeem-result" style="margin-top:20px;display:none;"></div>
+    <div id="qr-reader-redeem" style="margin-top:16px;"></div>
+  </div>
+
+  <div class="card" style="max-width:500px;margin:20px auto;padding:20px;">
+    <h4 style="font-size:14px;margin-bottom:8px;">Como redimir en el Punto de Venta</h4>
+    <ol style="font-size:13px;color:var(--text-light);padding-left:20px;line-height:1.8;">
+      <li>Agregue los productos al carrito como una venta normal</li>
+      <li>Al momento de cobrar, seleccione <strong>"Bono"</strong> como metodo de pago</li>
+      <li>Escanee el QR del bono o ingrese el codigo manualmente</li>
+      <li>El sistema valida el bono y aplica el saldo como pago</li>
+      <li>Si el bono no cubre el total, el cliente paga la diferencia</li>
+    </ol>
   </div>
 </div>
 
-<!-- Emit Vouchers Modal -->
-<div id="emit-modal" class="modal" style="display:none;">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2>Emitir Bonos</h2>
-      <button class="modal-close" onclick="closeModal('emit-modal')">&times;</button>
+<!-- Detail Modal (branded) -->
+<div id="detail-overlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9998;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,0.25);animation:rohuSlideUp 0.25s ease;">
+    <div style="height:4px;background:linear-gradient(90deg,#1E3A8A,#10B981,#06B6D4);"></div>
+    <div style="padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 style="font-size:16px;margin:0;">Detalle del Bono</h3>
+        <button onclick="document.getElementById('detail-overlay').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-light);">&times;</button>
+      </div>
+      <div id="detail-content"></div>
     </div>
-    <form id="emit-form" onsubmit="return emitVouchers(event)">
-      <input type="hidden" id="emit-type-id">
-      <div class="form-group">
-        <label>Tipo de bono</label>
-        <div id="emit-type-info" class="info-box"></div>
-      </div>
-      <div class="form-group">
-        <label for="emit-quantity">Cantidad a emitir</label>
-        <input type="number" id="emit-quantity" required min="1" max="200" value="1">
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('emit-modal')">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Emitir</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Voucher Detail Modal -->
-<div id="detail-modal" class="modal" style="display:none;">
-  <div class="modal-content modal-lg">
-    <div class="modal-header">
-      <h2>Detalle del Bono</h2>
-      <button class="modal-close" onclick="closeModal('detail-modal')">&times;</button>
-    </div>
-    <div id="detail-content"></div>
   </div>
 </div>
 
