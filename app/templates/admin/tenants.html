@@ -16,21 +16,36 @@
 </div>
 
 <div class="alert alert-warning" style="margin-bottom:16px;">
-  Desde aquí puede ver y gestionar las instancias desplegadas de ROHU Contable.
-  Cada cliente tiene su propia aplicación y base de datos independiente.
+  Desde aqui puede ver y gestionar las instancias desplegadas de ROHU Contable.
+  Cada cliente tiene su propia aplicacion y base de datos independiente.
 </div>
 
 <!-- Deploy Progress Panel -->
 <div id="deploy-panel" style="display:none; margin-bottom:20px;">
-  <div class="card" style="border-left:4px solid #3B82F6; padding:20px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-      <div>
-        <h3 id="deploy-title" style="margin:0; font-size:16px;">Desplegando cambios...</h3>
-        <p id="deploy-subtitle" style="margin:4px 0 0; font-size:13px; color:var(--text-light);">Sincronizando codigo con todas las replicas</p>
+  <div class="card" id="deploy-card" style="border-left:4px solid #3B82F6; padding:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div id="deploy-icon" style="font-size:22px;">
+          <svg id="deploy-spinner" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.5" style="width:22px;height:22px;animation:spin 1s linear infinite;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </div>
+        <div>
+          <div id="deploy-title" style="font-weight:700; font-size:15px; color:#0F172A;">Desplegando cambios...</div>
+          <div id="deploy-subtitle" style="font-size:12px; color:#64748B; margin-top:2px;">Sincronizando codigo con todas las replicas</div>
+        </div>
       </div>
-      <div id="deploy-summary" style="font-size:13px; color:var(--text-light);"></div>
+      <div id="deploy-summary" style="font-size:13px; font-weight:600; color:#64748B; background:#F1F5F9; padding:4px 12px; border-radius:20px;"></div>
     </div>
+
+    <!-- Progress bar -->
+    <div style="background:#E2E8F0; border-radius:6px; height:6px; margin-bottom:16px; overflow:hidden;">
+      <div id="deploy-progress-bar" style="height:100%; background:linear-gradient(90deg,#3B82F6,#059669); border-radius:6px; transition:width 0.5s ease; width:0%;"></div>
+    </div>
+
+    <!-- Apps list -->
     <div id="deploy-apps" style="display:flex; flex-direction:column; gap:8px;"></div>
+
+    <!-- Elapsed time -->
+    <div id="deploy-time" style="text-align:right; font-size:11px; color:#94A3B8; margin-top:12px;"></div>
   </div>
 </div>
 
@@ -65,7 +80,7 @@
     <form id="new-client-form">
       <div class="form-group">
         <label>Nombre del negocio *</label>
-        <input type="text" id="nc-name" class="form-control" required placeholder="Ej: Ferretería Ramírez">
+        <input type="text" id="nc-name" class="form-control" required placeholder="Ej: Ferreteria Ramirez">
       </div>
       <div class="grid-2">
         <div class="form-group">
@@ -78,8 +93,8 @@
         </div>
       </div>
       <div class="form-group">
-        <label>Contraseña inicial *</label>
-        <input type="text" id="nc-password" class="form-control" required placeholder="Mínimo 8 caracteres" minlength="8">
+        <label>Contrasena inicial *</label>
+        <input type="text" id="nc-password" class="form-control" required placeholder="Minimo 8 caracteres" minlength="8">
       </div>
 
       <div id="nc-command-box" style="display:none; margin-top:16px;">
@@ -89,7 +104,7 @@
           <button type="button" onclick="copyCommand()" style="position:absolute;top:8px;right:8px;background:var(--primary);color:white;border:none;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;">Copiar</button>
         </div>
         <p style="font-size:11px; color:var(--text-light); margin-top:8px;">
-          Ejecute este comando en la terminal donde tiene el proyecto ROHU. Después haga <code>git push origin main</code> para registrar el nuevo cliente.
+          Ejecute este comando en la terminal donde tiene el proyecto ROHU. Despues haga <code>git push origin main</code> para registrar el nuevo cliente.
         </p>
       </div>
 
@@ -108,6 +123,8 @@
   const token = localStorage.getItem('access_token');
   const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
   let pollInterval = null;
+  let deployStartTime = null;
+  let timerInterval = null;
 
   // ── Load Clients Table ────────────────────────────────────────
   async function loadClients() {
@@ -118,7 +135,7 @@
 
       const tbody = document.getElementById('clients-table');
       if (!r.data.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-light);">No hay clientes desplegados aún. Use "+ Nuevo Cliente" para crear el primero.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-light);">No hay clientes desplegados aun. Use "+ Nuevo Cliente" para crear el primero.</td></tr>';
         return;
       }
       tbody.innerHTML = r.data.map(c => `
@@ -132,13 +149,19 @@
         </tr>
       `).join('');
     } catch(e) {
-      document.getElementById('clients-table').innerHTML = '<tr><td colspan="6">Error de conexión</td></tr>';
+      document.getElementById('clients-table').innerHTML = '<tr><td colspan="6">Error de conexion</td></tr>';
     }
   }
 
   // ── Deploy All ────────────────────────────────────────────────
   async function startDeploy() {
-    if (!confirm('¿Desplegar los cambios más recientes a TODAS las réplicas de clientes?\n\nEsto ejecutará migraciones y actualizará el código en cada app.')) return;
+    const ok = await rohuConfirm(
+      '¿Desplegar los cambios mas recientes a <strong>TODAS</strong> las replicas de clientes?<br><br>' +
+      '<span style="font-size:12px;color:#64748B;">Esto ejecutara migraciones, actualizara el codigo y verificara la salud de cada app.</span>',
+      'Desplegar ahora',
+      'warning'
+    );
+    if (!ok) return;
 
     const btn = document.getElementById('btn-sync');
     btn.disabled = true;
@@ -153,18 +176,22 @@
       const r = await resp.json();
 
       if (!r.success) {
-        rohuAlert(r.error?.message || 'Error al iniciar despliegue', 'error');
+        await rohuAlert(r.error?.message || 'Error al iniciar despliegue', 'error');
         btn.disabled = false;
         btn.classList.remove('btn-loading');
         return;
       }
+
+      // Start timer
+      deployStartTime = new Date();
+      timerInterval = setInterval(updateTimer, 1000);
 
       // Show progress panel and start polling
       showDeployPanel(r.data);
       pollInterval = setInterval(pollDeployStatus, 4000);
 
     } catch(e) {
-      rohuAlert('Error de conexión al iniciar despliegue', 'error');
+      await rohuAlert('Error de conexion al iniciar despliegue', 'error');
       btn.disabled = false;
       btn.classList.remove('btn-loading');
     }
@@ -173,6 +200,7 @@
   function showDeployPanel(state) {
     const panel = document.getElementById('deploy-panel');
     panel.style.display = 'block';
+    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
     updateDeployUI(state);
   }
 
@@ -187,9 +215,27 @@
       if (!r.data.running) {
         clearInterval(pollInterval);
         pollInterval = null;
+        clearInterval(timerInterval);
+        timerInterval = null;
+
         const btn = document.getElementById('btn-sync');
         btn.disabled = false;
         btn.classList.remove('btn-loading');
+
+        // Show completion notification
+        if (r.data.failed > 0) {
+          await rohuAlert(
+            `Despliegue completado con <strong>${r.data.failed} error(es)</strong>.<br>` +
+            `${r.data.completed} de ${r.data.total} apps actualizadas.`,
+            'warning'
+          );
+        } else {
+          await rohuAlert(
+            `Todas las replicas actualizadas correctamente.<br>` +
+            `<strong>${r.data.completed} apps</strong> desplegadas.`,
+            'success'
+          );
+        }
       }
     } catch(e) {
       // Continue polling on transient errors
@@ -201,45 +247,83 @@
     const title = document.getElementById('deploy-title');
     const subtitle = document.getElementById('deploy-subtitle');
     const summary = document.getElementById('deploy-summary');
-    const panel = document.getElementById('deploy-panel');
+    const card = document.getElementById('deploy-card');
+    const progressBar = document.getElementById('deploy-progress-bar');
+    const spinner = document.getElementById('deploy-spinner');
+
+    const total = state.total || 1;
+    const completed = (state.completed || 0) + (state.failed || 0);
+    const pct = Math.round((completed / total) * 100);
+
+    progressBar.style.width = pct + '%';
 
     if (state.running) {
       title.textContent = 'Desplegando cambios...';
-      panel.querySelector('.card').style.borderLeftColor = '#3B82F6';
+      subtitle.textContent = 'Sincronizando codigo, migraciones y seeds en cada replica';
+      card.style.borderLeftColor = '#3B82F6';
+      progressBar.style.background = 'linear-gradient(90deg,#3B82F6,#059669)';
+      spinner.style.display = '';
     } else if (state.failed > 0) {
       title.textContent = 'Despliegue completado con errores';
-      panel.querySelector('.card').style.borderLeftColor = '#EF4444';
+      subtitle.textContent = `${state.failed} app(s) fallaron durante el despliegue`;
+      card.style.borderLeftColor = '#EF4444';
+      progressBar.style.background = '#EF4444';
+      spinner.style.display = 'none';
     } else {
       title.textContent = 'Despliegue completado';
-      panel.querySelector('.card').style.borderLeftColor = '#059669';
+      subtitle.textContent = 'Todas las replicas estan actualizadas';
+      card.style.borderLeftColor = '#059669';
+      progressBar.style.background = '#059669';
+      spinner.style.display = 'none';
     }
 
-    summary.textContent = `${state.completed || 0}/${state.total || 0} completados` + (state.failed ? ` · ${state.failed} con error` : '');
+    summary.textContent = `${state.completed || 0} / ${total}`;
 
     if (!state.apps) return;
 
     const statusConfig = {
-      pending:   {icon: '⏳', color: '#94A3B8', label: 'En espera'},
-      building:  {icon: '🔨', color: '#3B82F6', label: 'Construyendo'},
-      releasing: {icon: '🔄', color: '#F59E0B', label: 'Migrando'},
-      healthy:   {icon: '✅', color: '#059669', label: 'Completado'},
-      failed:    {icon: '❌', color: '#EF4444', label: 'Error'},
+      pending:   {icon: '&#9679;', color: '#94A3B8', bg: '#F1F5F9', spin: false},
+      building:  {icon: '&#9881;', color: '#3B82F6', bg: '#EFF6FF', spin: true},
+      releasing: {icon: '&#8635;', color: '#F59E0B', bg: '#FFFBEB', spin: true},
+      healthy:   {icon: '&#10003;', color: '#059669', bg: '#ECFDF5', spin: false},
+      failed:    {icon: '&#10007;', color: '#EF4444', bg: '#FEF2F2', spin: false},
+    };
+
+    const statusLabels = {
+      pending: 'En espera',
+      building: 'Construyendo',
+      releasing: 'Migrando',
+      healthy: 'Completado',
+      failed: 'Error',
     };
 
     appsDiv.innerHTML = Object.entries(state.apps).map(([appName, app]) => {
       const cfg = statusConfig[app.status] || statusConfig.pending;
-      const isActive = ['building', 'releasing'].includes(app.status);
+      const label = statusLabels[app.status] || app.status;
       return `
-        <div style="display:flex; align-items:center; gap:12px; padding:10px 14px; background:#F8FAFC; border-radius:8px; border-left:3px solid ${cfg.color};">
-          <span style="font-size:18px;${isActive ? 'animation:spin 1.5s linear infinite;' : ''}">${cfg.icon}</span>
-          <div style="flex:1; min-width:0;">
-            <div style="font-weight:600; font-size:13px;">${esc(app.name || appName)}</div>
-            <div style="font-size:12px; color:${cfg.color};">${esc(app.detail || cfg.label)}</div>
+        <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:${cfg.bg}; border-radius:10px; border-left:3px solid ${cfg.color}; transition:all 0.3s;">
+          <div style="width:28px;height:28px;border-radius:50%;background:${cfg.color}15;display:flex;align-items:center;justify-content:center;flex-shrink:0;${cfg.spin ? 'animation:spin 1.5s linear infinite;' : ''}">
+            <span style="color:${cfg.color};font-size:16px;font-weight:bold;">${cfg.icon}</span>
           </div>
-          <code style="font-size:11px; color:var(--text-light);">${esc(appName)}</code>
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-weight:600; font-size:13px; color:#0F172A;">${esc(app.name || appName)}</span>
+              <span style="font-size:10px; font-weight:600; color:${cfg.color}; background:${cfg.color}15; padding:2px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:0.5px;">${esc(label)}</span>
+            </div>
+            <div style="font-size:12px; color:#64748B; margin-top:2px;">${esc(app.detail || '')}</div>
+          </div>
+          <code style="font-size:10px; color:#94A3B8; flex-shrink:0;">${esc(appName)}</code>
         </div>
       `;
     }).join('');
+  }
+
+  function updateTimer() {
+    if (!deployStartTime) return;
+    const elapsed = Math.floor((new Date() - deployStartTime) / 1000);
+    const min = Math.floor(elapsed / 60);
+    const sec = elapsed % 60;
+    document.getElementById('deploy-time').textContent = `Tiempo transcurrido: ${min}:${sec.toString().padStart(2,'0')}`;
   }
 
   // ── Check if deploy is already running on page load ───────────
@@ -248,6 +332,8 @@
       const resp = await fetch('/api/v1/auth/deploy-status', {headers});
       const r = await resp.json();
       if (r.success && r.data.running) {
+        deployStartTime = new Date(r.data.started_at);
+        timerInterval = setInterval(updateTimer, 1000);
         showDeployPanel(r.data);
         const btn = document.getElementById('btn-sync');
         btn.disabled = true;
