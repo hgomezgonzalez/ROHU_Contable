@@ -3,11 +3,11 @@
 from flask import g, jsonify, request
 
 from app.modules.auth_rbac.services import require_permission
-from app.modules.inventory.blueprint import inventory_bp
 from app.modules.inventory import services as inv
-
+from app.modules.inventory.blueprint import inventory_bp
 
 # ── Categories ────────────────────────────────────────────────────
+
 
 @inventory_bp.route("/categories", methods=["GET"])
 @require_permission("products", "read")
@@ -21,12 +21,11 @@ def list_categories():
 def create_category():
     data = request.get_json()
     if not data.get("name"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "Nombre es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "Nombre es requerido"}), 400
 
     cat = inv.create_category(
-        tenant_id=g.tenant_id, name=data["name"],
+        tenant_id=g.tenant_id,
+        name=data["name"],
         tax_type=data.get("tax_type", "iva_19"),
         parent_id=data.get("parent_id"),
     )
@@ -35,22 +34,24 @@ def create_category():
 
 # ── Products ──────────────────────────────────────────────────────
 
+
 # QR Scan must be registered BEFORE /products/<product_id> to avoid Flask matching "scan" as ID
 @inventory_bp.route("/products/scan", methods=["GET"])
 @require_permission("products", "read")
 def scan_product():
     qr = request.args.get("qr", "").strip()
     if not qr:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "Parámetro 'qr' es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "Parámetro 'qr' es requerido"}), 400
 
     product = inv.get_product_by_qr(g.tenant_id, qr)
     if not product:
-        return jsonify(success=False, error={
-            "code": "PRODUCT_NOT_FOUND",
-            "message": f"No se encontró producto con código QR: {qr}"
-        }), 404
+        return (
+            jsonify(
+                success=False,
+                error={"code": "PRODUCT_NOT_FOUND", "message": f"No se encontró producto con código QR: {qr}"},
+            ),
+            404,
+        )
 
     return jsonify(success=True, data=product)
 
@@ -77,10 +78,16 @@ def create_product():
     required = ["name", "sale_price"]
     missing = [f for f in required if not data.get(f)]
     if missing:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": f"Campos requeridos: {', '.join(missing)}",
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Campos requeridos: {', '.join(missing)}",
+                },
+            ),
+            400,
+        )
 
     try:
         product = inv.create_product(
@@ -101,9 +108,7 @@ def create_product():
         )
         return jsonify(success=True, data=product), 201
     except Exception as e:
-        return jsonify(success=False, error={
-            "code": "PRODUCT_CREATE_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "PRODUCT_CREATE_ERROR", "message": str(e)}), 400
 
 
 @inventory_bp.route("/products/<product_id>", methods=["GET"])
@@ -111,9 +116,7 @@ def create_product():
 def get_product(product_id):
     product = inv.get_product_by_id(g.tenant_id, product_id)
     if not product:
-        return jsonify(success=False, error={
-            "code": "PRODUCT_NOT_FOUND", "message": "Producto no encontrado"
-        }), 404
+        return jsonify(success=False, error={"code": "PRODUCT_NOT_FOUND", "message": "Producto no encontrado"}), 404
     return jsonify(success=True, data=product)
 
 
@@ -125,36 +128,36 @@ def update_product(product_id):
         product = inv.update_product(g.tenant_id, product_id, **data)
         return jsonify(success=True, data=product)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PRODUCT_UPDATE_ERROR", "message": str(e)
-        }), 404
+        return jsonify(success=False, error={"code": "PRODUCT_UPDATE_ERROR", "message": str(e)}), 404
 
 
 # ── Import (OCR) ─────────────────────────────────────────────────
+
 
 @inventory_bp.route("/import/ocr", methods=["POST"])
 @require_permission("products", "create")
 def import_ocr():
     """Upload an invoice image and extract products via OCR."""
-    if 'image' not in request.files:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "Se requiere un archivo de imagen (campo 'image')"
-        }), 400
+    if "image" not in request.files:
+        return (
+            jsonify(
+                success=False,
+                error={"code": "VALIDATION_ERROR", "message": "Se requiere un archivo de imagen (campo 'image')"},
+            ),
+            400,
+        )
 
-    image_file = request.files['image']
+    image_file = request.files["image"]
     if not image_file.filename:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "Archivo vacío"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "Archivo vacío"}), 400
 
     try:
         from app.modules.inventory.ocr_service import process_invoice_image
+
         items = process_invoice_image(image_file)
         return jsonify(success=True, data=items, count=len(items))
     except Exception as e:
-        return jsonify(success=False, error={
-            "code": "OCR_ERROR", "message": f"Error procesando imagen: {str(e)}"
-        }), 422
+        return jsonify(success=False, error={"code": "OCR_ERROR", "message": f"Error procesando imagen: {str(e)}"}), 422
 
 
 @inventory_bp.route("/import/confirm", methods=["POST"])
@@ -165,15 +168,14 @@ def import_confirm():
     """
     data = request.get_json()
     if not data.get("items"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "items es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "items es requerido"}), 400
 
     created = []
     for item_data in data["items"]:
         try:
             product = inv.create_product(
-                tenant_id=g.tenant_id, created_by=str(g.current_user.id),
+                tenant_id=g.tenant_id,
+                created_by=str(g.current_user.id),
                 name=item_data["name"],
                 sale_price=item_data.get("sale_price", item_data.get("unit_cost", 0) * 1.3),
                 purchase_price=item_data.get("unit_cost", 0),
@@ -187,6 +189,7 @@ def import_confirm():
 
 
 # ── Stock ─────────────────────────────────────────────────────────
+
 
 @inventory_bp.route("/stock", methods=["GET"])
 @require_permission("inventory", "read")
@@ -209,25 +212,28 @@ def adjust_stock(product_id):
             data["new_quantity"] = product["stock_current"] + float(data["quantity_delta"])
 
     if data.get("new_quantity") is None or not data.get("reason"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "new_quantity y reason son requeridos"
-        }), 400
+        return (
+            jsonify(
+                success=False, error={"code": "VALIDATION_ERROR", "message": "new_quantity y reason son requeridos"}
+            ),
+            400,
+        )
 
     try:
         result = inv.adjust_stock(
-            tenant_id=g.tenant_id, product_id=product_id,
+            tenant_id=g.tenant_id,
+            product_id=product_id,
             created_by=str(g.current_user.id),
-            new_quantity=data["new_quantity"], reason=data["reason"],
+            new_quantity=data["new_quantity"],
+            reason=data["reason"],
         )
         return jsonify(success=True, data=result)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "STOCK_ADJUST_ERROR", "message": str(e)
-        }), 404
+        return jsonify(success=False, error={"code": "STOCK_ADJUST_ERROR", "message": str(e)}), 404
 
 
 # ── Movements ─────────────────────────────────────────────────────
+
 
 @inventory_bp.route("/movements", methods=["GET"])
 @require_permission("inventory", "read")

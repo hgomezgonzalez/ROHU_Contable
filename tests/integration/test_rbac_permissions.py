@@ -9,8 +9,11 @@ class TestCashierRestrictions:
         assert resp.status_code == 403
 
     def test_cannot_create_disbursement(self, client, cashier_headers):
-        resp = client.post("/api/v1/cash/disbursements", headers=cashier_headers,
-                           json={"destination_type": "expense", "concept": "test", "amount": 1000})
+        resp = client.post(
+            "/api/v1/cash/disbursements",
+            headers=cashier_headers,
+            json={"destination_type": "expense", "concept": "test", "amount": 1000},
+        )
         assert resp.status_code == 403
 
     def test_cannot_approve_purchases(self, client, cashier_headers):
@@ -18,8 +21,9 @@ class TestCashierRestrictions:
         assert resp.status_code == 403
 
     def test_cannot_create_products(self, client, cashier_headers):
-        resp = client.post("/api/v1/inventory/products", headers=cashier_headers,
-                           json={"name": "Test", "sale_price": 100})
+        resp = client.post(
+            "/api/v1/inventory/products", headers=cashier_headers, json={"name": "Test", "sale_price": 100}
+        )
         assert resp.status_code == 403
 
     def test_can_read_products(self, client, cashier_headers):
@@ -39,13 +43,13 @@ class TestViewerRestrictions:
         assert resp.status_code == 403
 
     def test_cannot_create_products(self, client, viewer_headers):
-        resp = client.post("/api/v1/inventory/products", headers=viewer_headers,
-                           json={"name": "Test", "sale_price": 100})
+        resp = client.post(
+            "/api/v1/inventory/products", headers=viewer_headers, json={"name": "Test", "sale_price": 100}
+        )
         assert resp.status_code == 403
 
     def test_cannot_create_customer(self, client, viewer_headers):
-        resp = client.post("/api/v1/customers", headers=viewer_headers,
-                           json={"name": "Test"})
+        resp = client.post("/api/v1/customers", headers=viewer_headers, json={"name": "Test"})
         assert resp.status_code == 403
 
     def test_can_read_products(self, client, viewer_headers):
@@ -73,7 +77,10 @@ class TestAdminFullAccess:
         assert resp.status_code == 200
 
     def test_can_read_all_reports(self, client, admin_headers):
-        for endpoint in ["/api/v1/reports/dashboard", "/api/v1/reports/stock-alerts",
-                         "/api/v1/reports/analytics/cash-flow"]:
+        for endpoint in [
+            "/api/v1/reports/dashboard",
+            "/api/v1/reports/stock-alerts",
+            "/api/v1/reports/analytics/cash-flow",
+        ]:
             resp = client.get(endpoint, headers=admin_headers)
             assert resp.status_code == 200, f"Admin denied on {endpoint}"

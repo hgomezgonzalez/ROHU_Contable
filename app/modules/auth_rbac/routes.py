@@ -6,7 +6,9 @@ from flask import jsonify, request
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
-    get_jwt_identity as _get_jwt_identity,
+)
+from flask_jwt_extended import get_jwt_identity as _get_jwt_identity
+from flask_jwt_extended import (
     jwt_required,
 )
 
@@ -23,8 +25,9 @@ def get_jwt_identity() -> dict:
         return json.loads(raw)
     return raw
 
-from app.modules.auth_rbac.blueprint import auth_bp
+
 from app.extensions import limiter
+from app.modules.auth_rbac.blueprint import auth_bp
 from app.modules.auth_rbac.services import (
     authenticate,
     create_custom_role,
@@ -51,44 +54,56 @@ from app.modules.auth_rbac.services import (
 def register():
     """Register a new tenant with its owner user."""
     data = request.get_json()
-    required = ["name", "tax_id", "email", "owner_first_name",
-                 "owner_last_name", "owner_email", "owner_password"]
+    required = ["name", "tax_id", "email", "owner_first_name", "owner_last_name", "owner_email", "owner_password"]
 
     missing = [f for f in required if not data.get(f)]
     if missing:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": f"Campos requeridos: {', '.join(missing)}",
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Campos requeridos: {', '.join(missing)}",
+                },
+            ),
+            400,
+        )
 
     if len(data["owner_password"]) < 8:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "La contraseña debe tener al menos 8 caracteres",
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={
+                    "code": "VALIDATION_ERROR",
+                    "message": "La contraseña debe tener al menos 8 caracteres",
+                },
+            ),
+            400,
+        )
 
     try:
         result = create_tenant(**{k: data[k] for k in required})
         # Seed PUC (chart of accounts) for the new tenant
         from app.modules.accounting.services import seed_chart_of_accounts
+
         seed_chart_of_accounts(result["tenant"]["id"])
         # Generate tokens for immediate login
         identity = _make_identity(result["user"]["id"], result["tenant"]["id"])
         access_token = create_access_token(identity=identity)
         refresh_token = create_refresh_token(identity=identity)
         create_refresh_token_record(
-            result["user"]["id"], result["tenant"]["id"],
-            refresh_token, request.remote_addr or ""
+            result["user"]["id"], result["tenant"]["id"], refresh_token, request.remote_addr or ""
         )
 
-        return jsonify(
-            success=True,
-            data={**result, "access_token": access_token, "refresh_token": refresh_token},
-        ), 201
+        return (
+            jsonify(
+                success=True,
+                data={**result, "access_token": access_token, "refresh_token": refresh_token},
+            ),
+            201,
+        )
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "REGISTRATION_ERROR", "message": str(e)
-        }), 409
+        return jsonify(success=False, error={"code": "REGISTRATION_ERROR", "message": str(e)}), 409
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -100,31 +115,43 @@ def login():
     password = data.get("password", "")
 
     if not email or not password:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "Email y contraseña son requeridos",
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={
+                    "code": "VALIDATION_ERROR",
+                    "message": "Email y contraseña son requeridos",
+                },
+            ),
+            400,
+        )
 
     try:
         user_data = authenticate(email, password)
         identity = _make_identity(user_data["id"], user_data["tenant_id"])
         access_token = create_access_token(identity=identity)
         refresh_token = create_refresh_token(identity=identity)
-        create_refresh_token_record(
-            user_data["id"], user_data["tenant_id"],
-            refresh_token, request.remote_addr or ""
-        )
+        create_refresh_token_record(user_data["id"], user_data["tenant_id"], refresh_token, request.remote_addr or "")
 
-        return jsonify(success=True, data={
-            "user": user_data,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-        })
+        return jsonify(
+            success=True,
+            data={
+                "user": user_data,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            },
+        )
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "AUTH_INVALID_CREDENTIALS",
-            "message": str(e),
-        }), 401
+        return (
+            jsonify(
+                success=False,
+                error={
+                    "code": "AUTH_INVALID_CREDENTIALS",
+                    "message": str(e),
+                },
+            ),
+            401,
+        )
 
 
 @auth_bp.route("/refresh", methods=["POST"])
@@ -150,6 +177,7 @@ def logout():
 def get_tenant_info():
     """Get current tenant details."""
     from flask import g
+
     tenant = get_tenant(g.tenant_id)
     return jsonify(success=True, data=tenant)
 
@@ -159,22 +187,23 @@ def get_tenant_info():
 def update_tenant_info():
     """Update current tenant configuration."""
     from flask import g
+
     data = request.get_json()
     try:
         tenant = update_tenant(g.tenant_id, **data)
         return jsonify(success=True, data=tenant)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "TENANT_UPDATE_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "TENANT_UPDATE_ERROR", "message": str(e)}), 400
 
 
 # ── Roles & Permissions ───────────────────────────────────────────
+
 
 @auth_bp.route("/roles", methods=["GET"])
 @require_permission("roles", "manage")
 def list_roles():
     from flask import g
+
     data = get_tenant_roles(g.tenant_id)
     return jsonify(success=True, data=data)
 
@@ -183,15 +212,17 @@ def list_roles():
 @require_permission("roles", "manage")
 def create_role():
     from flask import g
+
     data = request.get_json()
     if not data.get("name") or not data.get("permission_ids"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "name y permission_ids son requeridos"
-        }), 400
-    try:
-        role = create_custom_role(
-            g.tenant_id, data["name"], data["permission_ids"]
+        return (
+            jsonify(
+                success=False, error={"code": "VALIDATION_ERROR", "message": "name y permission_ids son requeridos"}
+            ),
+            400,
         )
+    try:
+        role = create_custom_role(g.tenant_id, data["name"], data["permission_ids"])
         return jsonify(success=True, data=role), 201
     except ValueError as e:
         return jsonify(success=False, error={"code": "ROLE_ERROR", "message": str(e)}), 400
@@ -201,11 +232,10 @@ def create_role():
 @require_permission("roles", "manage")
 def update_role_perms(role_id):
     from flask import g
+
     data = request.get_json()
     if not data.get("permission_ids"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "permission_ids es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "permission_ids es requerido"}), 400
     try:
         role = update_role_permissions(g.tenant_id, role_id, data["permission_ids"])
         return jsonify(success=True, data=role)
@@ -218,6 +248,7 @@ def update_role_perms(role_id):
 def reset_role_defaults():
     """Reset all system roles to their default permissions."""
     from app.modules.auth_rbac.services import seed_roles_and_permissions
+
     seed_roles_and_permissions()
     return jsonify(success=True, data={"message": "Permisos restaurados a valores por defecto"})
 
@@ -231,11 +262,13 @@ def list_perms_grouped():
 
 # ── Users ─────────────────────────────────────────────────────────
 
+
 @auth_bp.route("/users", methods=["GET"])
 @require_permission("users", "read")
 def list_users():
     """List all users in the current tenant."""
     from flask import g
+
     users = get_users_by_tenant(g.tenant_id)
     return jsonify(success=True, data=users)
 
@@ -245,14 +278,21 @@ def list_users():
 def add_user():
     """Create a new user in the current tenant."""
     from flask import g
+
     data = request.get_json()
     required = ["email", "password", "first_name", "last_name"]
     missing = [f for f in required if not data.get(f)]
     if missing:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": f"Campos requeridos: {', '.join(missing)}",
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Campos requeridos: {', '.join(missing)}",
+                },
+            ),
+            400,
+        )
 
     try:
         user = create_user(
@@ -265,9 +305,7 @@ def add_user():
         )
         return jsonify(success=True, data=user), 201
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "USER_CREATE_ERROR", "message": str(e)
-        }), 409
+        return jsonify(success=False, error={"code": "USER_CREATE_ERROR", "message": str(e)}), 409
 
 
 @auth_bp.route("/users/<user_id>", methods=["PATCH"])
@@ -275,14 +313,13 @@ def add_user():
 def edit_user(user_id):
     """Update a user's info or role."""
     from flask import g
+
     data = request.get_json()
     try:
         user = update_user(g.tenant_id, user_id, **data)
         return jsonify(success=True, data=user)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "USER_UPDATE_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "USER_UPDATE_ERROR", "message": str(e)}), 400
 
 
 @auth_bp.route("/users/<user_id>/deactivate", methods=["POST"])
@@ -290,14 +327,13 @@ def edit_user(user_id):
 def toggle_user(user_id):
     """Activate/deactivate a user."""
     from flask import g
+
     try:
         user = deactivate_user(g.tenant_id, user_id)
         status = "activado" if user["is_active"] else "desactivado"
         return jsonify(success=True, data=user, message=f"Usuario {status}")
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "USER_DEACTIVATE_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "USER_DEACTIVATE_ERROR", "message": str(e)}), 400
 
 
 @auth_bp.route("/users/<user_id>/reset-password", methods=["POST"])
@@ -305,15 +341,14 @@ def toggle_user(user_id):
 def reset_password(user_id):
     """Reset a user's password."""
     from flask import g
+
     data = request.get_json()
     password = data.get("password", "")
     try:
         user = reset_user_password(g.tenant_id, user_id, password)
         return jsonify(success=True, data=user)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PASSWORD_RESET_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "PASSWORD_RESET_ERROR", "message": str(e)}), 400
 
 
 @auth_bp.route("/tenant/test-smtp", methods=["POST"])
@@ -321,15 +356,22 @@ def reset_password(user_id):
 def test_smtp():
     """Send a test email to verify SMTP configuration."""
     from flask import g
-    from app.modules.auth_rbac.models import Tenant
+
     from app.core.email_service import send_email
+    from app.modules.auth_rbac.models import Tenant
 
     tenant = Tenant.query.get(g.tenant_id)
     if not tenant or not tenant.smtp_host:
-        return jsonify(success=False, error={
-            "code": "SMTP_NOT_CONFIGURED",
-            "message": "Configure el servidor SMTP primero en la sección de Notificaciones."
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={
+                    "code": "SMTP_NOT_CONFIGURED",
+                    "message": "Configure el servidor SMTP primero en la sección de Notificaciones.",
+                },
+            ),
+            400,
+        )
 
     # Send test email to tenant's email
     to_email = tenant.email or tenant.smtp_user
@@ -361,15 +403,21 @@ def test_smtp():
     )
 
     if result["success"]:
-        return jsonify(success=True, data={
-            "message": f"Correo de prueba enviado a {to_email}",
-            "to": to_email,
-        })
+        return jsonify(
+            success=True,
+            data={
+                "message": f"Correo de prueba enviado a {to_email}",
+                "to": to_email,
+            },
+        )
     else:
-        return jsonify(success=False, error={
-            "code": "SMTP_SEND_FAILED",
-            "message": result.get("error", "Error desconocido al enviar")
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={"code": "SMTP_SEND_FAILED", "message": result.get("error", "Error desconocido al enviar")},
+            ),
+            400,
+        )
 
 
 @auth_bp.route("/tenant/reset", methods=["POST"])
@@ -377,29 +425,33 @@ def test_smtp():
 def reset_data():
     """Reset all transactional data for the tenant."""
     from flask import g
+
     data = request.get_json() or {}
     if data.get("confirm") != "REINICIAR":
-        return jsonify(success=False, error={
-            "code": "CONFIRMATION_REQUIRED",
-            "message": "Envíe {\"confirm\": \"REINICIAR\"} para confirmar"
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={"code": "CONFIRMATION_REQUIRED", "message": 'Envíe {"confirm": "REINICIAR"} para confirmar'},
+            ),
+            400,
+        )
     try:
         result = reset_tenant_data(g.tenant_id)
         return jsonify(success=True, data=result)
     except Exception as e:
-        return jsonify(success=False, error={
-            "code": "RESET_ERROR", "message": str(e)
-        }), 500
+        return jsonify(success=False, error={"code": "RESET_ERROR", "message": str(e)}), 500
 
 
 @auth_bp.route("/saas-clients", methods=["GET"])
 @require_permission("tenants", "manage")
 def list_saas_clients():
     """List all deployed ROHU SaaS client instances from clients.json."""
-    import json, os
-    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'clients.json')
+    import json
+    import os
+
+    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "clients.json")
     try:
-        with open(clients_file, 'r') as f:
+        with open(clients_file, "r") as f:
             clients = json.load(f)
         return jsonify(success=True, data=clients)
     except FileNotFoundError:
@@ -414,15 +466,18 @@ def me():
     """Get current user profile."""
     identity = get_jwt_identity()
     from app.modules.auth_rbac.models import User
+
     user = User.query.get(identity["user_id"])
     if not user:
-        return jsonify(success=False, error={
-            "code": "AUTH_INVALID_TOKEN", "message": "Usuario no encontrado"
-        }), 401
+        return jsonify(success=False, error={"code": "AUTH_INVALID_TOKEN", "message": "Usuario no encontrado"}), 401
 
-    from app.modules.auth_rbac.services import _user_to_dict, _tenant_to_dict
-    return jsonify(success=True, data={
-        "user": _user_to_dict(user),
-        "tenant": _tenant_to_dict(user.tenant),
-        "permissions": list(user.permission_set),
-    })
+    from app.modules.auth_rbac.services import _tenant_to_dict, _user_to_dict
+
+    return jsonify(
+        success=True,
+        data={
+            "user": _user_to_dict(user),
+            "tenant": _tenant_to_dict(user.tenant),
+            "permissions": list(user.permission_set),
+        },
+    )

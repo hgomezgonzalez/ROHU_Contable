@@ -1,6 +1,5 @@
 """Voucher domain events — Outbox pattern compatible."""
 
-
 # Event type constants
 VOUCHER_EMITTED = "Vouchers.Voucher.Emitted"
 VOUCHER_SOLD = "Vouchers.Voucher.Sold"

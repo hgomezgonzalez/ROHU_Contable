@@ -2,8 +2,8 @@
 
 from flask import Flask, request
 
-from app.extensions import db, migrate, jwt, cors, limiter
 from app.config import config_by_name
+from app.extensions import cors, db, jwt, limiter, migrate
 
 
 def create_app(config_name: str = "development") -> Flask:
@@ -24,14 +24,17 @@ def create_app(config_name: str = "development") -> Flask:
     # Initialize audit logging
     with app.app_context():
         from app.core.audit import init_audit_listeners
+
         init_audit_listeners(app)
 
     # App version and deploy timestamp
     import os
+
     APP_VERSION = "1.2.1"
     DEPLOY_TIME = os.getenv("DEPLOY_TIME", None)
     if not DEPLOY_TIME:
         from datetime import datetime, timezone
+
         DEPLOY_TIME = datetime.now(timezone.utc).isoformat()
 
     # Register health check
@@ -39,17 +42,17 @@ def create_app(config_name: str = "development") -> Flask:
     @app.after_request
     def add_security_headers(response):
         # Prevent browser from caching HTML pages (always get fresh from server)
-        if response.content_type and 'text/html' in response.content_type:
-            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Frame-Options'] = 'DENY'
-        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        response.headers['Permissions-Policy'] = 'camera=(self), microphone=()'
+        if response.content_type and "text/html" in response.content_type:
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(self), microphone=()"
         if not app.debug:
-            response.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains'
-        response.headers['Content-Security-Policy'] = (
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; "
@@ -64,7 +67,10 @@ def create_app(config_name: str = "development") -> Flask:
     # JWT error callbacks — return JSON instead of Flask-JWT default HTML
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):
-        return {"success": False, "error": {"code": "TOKEN_EXPIRED", "message": "Token expirado, inicie sesión nuevamente"}}, 401
+        return {
+            "success": False,
+            "error": {"code": "TOKEN_EXPIRED", "message": "Token expirado, inicie sesión nuevamente"},
+        }, 401
 
     @jwt.invalid_token_loader
     def invalid_token_callback(error):
@@ -78,12 +84,13 @@ def create_app(config_name: str = "development") -> Flask:
     @app.errorhandler(500)
     def handle_500(e):
         import traceback
+
         app.logger.error(f"500 Error: {e}\n{traceback.format_exc()}")
         return {"success": False, "error": {"code": "SERVER_ERROR", "message": str(e)}}, 500
 
     @app.errorhandler(404)
     def handle_404(e):
-        if request.path.startswith('/api/'):
+        if request.path.startswith("/api/"):
             return {"success": False, "error": {"code": "NOT_FOUND", "message": "Recurso no encontrado"}}, 404
         return e
 
@@ -99,6 +106,7 @@ def create_app(config_name: str = "development") -> Flask:
     def health_full():
         """Full health check — verifies all external services and internal state."""
         import time
+
         checks = {}
 
         # 1. Database connectivity
@@ -113,6 +121,7 @@ def create_app(config_name: str = "development") -> Flask:
         # 2. Database tables exist
         try:
             from app.modules.auth_rbac.models import Tenant
+
             count = Tenant.query.count()
             checks["db_schema"] = {"status": "ok", "tenants": count}
         except Exception as e:
@@ -121,6 +130,7 @@ def create_app(config_name: str = "development") -> Flask:
         # 3. PUC seed status
         try:
             from app.modules.accounting.models import ChartOfAccount
+
             puc_count = ChartOfAccount.query.count()
             checks["puc"] = {"status": "ok" if puc_count > 0 else "warning", "accounts": puc_count}
         except Exception as e:
@@ -128,11 +138,15 @@ def create_app(config_name: str = "development") -> Flask:
 
         # 4. Roles & permissions
         try:
-            from app.modules.auth_rbac.models import Role, Permission
+            from app.modules.auth_rbac.models import Permission, Role
+
             roles = Role.query.filter_by(is_system_role=True).count()
             perms = Permission.query.count()
-            checks["rbac"] = {"status": "ok" if roles >= 4 and perms >= 40 else "warning",
-                              "roles": roles, "permissions": perms}
+            checks["rbac"] = {
+                "status": "ok" if roles >= 4 and perms >= 40 else "warning",
+                "roles": roles,
+                "permissions": perms,
+            }
         except Exception as e:
             checks["rbac"] = {"status": "error", "error": str(e)}
 
@@ -141,25 +155,31 @@ def create_app(config_name: str = "development") -> Flask:
             tenants_with_smtp = db.session.execute(
                 db.text("SELECT COUNT(*) FROM tenants WHERE smtp_host IS NOT NULL AND smtp_host != ''")
             ).scalar()
-            checks["smtp"] = {"status": "ok" if tenants_with_smtp > 0 else "not_configured",
-                              "tenants_with_smtp": tenants_with_smtp}
+            checks["smtp"] = {
+                "status": "ok" if tenants_with_smtp > 0 else "not_configured",
+                "tenants_with_smtp": tenants_with_smtp,
+            }
         except Exception as e:
             checks["smtp"] = {"status": "error", "error": str(e)}
 
         # 6. Factura Electrónica DIAN (PTA)
         try:
-            tenants_pta = db.session.execute(db.text(
-                "SELECT name, pta_provider, "
-                "CASE WHEN pta_api_key IS NOT NULL AND pta_api_key != '' THEN true ELSE false END as configured "
-                "FROM tenants WHERE is_active = true"
-            )).fetchall()
+            tenants_pta = db.session.execute(
+                db.text(
+                    "SELECT name, pta_provider, "
+                    "CASE WHEN pta_api_key IS NOT NULL AND pta_api_key != '' THEN true ELSE false END as configured "
+                    "FROM tenants WHERE is_active = true"
+                )
+            ).fetchall()
             pta_details = []
             for t in tenants_pta:
-                pta_details.append({
-                    "tenant": t[0],
-                    "provider": t[1] or "sin configurar",
-                    "api_key_configured": bool(t[2]),
-                })
+                pta_details.append(
+                    {
+                        "tenant": t[0],
+                        "provider": t[1] or "sin configurar",
+                        "api_key_configured": bool(t[2]),
+                    }
+                )
             any_configured = any(d["api_key_configured"] for d in pta_details)
             checks["factura_electronica"] = {
                 "status": "ok" if any_configured else "not_configured",
@@ -173,16 +193,20 @@ def create_app(config_name: str = "development") -> Flask:
         # 7. WhatsApp notifications
         try:
             # Check if there are customers with phone numbers for WhatsApp
-            customers_with_phone = db.session.execute(db.text(
-                "SELECT COUNT(*) FROM customers WHERE phone IS NOT NULL AND phone != ''"
-            )).scalar()
+            customers_with_phone = db.session.execute(
+                db.text("SELECT COUNT(*) FROM customers WHERE phone IS NOT NULL AND phone != ''")
+            ).scalar()
             # Test generate a wa.me link
             test_link = "https://wa.me/573001234567?text=Test" if customers_with_phone > 0 else None
             checks["whatsapp"] = {
                 "status": "ok" if customers_with_phone > 0 else "not_configured",
                 "customers_with_phone": customers_with_phone,
                 "method": "Links wa.me (gratis, sin API)",
-                "note": f"{customers_with_phone} clientes con teléfono para WhatsApp" if customers_with_phone > 0 else "Registre clientes con número de celular",
+                "note": (
+                    f"{customers_with_phone} clientes con teléfono para WhatsApp"
+                    if customers_with_phone > 0
+                    else "Registre clientes con número de celular"
+                ),
             }
         except Exception as e:
             checks["whatsapp"] = {"status": "error", "error": str(e)}
@@ -190,26 +214,31 @@ def create_app(config_name: str = "development") -> Flask:
         # 8. Tesseract OCR
         try:
             import subprocess
+
             result = subprocess.run(["tesseract", "--version"], capture_output=True, text=True, timeout=5)
-            version = result.stdout.split('\n')[0] if result.returncode == 0 else "not found"
-            checks["ocr_tesseract"] = {"status": "ok" if result.returncode == 0 else "unavailable",
-                                        "version": version}
+            version = result.stdout.split("\n")[0] if result.returncode == 0 else "not found"
+            checks["ocr_tesseract"] = {"status": "ok" if result.returncode == 0 else "unavailable", "version": version}
         except Exception:
             checks["ocr_tesseract"] = {"status": "unavailable", "error": "Tesseract not installed"}
 
         # 7. Disk / static files
         try:
             import os
+
             sw_exists = os.path.exists(os.path.join(app.static_folder, "sw.js"))
             css_exists = os.path.exists(os.path.join(app.static_folder, "css", "rohu.css"))
-            checks["static_files"] = {"status": "ok" if sw_exists and css_exists else "error",
-                                       "sw.js": sw_exists, "rohu.css": css_exists}
+            checks["static_files"] = {
+                "status": "ok" if sw_exists and css_exists else "error",
+                "sw.js": sw_exists,
+                "rohu.css": css_exists,
+            }
         except Exception as e:
             checks["static_files"] = {"status": "error", "error": str(e)}
 
         # 8. PWA / Offline readiness
         try:
             import os
+
             sw_path = os.path.join(app.static_folder, "sw.js")
             offline_path = os.path.join(app.static_folder, "js", "rohu-offline.js")
             manifest_path = os.path.join(app.static_folder, "manifest.json")
@@ -220,9 +249,10 @@ def create_app(config_name: str = "development") -> Flask:
             # Check SW has correct cache version
             sw_version = "unknown"
             if sw_ok:
-                with open(sw_path, 'r') as f:
+                with open(sw_path, "r") as f:
                     content = f.read(500)
                     import re
+
                     m = re.search(r"CACHE_VERSION\s*=\s*['\"](\d+)['\"]", content)
                     if m:
                         sw_version = f"v{m.group(1)}"
@@ -242,15 +272,22 @@ def create_app(config_name: str = "development") -> Flask:
         has_errors = any(c.get("status") == "error" for c in checks.values())
         overall = "error" if has_errors else "ok"
 
-        return {"status": overall, "service": "rohu-contable", "version": APP_VERSION,
-                "deployed_at": DEPLOY_TIME, "checks": checks}
+        return {
+            "status": overall,
+            "service": "rohu-contable",
+            "version": APP_VERSION,
+            "deployed_at": DEPLOY_TIME,
+            "checks": checks,
+        }
 
     # Serve SW from root scope (required for PWA)
     @app.route("/sw.js")
     def service_worker():
         from flask import send_from_directory
+
         return send_from_directory(
-            app.static_folder, "sw.js",
+            app.static_folder,
+            "sw.js",
             mimetype="application/javascript",
             max_age=0,
         )
@@ -260,17 +297,17 @@ def create_app(config_name: str = "development") -> Flask:
 
 def _register_blueprints(app: Flask) -> None:
     """Register all module blueprints."""
-    from app.modules.auth_rbac.blueprint import auth_bp
-    from app.modules.inventory.blueprint import inventory_bp
-    from app.modules.pos.blueprint import pos_bp
+    from app.frontend import frontend_bp
     from app.modules.accounting.blueprint import accounting_bp
+    from app.modules.auth_rbac.blueprint import auth_bp
+    from app.modules.cash.blueprint import cash_bp
+    from app.modules.customers.blueprint import customers_bp
+    from app.modules.inventory.blueprint import inventory_bp
+    from app.modules.invoicing.blueprint import invoicing_bp
+    from app.modules.pos.blueprint import pos_bp
     from app.modules.purchases.blueprint import purchases_bp
     from app.modules.reports.blueprint import reports_bp
-    from app.modules.invoicing.blueprint import invoicing_bp
-    from app.modules.customers.blueprint import customers_bp
-    from app.modules.cash.blueprint import cash_bp
     from app.modules.vouchers.blueprint import vouchers_bp
-    from app.frontend import frontend_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(inventory_bp)
@@ -288,4 +325,5 @@ def _register_blueprints(app: Flask) -> None:
     @app.route("/")
     def root():
         from flask import redirect
+
         return redirect("/app/login")

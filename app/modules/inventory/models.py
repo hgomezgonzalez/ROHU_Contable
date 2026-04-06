@@ -136,7 +136,7 @@ class StockMovement(db.Model):
             "movement_type IN ('initial_stock', 'sale', 'purchase_receipt', "
             "'adjustment_positive', 'adjustment_negative', 'return_sale', "
             "'return_purchase', 'transfer_in', 'transfer_out')",
-            name="ck_movements_type"
+            name="ck_movements_type",
         ),
     )
 
@@ -162,19 +162,14 @@ class InventoryAdjustment(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
     approved_at = db.Column(db.DateTime(timezone=True))
 
-    items = db.relationship("InventoryAdjustmentItem", back_populates="adjustment",
-                            lazy="joined", cascade="all, delete-orphan")
+    items = db.relationship(
+        "InventoryAdjustmentItem", back_populates="adjustment", lazy="joined", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "adjustment_number", name="uq_ia_tenant_number"),
-        CheckConstraint(
-            "adjustment_type IN ('physical_count', 'damage', 'loss', 'donation')",
-            name="ck_ia_type"
-        ),
-        CheckConstraint(
-            "status IN ('draft', 'pending_approval', 'approved', 'rejected')",
-            name="ck_ia_status"
-        ),
+        CheckConstraint("adjustment_type IN ('physical_count', 'damage', 'loss', 'donation')", name="ck_ia_type"),
+        CheckConstraint("status IN ('draft', 'pending_approval', 'approved', 'rejected')", name="ck_ia_status"),
     )
 
     def __repr__(self):

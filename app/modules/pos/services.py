@@ -11,11 +11,11 @@ from app.extensions import db
 from app.modules.inventory.models import Product
 from app.modules.pos.models import CashSession, Payment, Sale, SaleItem
 
-
 TWO_PLACES = Decimal("0.01")
 
 
 # ── Invoice Number ────────────────────────────────────────────────
+
 
 def _next_invoice_number(tenant_id: str) -> str:
     """Generate next sequential invoice number for a tenant."""
@@ -38,13 +38,14 @@ def _next_invoice_number(tenant_id: str) -> str:
 
 # ── Cash Session Services ─────────────────────────────────────────
 
+
 def open_cash_session(
-    tenant_id: str, user_id: str, opening_amount: float = 0,
+    tenant_id: str,
+    user_id: str,
+    opening_amount: float = 0,
 ) -> dict:
     """Open a new cash session. Only one open session per tenant allowed."""
-    existing = CashSession.query.filter_by(
-        tenant_id=tenant_id, status="open"
-    ).first()
+    existing = CashSession.query.filter_by(tenant_id=tenant_id, status="open").first()
     if existing:
         raise ValueError("Ya hay una caja abierta. Ciérrela antes de abrir otra.")
 
@@ -59,12 +60,13 @@ def open_cash_session(
 
 
 def close_cash_session(
-    tenant_id: str, user_id: str, closing_amount: float, notes: str = "",
+    tenant_id: str,
+    user_id: str,
+    closing_amount: float,
+    notes: str = "",
 ) -> dict:
     """Close the current open cash session."""
-    session = CashSession.query.filter_by(
-        tenant_id=tenant_id, status="open"
-    ).first()
+    session = CashSession.query.filter_by(tenant_id=tenant_id, status="open").first()
     if not session:
         raise ValueError("No hay caja abierta")
 
@@ -94,20 +96,25 @@ def close_cash_session(
 
 def get_current_session(tenant_id: str) -> Optional[dict]:
     """Get the current open cash session."""
-    session = CashSession.query.filter_by(
-        tenant_id=tenant_id, status="open"
-    ).first()
+    session = CashSession.query.filter_by(tenant_id=tenant_id, status="open").first()
     return _cash_session_to_dict(session) if session else None
 
 
 # ── Checkout (Critical ACID Transaction) ──────────────────────────
 
+
 def checkout(
-    tenant_id: str, cashier_id: str, items: list, payments: list,
-    customer_name: str = None, customer_tax_id: str = None,
-    notes: str = None, idempotency_key: str = None,
+    tenant_id: str,
+    cashier_id: str,
+    items: list,
+    payments: list,
+    customer_name: str = None,
+    customer_tax_id: str = None,
+    notes: str = None,
+    idempotency_key: str = None,
     cash_session_id: str = None,
-    sale_type: str = "cash", customer_id: str = None,
+    sale_type: str = "cash",
+    customer_id: str = None,
     credit_days: int = 0,
     voucher_sale: dict = None,
     voucher_redemption: dict = None,
@@ -139,6 +146,7 @@ def checkout(
         if not customer_id:
             raise ValueError("Ventas a crédito requieren un cliente")
         from app.modules.customers.models import Customer
+
         customer = Customer.query.filter_by(id=customer_id, tenant_id=tenant_id).first()
         if not customer:
             raise ValueError("Cliente no encontrado")
@@ -167,6 +175,7 @@ def checkout(
 
     # Determine fiscal regime to handle IVA correctly
     from app.modules.auth_rbac.models import Tenant
+
     tenant_obj = Tenant.query.get(tenant_id)
     is_simplified = (tenant_obj.fiscal_regime == "simplified") if tenant_obj else True
 
@@ -174,9 +183,7 @@ def checkout(
     stock_ops = []
 
     for item_data in items:
-        product = Product.query.filter_by(
-            id=item_data["product_id"], tenant_id=tenant_id
-        ).with_for_update().first()
+        product = Product.query.filter_by(id=item_data["product_id"], tenant_id=tenant_id).with_for_update().first()
 
         if not product or not product.is_active:
             raise ValueError(f"Producto no encontrado: {item_data['product_id']}")
@@ -225,11 +232,13 @@ def checkout(
         total_discount += line_discount
 
         # Queue stock movement
-        stock_ops.append({
-            "product": product,
-            "quantity": qty,
-            "unit_cost": unit_cost,
-        })
+        stock_ops.append(
+            {
+                "product": product,
+                "quantity": qty,
+                "unit_cost": unit_cost,
+            }
+        )
 
     sale.subtotal = total_subtotal
     sale.tax_amount = total_tax
@@ -240,6 +249,7 @@ def checkout(
     # Credit sale: set due date and amount_due, skip payment validation
     if is_credit:
         from datetime import timedelta
+
         sale.credit_days = credit_days
         sale.due_date = datetime.now(timezone.utc) + timedelta(days=credit_days)
         sale.payment_status = "pending"
@@ -247,15 +257,17 @@ def checkout(
         sale.amount_due = sale.total_amount
 
         # Validate credit limit
-        if hasattr(customer, 'credit_limit') and customer.credit_limit > 0:
-            outstanding = db.session.query(
-                func.coalesce(func.sum(Sale.amount_due), 0)
-            ).filter(
-                Sale.tenant_id == tenant_id,
-                Sale.customer_id == customer_id,
-                Sale.sale_type == "credit",
-                Sale.payment_status.in_(["pending", "partial", "overdue"]),
-            ).scalar()
+        if hasattr(customer, "credit_limit") and customer.credit_limit > 0:
+            outstanding = (
+                db.session.query(func.coalesce(func.sum(Sale.amount_due), 0))
+                .filter(
+                    Sale.tenant_id == tenant_id,
+                    Sale.customer_id == customer_id,
+                    Sale.sale_type == "credit",
+                    Sale.payment_status.in_(["pending", "partial", "overdue"]),
+                )
+                .scalar()
+            )
             if Decimal(str(outstanding)) + sale.total_amount > customer.credit_limit:
                 raise ValueError(
                     f"Límite de crédito excedido para {customer.name}: "
@@ -290,10 +302,7 @@ def checkout(
             total_paid += amount
 
         if total_paid < sale.total_amount:
-            raise ValueError(
-                f"Pago insuficiente: total={float(sale.total_amount)}, "
-                f"pagado={float(total_paid)}"
-            )
+            raise ValueError(f"Pago insuficiente: total={float(sale.total_amount)}, " f"pagado={float(total_paid)}")
 
         sale.payments = sale_payments
 
@@ -309,6 +318,7 @@ def checkout(
         product.stock_current -= qty
 
         from app.modules.inventory.models import StockMovement
+
         movement = StockMovement(
             tenant_id=tenant_id,
             product_id=product.id,
@@ -327,6 +337,7 @@ def checkout(
     voucher_sale_result = None
     if voucher_sale:
         from app.modules.vouchers.services import sell_voucher
+
         voucher_sale_result = sell_voucher(
             tenant_id=tenant_id,
             code=voucher_sale["code"],
@@ -342,6 +353,7 @@ def checkout(
     voucher_redemption_result = None
     if voucher_redemption:
         from app.modules.vouchers.services import redeem_voucher
+
         voucher_redemption_result = redeem_voucher(
             tenant_id=tenant_id,
             code=voucher_redemption["code"],
@@ -352,20 +364,22 @@ def checkout(
         )
 
     # Auto-post accounting entries (same transaction)
-    cost_total = sum(
-        float(op["unit_cost"]) * float(op["quantity"]) for op in stock_ops
-    )
+    cost_total = sum(float(op["unit_cost"]) * float(op["quantity"]) for op in stock_ops)
     payment_method = payments[0]["method"] if payments else "cash"
 
     try:
         from app.modules.accounting.services import post_sale_entry
+
         fiscal = tenant_obj.fiscal_regime if tenant_obj else "simplified"
         sp = db.session.begin_nested()  # savepoint before accounting
         post_sale_entry(
-            tenant_id=tenant_id, created_by=cashier_id,
+            tenant_id=tenant_id,
+            created_by=cashier_id,
             sale_id=str(sale.id),
-            subtotal=float(sale.subtotal), tax_amount=float(sale.tax_amount),
-            total_amount=float(sale.total_amount), cost_total=cost_total,
+            subtotal=float(sale.subtotal),
+            tax_amount=float(sale.tax_amount),
+            total_amount=float(sale.total_amount),
+            cost_total=cost_total,
             payment_method="credit" if is_credit else payment_method,
             fiscal_regime=fiscal,
         )
@@ -373,8 +387,10 @@ def checkout(
         # Voucher-specific accounting entries
         if voucher_sale_result:
             from app.modules.accounting.services import post_voucher_sale_entry
+
             post_voucher_sale_entry(
-                tenant_id=tenant_id, created_by=cashier_id,
+                tenant_id=tenant_id,
+                created_by=cashier_id,
                 sale_id=str(sale.id),
                 voucher_id=voucher_sale_result["voucher_id"],
                 amount=voucher_sale_result["accounting"]["amount"],
@@ -382,8 +398,10 @@ def checkout(
 
         if voucher_redemption_result:
             from app.modules.accounting.services import post_voucher_redemption_entry
+
             post_voucher_redemption_entry(
-                tenant_id=tenant_id, created_by=cashier_id,
+                tenant_id=tenant_id,
+                created_by=cashier_id,
                 sale_id=str(sale.id),
                 voucher_id=voucher_redemption_result["voucher_id"],
                 amount=voucher_redemption_result["accounting"]["amount"],
@@ -400,9 +418,12 @@ def checkout(
             pass
 
         import logging
+
         logging.getLogger(__name__).error(
             "Accounting entry failed for sale %s: %s",
-            sale.id, str(e), exc_info=True,
+            sale.id,
+            str(e),
+            exc_info=True,
         )
 
     # Commit everything atomically
@@ -418,6 +439,7 @@ def checkout(
 
 # ── Sale Queries ──────────────────────────────────────────────────
 
+
 def get_sale(tenant_id: str, sale_id: str) -> Optional[dict]:
     """Get a sale by ID."""
     sale = Sale.query.filter_by(id=sale_id, tenant_id=tenant_id).first()
@@ -426,19 +448,22 @@ def get_sale(tenant_id: str, sale_id: str) -> Optional[dict]:
 
 def get_sale_by_invoice(tenant_id: str, invoice_number: str) -> Optional[dict]:
     """Get a sale by invoice number."""
-    sale = Sale.query.filter_by(
-        tenant_id=tenant_id, invoice_number=invoice_number
-    ).first()
+    sale = Sale.query.filter_by(tenant_id=tenant_id, invoice_number=invoice_number).first()
     return _sale_to_dict(sale) if sale else None
 
 
 def list_sales(
-    tenant_id: str, page: int = 1, per_page: int = 20,
-    status: str = None, cashier_id: str = None,
-    date_from: str = None, date_to: str = None,
+    tenant_id: str,
+    page: int = 1,
+    per_page: int = 20,
+    status: str = None,
+    cashier_id: str = None,
+    date_from: str = None,
+    date_to: str = None,
 ) -> dict:
     """List sales with filters."""
     from sqlalchemy.orm import joinedload
+
     q = Sale.query.filter_by(tenant_id=tenant_id)
 
     if status:
@@ -452,18 +477,24 @@ def list_sales(
 
     total = q.count()
     # Eager load items + payments to avoid N+1 queries (42→3 queries per page)
-    sales = q.options(
-        joinedload(Sale.items),
-        joinedload(Sale.payments),
-    ).order_by(Sale.sale_date.desc()).offset(
-        (page - 1) * per_page
-    ).limit(per_page).all()
+    sales = (
+        q.options(
+            joinedload(Sale.items),
+            joinedload(Sale.payments),
+        )
+        .order_by(Sale.sale_date.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
 
     return {
         "data": [_sale_summary_to_dict(s) for s in sales],
         "pagination": {
-            "page": page, "per_page": per_page,
-            "total": total, "has_next": page * per_page < total,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "has_next": page * per_page < total,
         },
     }
 
@@ -471,6 +502,7 @@ def list_sales(
 def get_daily_totals(tenant_id: str, date: str = None) -> dict:
     """Get sales summary for a specific date."""
     from zoneinfo import ZoneInfo
+
     if not date:
         date = datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m-%d")
 
@@ -500,13 +532,15 @@ def get_daily_totals(tenant_id: str, date: str = None) -> dict:
 
 # ── Void Sale ─────────────────────────────────────────────────────
 
+
 def void_sale(
-    tenant_id: str, sale_id: str, user_id: str, reason: str,
+    tenant_id: str,
+    sale_id: str,
+    user_id: str,
+    reason: str,
 ) -> dict:
     """Void a completed sale. Restores stock."""
-    sale = Sale.query.filter_by(
-        id=sale_id, tenant_id=tenant_id, status="completed"
-    ).first()
+    sale = Sale.query.filter_by(id=sale_id, tenant_id=tenant_id, status="completed").first()
     if not sale:
         raise ValueError("Venta no encontrada o ya anulada")
 
@@ -518,15 +552,14 @@ def void_sale(
 
     # Restore stock for each item
     for item in sale.items:
-        product = Product.query.filter_by(
-            id=item.product_id, tenant_id=tenant_id
-        ).with_for_update().first()
+        product = Product.query.filter_by(id=item.product_id, tenant_id=tenant_id).with_for_update().first()
 
         if product:
             stock_before = product.stock_current
             product.stock_current += item.quantity
 
             from app.modules.inventory.models import StockMovement
+
             movement = StockMovement(
                 tenant_id=tenant_id,
                 product_id=product.id,
@@ -547,11 +580,15 @@ def void_sale(
     payment_method = "credit" if sale.sale_type == "credit" else (sale.payments[0].method if sale.payments else "cash")
     try:
         from app.modules.accounting.services import post_sale_reversal
+
         post_sale_reversal(
-            tenant_id=tenant_id, created_by=user_id,
+            tenant_id=tenant_id,
+            created_by=user_id,
             sale_id=str(sale.id),
-            subtotal=float(sale.subtotal), tax_amount=float(sale.tax_amount),
-            total_amount=float(sale.total_amount), cost_total=cost_total,
+            subtotal=float(sale.subtotal),
+            tax_amount=float(sale.tax_amount),
+            total_amount=float(sale.total_amount),
+            cost_total=cost_total,
             payment_method=payment_method,
         )
     except Exception:
@@ -563,9 +600,13 @@ def void_sale(
 
 # ── Partial Return / Credit Note ──────────────────────────────────
 
+
 def create_return(
-    tenant_id: str, sale_id: str, user_id: str,
-    items: list, reason: str,
+    tenant_id: str,
+    sale_id: str,
+    user_id: str,
+    items: list,
+    reason: str,
 ) -> dict:
     """
     Create a partial return (credit note).
@@ -589,8 +630,11 @@ def create_return(
     cn_number = f"{prefix}{seq:06d}"
 
     cn = CreditNote(
-        tenant_id=tenant_id, sale_id=sale.id, created_by=user_id,
-        credit_note_number=cn_number, reason=reason,
+        tenant_id=tenant_id,
+        sale_id=sale.id,
+        created_by=user_id,
+        credit_note_number=cn_number,
+        reason=reason,
     )
 
     total_sub = Decimal("0")
@@ -599,10 +643,7 @@ def create_return(
 
     for ret_item in items:
         # Find original sale item
-        sale_item = next(
-            (si for si in sale.items if str(si.product_id) == ret_item["product_id"]),
-            None
-        )
+        sale_item = next((si for si in sale.items if str(si.product_id) == ret_item["product_id"]), None)
         if not sale_item:
             raise ValueError(f"Producto {ret_item['product_id']} no está en esta venta")
 
@@ -615,9 +656,14 @@ def create_return(
         line_cost = (sale_item.unit_cost * qty).quantize(Decimal("0.01"))
 
         cn_item = CreditNoteItem(
-            product_id=sale_item.product_id, product_name=sale_item.product_name,
-            quantity=qty, unit_price=sale_item.unit_price, unit_cost=sale_item.unit_cost,
-            tax_rate=sale_item.tax_rate, subtotal=line_sub, tax_amount=line_tax,
+            product_id=sale_item.product_id,
+            product_name=sale_item.product_name,
+            quantity=qty,
+            unit_price=sale_item.unit_price,
+            unit_cost=sale_item.unit_cost,
+            tax_rate=sale_item.tax_rate,
+            subtotal=line_sub,
+            tax_amount=line_tax,
             total=line_sub + line_tax,
         )
         cn.items.append(cn_item)
@@ -626,21 +672,27 @@ def create_return(
         total_cost += line_cost
 
         # Restore stock
-        product = Product.query.filter_by(
-            id=sale_item.product_id, tenant_id=tenant_id
-        ).with_for_update().first()
+        product = Product.query.filter_by(id=sale_item.product_id, tenant_id=tenant_id).with_for_update().first()
         if product:
             stock_before = product.stock_current
             product.stock_current += qty
             from app.modules.inventory.models import StockMovement
-            db.session.add(StockMovement(
-                tenant_id=tenant_id, product_id=product.id, created_by=user_id,
-                movement_type="return_sale", quantity=qty,
-                stock_before=stock_before, stock_after=product.stock_current,
-                unit_cost=sale_item.unit_cost,
-                reference_type="credit_note", reference_id=cn.id,
-                reason=f"Devolución: {reason}",
-            ))
+
+            db.session.add(
+                StockMovement(
+                    tenant_id=tenant_id,
+                    product_id=product.id,
+                    created_by=user_id,
+                    movement_type="return_sale",
+                    quantity=qty,
+                    stock_before=stock_before,
+                    stock_after=product.stock_current,
+                    unit_cost=sale_item.unit_cost,
+                    reference_type="credit_note",
+                    reference_id=cn.id,
+                    reason=f"Devolución: {reason}",
+                )
+            )
 
     cn.subtotal = total_sub
     cn.tax_amount = total_tax
@@ -652,12 +704,17 @@ def create_return(
     # Auto-post credit note accounting (uses PUC 4175 Devoluciones)
     try:
         from app.modules.accounting.services import post_sale_credit_note_entry
+
         payment_method = sale.payments[0].method if sale.payments else "cash"
         post_sale_credit_note_entry(
-            tenant_id=tenant_id, created_by=user_id,
-            sale_id=str(sale.id), credit_note_id=str(cn.id),
-            subtotal=float(total_sub), tax_amount=float(total_tax),
-            total_amount=float(cn.total_amount), cost_total=float(total_cost),
+            tenant_id=tenant_id,
+            created_by=user_id,
+            sale_id=str(sale.id),
+            credit_note_id=str(cn.id),
+            subtotal=float(total_sub),
+            tax_amount=float(total_tax),
+            total_amount=float(cn.total_amount),
+            cost_total=float(total_cost),
             payment_method=payment_method,
         )
     except Exception:
@@ -673,14 +730,19 @@ def create_return(
         "tax_amount": float(cn.tax_amount),
         "total_amount": float(cn.total_amount),
         "items": [
-            {"product": i.product_name, "qty": float(i.quantity),
-             "unit_price": float(i.unit_price), "total": float(i.total)}
+            {
+                "product": i.product_name,
+                "qty": float(i.quantity),
+                "unit_price": float(i.unit_price),
+                "total": float(i.total),
+            }
             for i in cn.items
         ],
     }
 
 
 # ── Overdue Auto-marking ─────────────────────────────────────────
+
 
 def mark_overdue_sales(tenant_id: str) -> int:
     """Mark credit sales as overdue when due_date has passed."""
@@ -697,6 +759,7 @@ def mark_overdue_sales(tenant_id: str) -> int:
 
 
 # ── Serializers ───────────────────────────────────────────────────
+
 
 def _cash_session_to_dict(session: CashSession) -> dict:
     return {

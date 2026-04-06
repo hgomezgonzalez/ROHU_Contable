@@ -8,9 +8,11 @@ class CreateVoucherTypeSchema(Schema):
     face_value = fields.Float(required=True, validate=validate.Range(min=0.01))
     validity_days = fields.Integer(required=True, validate=validate.Range(min=90))
     max_issuable = fields.Integer(load_default=None, validate=validate.Range(min=1))
-    color_hex = fields.String(load_default=None, validate=validate.Regexp(r'^#[0-9A-Fa-f]{6}$'))
-    design_template = fields.String(load_default="default",
-                                     validate=validate.OneOf(["default", "compact", "premium"]))
+    color_hex = fields.String(load_default=None, validate=validate.Regexp(r"^#[0-9A-Fa-f]{6}$"))
+    design_template = fields.String(
+        load_default="default",
+        validate=validate.OneOf(["default", "compact", "premium"]),
+    )
     notes = fields.String(load_default=None, validate=validate.Length(max=500))
 
 
@@ -19,7 +21,7 @@ class UpdateVoucherTypeSchema(Schema):
     validity_days = fields.Integer(validate=validate.Range(min=90))
     max_issuable = fields.Integer(validate=validate.Range(min=1), allow_none=True)
     status = fields.String(validate=validate.OneOf(["active", "inactive"]))
-    color_hex = fields.String(validate=validate.Regexp(r'^#[0-9A-Fa-f]{6}$'), allow_none=True)
+    color_hex = fields.String(validate=validate.Regexp(r"^#[0-9A-Fa-f]{6}$"), allow_none=True)
     design_template = fields.String(validate=validate.OneOf(["default", "compact", "premium"]))
     notes = fields.String(validate=validate.Length(max=500), allow_none=True)
 

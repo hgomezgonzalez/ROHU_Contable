@@ -3,8 +3,8 @@
 from flask import g, jsonify, request
 
 from app.modules.auth_rbac.services import require_permission
-from app.modules.invoicing.blueprint import invoicing_bp
 from app.modules.invoicing import services as inv
+from app.modules.invoicing.blueprint import invoicing_bp
 
 
 @invoicing_bp.route("/generate/<sale_id>", methods=["POST"])
@@ -13,7 +13,8 @@ def generate(sale_id):
     data = request.get_json() or {}
     try:
         invoice = inv.generate_invoice(
-            tenant_id=g.tenant_id, sale_id=sale_id,
+            tenant_id=g.tenant_id,
+            sale_id=sale_id,
             created_by=str(g.current_user.id),
             customer_name=data.get("customer_name"),
             customer_tax_id=data.get("customer_tax_id"),
@@ -29,7 +30,8 @@ def generate(sale_id):
 def generate_credit_note(credit_note_id):
     try:
         invoice = inv.generate_credit_note_invoice(
-            tenant_id=g.tenant_id, credit_note_id=credit_note_id,
+            tenant_id=g.tenant_id,
+            credit_note_id=credit_note_id,
             created_by=str(g.current_user.id),
         )
         return jsonify(success=True, data=invoice), 201

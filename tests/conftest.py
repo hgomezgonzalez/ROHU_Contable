@@ -7,7 +7,14 @@ from flask_jwt_extended import create_access_token
 
 from app import create_app
 from app.extensions import db as _db
-from app.modules.auth_rbac.models import Tenant, User, Role, Permission, role_permissions, user_roles
+from app.modules.auth_rbac.models import (
+    Permission,
+    Role,
+    Tenant,
+    User,
+    role_permissions,
+    user_roles,
+)
 from app.modules.auth_rbac.services import hash_password, seed_roles_and_permissions
 
 
@@ -87,11 +94,7 @@ def admin_user(db_session, tenant):
 
     admin_role = Role.query.filter_by(name="admin", is_system_role=True).first()
     if admin_role:
-        db_session.execute(
-            user_roles.insert().values(
-                user_id=user.id, role_id=admin_role.id, tenant_id=tenant.id
-            )
-        )
+        db_session.execute(user_roles.insert().values(user_id=user.id, role_id=admin_role.id, tenant_id=tenant.id))
         db_session.flush()
     db_session.refresh(user)
     return user
@@ -112,11 +115,7 @@ def cashier_user(db_session, tenant):
 
     cashier_role = Role.query.filter_by(name="cashier", is_system_role=True).first()
     if cashier_role:
-        db_session.execute(
-            user_roles.insert().values(
-                user_id=user.id, role_id=cashier_role.id, tenant_id=tenant.id
-            )
-        )
+        db_session.execute(user_roles.insert().values(user_id=user.id, role_id=cashier_role.id, tenant_id=tenant.id))
         db_session.flush()
     db_session.refresh(user)
     return user
@@ -137,11 +136,7 @@ def accountant_user(db_session, tenant):
 
     accountant_role = Role.query.filter_by(name="accountant", is_system_role=True).first()
     if accountant_role:
-        db_session.execute(
-            user_roles.insert().values(
-                user_id=user.id, role_id=accountant_role.id, tenant_id=tenant.id
-            )
-        )
+        db_session.execute(user_roles.insert().values(user_id=user.id, role_id=accountant_role.id, tenant_id=tenant.id))
         db_session.flush()
     db_session.refresh(user)
     return user
@@ -162,11 +157,7 @@ def viewer_user(db_session, tenant):
 
     viewer_role = Role.query.filter_by(name="viewer", is_system_role=True).first()
     if viewer_role:
-        db_session.execute(
-            user_roles.insert().values(
-                user_id=user.id, role_id=viewer_role.id, tenant_id=tenant.id
-            )
-        )
+        db_session.execute(user_roles.insert().values(user_id=user.id, role_id=viewer_role.id, tenant_id=tenant.id))
         db_session.flush()
     db_session.refresh(user)
     return user
@@ -174,9 +165,7 @@ def viewer_user(db_session, tenant):
 
 def _auth_headers(user):
     """Generate JWT auth headers for a user."""
-    token = create_access_token(
-        identity={"user_id": str(user.id), "tenant_id": str(user.tenant_id)}
-    )
+    token = create_access_token(identity={"user_id": str(user.id), "tenant_id": str(user.tenant_id)})
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
@@ -208,6 +197,7 @@ def viewer_headers(viewer_user):
 def sample_product(db_session, tenant, admin_user):
     """Create a sample product for testing."""
     from app.modules.inventory.models import Product
+
     product = Product(
         tenant_id=tenant.id,
         created_by=admin_user.id,

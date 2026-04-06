@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.extensions import db
@@ -105,8 +105,9 @@ class Voucher(db.Model):
     version = db.Column(db.Integer, nullable=False, default=1)
 
     voucher_type = db.relationship("VoucherType", back_populates="vouchers")
-    transactions = db.relationship("VoucherTransaction", back_populates="voucher",
-                                   lazy="dynamic", order_by="VoucherTransaction.occurred_at.desc()")
+    transactions = db.relationship(
+        "VoucherTransaction", back_populates="voucher", lazy="dynamic", order_by="VoucherTransaction.occurred_at.desc()"
+    )
 
     __table_args__ = (
         Index("idx_v_tenant_status", "tenant_id", "status"),
@@ -118,9 +119,9 @@ class Voucher(db.Model):
         CheckConstraint("remaining_balance <= face_value", name="ck_v_balance_le_face"),
         CheckConstraint("print_count >= 0", name="ck_v_print_count"),
         CheckConstraint(
-            "status IN ('issued', 'sold', 'partially_redeemed', "
-            "'redeemed', 'expired', 'cancelled')",
-            name="ck_v_status"),
+            "status IN ('issued', 'sold', 'partially_redeemed', " "'redeemed', 'expired', 'cancelled')",
+            name="ck_v_status",
+        ),
     )
 
     def __repr__(self):
@@ -174,7 +175,8 @@ class VoucherTransaction(db.Model):
         CheckConstraint(
             "transaction_type IN ('issued', 'sold', 'redeemed', "
             "'expired', 'cancelled', 'adjusted', 'refund_new_voucher')",
-            name="ck_vtx_type"),
+            name="ck_vtx_type",
+        ),
     )
 
     def __repr__(self):

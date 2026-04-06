@@ -31,7 +31,6 @@ from app.modules.vouchers.security import (
     verify_voucher_code_format,
 )
 
-
 TWO_PLACES = Decimal("0.01")
 HIGH_VALUE_THRESHOLD = Decimal("2000000")  # COP — SARLAFT threshold
 MAX_PRINT_COUNT = 3
@@ -39,14 +38,21 @@ MAX_PRINT_COUNT = 3
 
 # ── VoucherType CRUD ─────────────────────────────────────────────
 
+
 def create_voucher_type(
-    tenant_id: str, created_by: str,
-    name: str, face_value: float, validity_days: int,
-    max_issuable: int = None, color_hex: str = None,
-    design_template: str = "default", notes: str = None,
+    tenant_id: str,
+    created_by: str,
+    name: str,
+    face_value: float,
+    validity_days: int,
+    max_issuable: int = None,
+    color_hex: str = None,
+    design_template: str = "default",
+    notes: str = None,
 ) -> dict:
     """Create a new voucher type (template)."""
     import bleach
+
     safe_name = bleach.clean(name, tags=[], strip=True)[:100]
 
     if validity_days < 90:
@@ -79,9 +85,7 @@ def list_voucher_types(tenant_id: str, include_inactive: bool = False) -> list:
     return [_voucher_type_to_dict(vt) for vt in types]
 
 
-def update_voucher_type(
-    tenant_id: str, type_id: str, updated_by: str, **kwargs
-) -> dict:
+def update_voucher_type(tenant_id: str, type_id: str, updated_by: str, **kwargs) -> dict:
     """Update a voucher type. Cannot change face_value if vouchers have been issued."""
     vt = VoucherType.query.filter_by(id=type_id, tenant_id=tenant_id, deleted_at=None).first()
     if not vt:
@@ -91,6 +95,7 @@ def update_voucher_type(
         raise ValueError("No se puede cambiar el valor nominal si ya hay bonos emitidos")
 
     import bleach
+
     for key, value in kwargs.items():
         if key == "name":
             value = bleach.clean(value, tags=[], strip=True)[:100]
@@ -118,8 +123,11 @@ def delete_voucher_type(tenant_id: str, type_id: str, deleted_by: str) -> dict:
 
 # ── Voucher Emission ─────────────────────────────────────────────
 
+
 def emit_voucher(
-    tenant_id: str, type_id: str, created_by: str,
+    tenant_id: str,
+    type_id: str,
+    created_by: str,
     idempotency_key: str = None,
 ) -> dict:
     """Emit a single voucher from a voucher type template."""
@@ -128,9 +136,7 @@ def emit_voucher(
         if existing:
             return _voucher_to_dict(existing)
 
-    vt = VoucherType.query.filter_by(
-        id=type_id, tenant_id=tenant_id, deleted_at=None
-    ).with_for_update().first()
+    vt = VoucherType.query.filter_by(id=type_id, tenant_id=tenant_id, deleted_at=None).with_for_update().first()
 
     if not vt:
         raise VoucherNotFoundError("Tipo de bono no encontrado")
@@ -183,7 +189,10 @@ def emit_voucher(
 
 
 def emit_batch(
-    tenant_id: str, type_id: str, quantity: int, created_by: str,
+    tenant_id: str,
+    type_id: str,
+    quantity: int,
+    created_by: str,
 ) -> list:
     """Emit multiple vouchers from a voucher type template."""
     if quantity < 1 or quantity > 200:
@@ -203,10 +212,15 @@ def emit_batch(
 
 # ── Voucher Sale (POS) ───────────────────────────────────────────
 
+
 def sell_voucher(
-    tenant_id: str, code: str, sale_id: str,
-    cashier_id: str, idempotency_key: str,
-    buyer_name: str = None, buyer_customer_id: str = None,
+    tenant_id: str,
+    code: str,
+    sale_id: str,
+    cashier_id: str,
+    idempotency_key: str,
+    buyer_name: str = None,
+    buyer_customer_id: str = None,
     buyer_id_document: str = None,
 ) -> dict:
     """
@@ -221,9 +235,7 @@ def sell_voucher(
         raise VoucherInvalidCodeError()
 
     try:
-        voucher = Voucher.query.filter_by(
-            code=code, tenant_id=tenant_id
-        ).with_for_update(nowait=True).first()
+        voucher = Voucher.query.filter_by(code=code, tenant_id=tenant_id).with_for_update(nowait=True).first()
     except OperationalError:
         raise VoucherConcurrencyError()
 
@@ -273,6 +285,7 @@ def sell_voucher(
 
 # ── Voucher Validation (pre-checkout) ────────────────────────────
 
+
 def validate_voucher(tenant_id: str, code: str) -> dict:
     """Validate a voucher before applying it to a sale. Read-only."""
     code = code.upper().strip()
@@ -311,9 +324,14 @@ def validate_voucher(tenant_id: str, code: str) -> dict:
 
 # ── Voucher Redemption (POS) ─────────────────────────────────────
 
+
 def redeem_voucher(
-    tenant_id: str, code: str, sale_id: str,
-    amount: float, cashier_id: str, idempotency_key: str,
+    tenant_id: str,
+    code: str,
+    sale_id: str,
+    amount: float,
+    cashier_id: str,
+    idempotency_key: str,
     payment_id: str = None,
 ) -> dict:
     """
@@ -330,9 +348,7 @@ def redeem_voucher(
 
     # Lock the voucher row — NOWAIT returns immediately if locked
     try:
-        voucher = Voucher.query.filter_by(
-            code=code, tenant_id=tenant_id
-        ).with_for_update(nowait=True).first()
+        voucher = Voucher.query.filter_by(code=code, tenant_id=tenant_id).with_for_update(nowait=True).first()
     except OperationalError:
         raise VoucherConcurrencyError()
 
@@ -358,14 +374,12 @@ def redeem_voucher(
     # Balance check
     if amount_dec > voucher.remaining_balance:
         raise VoucherInsufficientBalanceError(
-            f"Saldo del bono: ${float(voucher.remaining_balance):,.0f}, "
-            f"monto solicitado: ${float(amount_dec):,.0f}"
+            f"Saldo del bono: ${float(voucher.remaining_balance):,.0f}, " f"monto solicitado: ${float(amount_dec):,.0f}"
         )
     if amount_dec <= 0:
         raise ValueError("El monto a redimir debe ser mayor a 0")
 
     # Update voucher
-    balance_before = voucher.remaining_balance
     voucher.remaining_balance -= amount_dec
 
     if voucher.remaining_balance == 0:
@@ -405,6 +419,7 @@ def redeem_voucher(
 
 # ── Voucher Expiration ───────────────────────────────────────────
 
+
 def expire_due_vouchers(tenant_id: str = None) -> dict:
     """
     Mark sold/partially_redeemed vouchers as expired when past expires_at.
@@ -435,18 +450,20 @@ def expire_due_vouchers(tenant_id: str = None) -> dict:
             notes=f"Bono expirado, saldo ${float(balance):,.0f} a cuarentena",
         )
 
-        results.append({
-            "voucher_id": str(voucher.id),
-            "tenant_id": str(voucher.tenant_id),
-            "code": voucher.code,
-            "expired_balance": float(balance),
-            "accounting": {
-                "debit_puc": "2910",  # Bonos por redimir
-                "credit_puc": "2910",  # Bonos en cuarentena (sub-cuenta 02)
-                "amount": float(balance),
-                "description": f"Bono {voucher.code} expirado → cuarentena",
-            },
-        })
+        results.append(
+            {
+                "voucher_id": str(voucher.id),
+                "tenant_id": str(voucher.tenant_id),
+                "code": voucher.code,
+                "expired_balance": float(balance),
+                "accounting": {
+                    "debit_puc": "2910",  # Bonos por redimir
+                    "credit_puc": "2910",  # Bonos en cuarentena (sub-cuenta 02)
+                    "amount": float(balance),
+                    "description": f"Bono {voucher.code} expirado → cuarentena",
+                },
+            }
+        )
 
     if results:
         db.session.commit()
@@ -456,13 +473,15 @@ def expire_due_vouchers(tenant_id: str = None) -> dict:
 
 # ── Voucher Cancellation ─────────────────────────────────────────
 
+
 def cancel_voucher(
-    tenant_id: str, voucher_id: str, cancelled_by: str, reason: str,
+    tenant_id: str,
+    voucher_id: str,
+    cancelled_by: str,
+    reason: str,
 ) -> dict:
     """Cancel an issued (unsold) voucher."""
-    voucher = Voucher.query.filter_by(
-        id=voucher_id, tenant_id=tenant_id
-    ).with_for_update().first()
+    voucher = Voucher.query.filter_by(id=voucher_id, tenant_id=tenant_id).with_for_update().first()
 
     if not voucher:
         raise VoucherNotFoundError()
@@ -494,14 +513,15 @@ def cancel_voucher(
 
 # ── Refund → New Voucher ─────────────────────────────────────────
 
+
 def issue_refund_voucher(
-    tenant_id: str, original_voucher_id: str, refund_amount: float,
+    tenant_id: str,
+    original_voucher_id: str,
+    refund_amount: float,
     created_by: str,
 ) -> dict:
     """Issue a new voucher as refund for a return paid with voucher."""
-    original = Voucher.query.filter_by(
-        id=original_voucher_id, tenant_id=tenant_id
-    ).first()
+    original = Voucher.query.filter_by(id=original_voucher_id, tenant_id=tenant_id).first()
     if not original:
         raise VoucherNotFoundError("Bono original no encontrado")
 
@@ -525,11 +545,10 @@ def issue_refund_voucher(
 
 # ── Print Tracking ───────────────────────────────────────────────
 
+
 def record_print(tenant_id: str, voucher_id: str, printed_by: str) -> dict:
     """Record a print event for a voucher. Max 3 reprints."""
-    voucher = Voucher.query.filter_by(
-        id=voucher_id, tenant_id=tenant_id
-    ).first()
+    voucher = Voucher.query.filter_by(id=voucher_id, tenant_id=tenant_id).first()
     if not voucher:
         raise VoucherNotFoundError()
 
@@ -548,6 +567,7 @@ def record_print(tenant_id: str, voucher_id: str, printed_by: str) -> dict:
 
 # ── Queries ──────────────────────────────────────────────────────
 
+
 def get_voucher(tenant_id: str, voucher_id: str) -> Optional[dict]:
     """Get a voucher by ID."""
     v = Voucher.query.filter_by(id=voucher_id, tenant_id=tenant_id).first()
@@ -562,8 +582,11 @@ def get_voucher_by_code(tenant_id: str, code: str) -> Optional[dict]:
 
 
 def list_vouchers(
-    tenant_id: str, page: int = 1, per_page: int = 20,
-    status: str = None, type_id: str = None,
+    tenant_id: str,
+    page: int = 1,
+    per_page: int = 20,
+    status: str = None,
+    type_id: str = None,
 ) -> dict:
     """List vouchers with filters."""
     q = Voucher.query.filter_by(tenant_id=tenant_id)
@@ -573,15 +596,15 @@ def list_vouchers(
         q = q.filter(Voucher.voucher_type_id == type_id)
 
     total = q.count()
-    vouchers = q.order_by(Voucher.created_at.desc()).offset(
-        (page - 1) * per_page
-    ).limit(per_page).all()
+    vouchers = q.order_by(Voucher.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
     return {
         "data": [_voucher_to_dict(v) for v in vouchers],
         "pagination": {
-            "page": page, "per_page": per_page,
-            "total": total, "has_next": page * per_page < total,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "has_next": page * per_page < total,
         },
     }
 
@@ -621,23 +644,34 @@ def get_voucher_stats(tenant_id: str) -> dict:
 
 def get_voucher_history(tenant_id: str, voucher_id: str) -> list:
     """Get full transaction history for a voucher."""
-    txns = VoucherTransaction.query.filter_by(
-        voucher_id=voucher_id, tenant_id=tenant_id
-    ).order_by(VoucherTransaction.occurred_at.desc()).all()
+    txns = (
+        VoucherTransaction.query.filter_by(voucher_id=voucher_id, tenant_id=tenant_id)
+        .order_by(VoucherTransaction.occurred_at.desc())
+        .all()
+    )
 
     return [_transaction_to_dict(t) for t in txns]
 
 
 # ── Internal Helpers ─────────────────────────────────────────────
 
+
 def _log_transaction(
-    voucher: Voucher, transaction_type: str, amount_change: Decimal,
-    performed_by: str, sale_id: str = None, payment_id: str = None,
-    journal_entry_id: str = None, notes: str = None,
+    voucher: Voucher,
+    transaction_type: str,
+    amount_change: Decimal,
+    performed_by: str,
+    sale_id: str = None,
+    payment_id: str = None,
+    journal_entry_id: str = None,
+    notes: str = None,
     idempotency_key: str = None,
 ) -> VoucherTransaction:
     """Create an immutable transaction log entry."""
-    balance_before = voucher.remaining_balance + abs(amount_change) if amount_change < 0 else voucher.remaining_balance - amount_change
+    if amount_change < 0:
+        balance_before = voucher.remaining_balance + abs(amount_change)
+    else:
+        balance_before = voucher.remaining_balance - amount_change
 
     ip_address = None
     try:
@@ -665,6 +699,7 @@ def _log_transaction(
 
 
 # ── Serializers ──────────────────────────────────────────────────
+
 
 def _voucher_type_to_dict(vt: VoucherType) -> dict:
     return {

@@ -29,9 +29,7 @@ def test_voucher_stats(client, admin_headers):
 
 
 def test_validate_requires_code(client, admin_headers):
-    resp = client.post("/api/v1/vouchers/validate",
-                       json={},
-                       headers=admin_headers)
+    resp = client.post("/api/v1/vouchers/validate", json={}, headers=admin_headers)
     assert resp.status_code == 400
 
 
@@ -42,21 +40,19 @@ def test_redeem_requires_auth(client):
 
 def test_create_type_validation(client, admin_headers):
     # Missing required fields
-    resp = client.post("/api/v1/vouchers/types",
-                       json={},
-                       headers=admin_headers)
+    resp = client.post("/api/v1/vouchers/types", json={}, headers=admin_headers)
     assert resp.status_code == 400
 
     # Validity too short (min 90 days)
-    resp = client.post("/api/v1/vouchers/types",
-                       json={"name": "Test", "face_value": 10000, "validity_days": 30},
-                       headers=admin_headers)
+    resp = client.post(
+        "/api/v1/vouchers/types", json={"name": "Test", "face_value": 10000, "validity_days": 30}, headers=admin_headers
+    )
     assert resp.status_code == 400
 
 
 def test_emit_validation(client, admin_headers):
     # Non-existent type
-    resp = client.post("/api/v1/vouchers/emit",
-                       json={"type_id": "00000000-0000-0000-0000-000000000000"},
-                       headers=admin_headers)
+    resp = client.post(
+        "/api/v1/vouchers/emit", json={"type_id": "00000000-0000-0000-0000-000000000000"}, headers=admin_headers
+    )
     assert resp.status_code in (400, 404)

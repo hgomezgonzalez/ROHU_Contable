@@ -1,7 +1,7 @@
 """Voucher print service — PDF/QR generation for thermal and A4 printers."""
 
-import io
 import base64
+import io
 from datetime import datetime, timezone
 
 
@@ -14,8 +14,8 @@ def generate_voucher_qr_image(voucher_code: str) -> bytes:
     """Generate a QR code image as PNG bytes."""
     try:
         import qrcode
-        qr = qrcode.QRCode(version=1, box_size=10, border=4,
-                           error_correction=qrcode.constants.ERROR_CORRECT_H)
+
+        qr = qrcode.QRCode(version=1, box_size=10, border=4, error_correction=qrcode.constants.ERROR_CORRECT_H)
         qr.add_data(voucher_code)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")

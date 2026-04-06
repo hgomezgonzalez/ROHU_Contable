@@ -16,7 +16,6 @@ Fixtures used (all defined in conftest.py):
 
 import uuid
 
-
 # ── Helper ────────────────────────────────────────────────────────
 
 
@@ -118,9 +117,7 @@ class TestPOSCheckoutE2EFlow:
     And a journal entry must be created automatically
     """
 
-    def test_checkout_decrements_stock_and_posts_journal_entry(
-        self, client, admin_headers, sample_product, tenant
-    ):
+    def test_checkout_decrements_stock_and_posts_journal_entry(self, client, admin_headers, sample_product, tenant):
         # Seed PUC accounts (required for auto-posting)
         _seed_accounts_if_needed(client, admin_headers)
 
@@ -167,15 +164,11 @@ class TestPOSCheckoutE2EFlow:
         new_stock = _get_product_stock(client, admin_headers, product_id)
         assert new_stock is not None, "Could not retrieve updated stock"
         expected_stock = initial_stock - qty_sold
-        assert float(new_stock) == expected_stock, (
-            f"Expected stock {expected_stock}, got {new_stock}"
-        )
+        assert float(new_stock) == expected_stock, f"Expected stock {expected_stock}, got {new_stock}"
 
         # Step 5: Verify journal entries were created (at least 1 more)
         entries_after = _count_journal_entries(client, admin_headers)
-        assert entries_after > entries_before, (
-            f"Expected new journal entries after sale, still have {entries_after}"
-        )
+        assert entries_after > entries_before, f"Expected new journal entries after sale, still have {entries_after}"
 
         # Step 6: Verify sale is retrievable
         resp2 = client.get(f"/api/v1/pos/sales/{sale_id}", headers=admin_headers)
@@ -195,9 +188,7 @@ class TestPurchaseOrderE2EFlow:
     Then product stock must increase by the received quantity
     """
 
-    def test_create_send_receive_po_increments_stock(
-        self, client, admin_headers, sample_product, tenant
-    ):
+    def test_create_send_receive_po_increments_stock(self, client, admin_headers, sample_product, tenant):
         _seed_accounts_if_needed(client, admin_headers)
 
         product_id = str(sample_product.id)
@@ -226,7 +217,7 @@ class TestPurchaseOrderE2EFlow:
                 "items": [
                     {
                         "product_id": product_id,
-                        "quantity": qty_ordered,        # service reads item_data["quantity"]
+                        "quantity": qty_ordered,  # service reads item_data["quantity"]
                         "unit_cost": float(sample_product.purchase_price),
                         "tax_rate": 19.0,
                     }
@@ -261,9 +252,9 @@ class TestPurchaseOrderE2EFlow:
         new_stock = _get_product_stock(client, admin_headers, product_id)
         assert new_stock is not None
         expected_stock = initial_stock + qty_ordered
-        assert float(new_stock) == expected_stock, (
-            f"Expected stock {expected_stock} after receiving PO, got {new_stock}"
-        )
+        assert (
+            float(new_stock) == expected_stock
+        ), f"Expected stock {expected_stock} after receiving PO, got {new_stock}"
 
 
 # ── Flow 3: Customer → Credit Sale → Payment → Amount Due ────────
@@ -280,9 +271,7 @@ class TestCreditSaleAndPaymentE2EFlow:
     Then amount_due must decrease
     """
 
-    def test_credit_sale_then_payment_reduces_amount_due(
-        self, client, admin_headers, sample_product, tenant
-    ):
+    def test_credit_sale_then_payment_reduces_amount_due(self, client, admin_headers, sample_product, tenant):
         _seed_accounts_if_needed(client, admin_headers)
 
         product_id = str(sample_product.id)
@@ -331,9 +320,9 @@ class TestCreditSaleAndPaymentE2EFlow:
         assert sale["payment_status"] == "pending"
         total_amount = float(sale["total_amount"])
         amount_due_before = float(sale["amount_due"])
-        assert amount_due_before == total_amount, (
-            f"amount_due {amount_due_before} should equal total {total_amount} on new credit sale"
-        )
+        assert (
+            amount_due_before == total_amount
+        ), f"amount_due {amount_due_before} should equal total {total_amount} on new credit sale"
 
         # Step 3: Register a partial payment (abono)
         payment_amount = total_amount / 2  # 50% payment
@@ -355,13 +344,13 @@ class TestCreditSaleAndPaymentE2EFlow:
         updated_sale = _json(sale_resp)["data"]
         amount_due_after = float(updated_sale["amount_due"])
 
-        assert amount_due_after < amount_due_before, (
-            f"amount_due should decrease after payment. Before: {amount_due_before}, After: {amount_due_after}"
-        )
+        assert (
+            amount_due_after < amount_due_before
+        ), f"amount_due should decrease after payment. Before: {amount_due_before}, After: {amount_due_after}"
         # Tolerance of 1 peso for rounding
-        assert abs(amount_due_after - (amount_due_before - payment_amount)) <= 1, (
-            f"Expected amount_due ~{amount_due_before - payment_amount}, got {amount_due_after}"
-        )
+        assert (
+            abs(amount_due_after - (amount_due_before - payment_amount)) <= 1
+        ), f"Expected amount_due ~{amount_due_before - payment_amount}, got {amount_due_after}"
 
 
 # ── Flow 4: Cash Receipt → Journal Entry → Void → Reversal ───────
@@ -378,9 +367,7 @@ class TestCashReceiptVoidE2EFlow:
     Then a reversal journal entry must appear (total entries += 1 more)
     """
 
-    def test_cash_receipt_creates_journal_entry_and_void_creates_reversal(
-        self, client, admin_headers
-    ):
+    def test_cash_receipt_creates_journal_entry_and_void_creates_reversal(self, client, admin_headers):
         _seed_accounts_if_needed(client, admin_headers)
 
         entries_before = _count_journal_entries(client, admin_headers)
@@ -404,9 +391,7 @@ class TestCashReceiptVoidE2EFlow:
 
         # Step 2: Verify at least one new journal entry was generated
         entries_after_create = _count_journal_entries(client, admin_headers)
-        assert entries_after_create > entries_before, (
-            "No journal entry was created after cash receipt"
-        )
+        assert entries_after_create > entries_before, "No journal entry was created after cash receipt"
 
         # Step 3: Void the receipt
         void_resp = client.post(
@@ -419,9 +404,9 @@ class TestCashReceiptVoidE2EFlow:
 
         # Step 4: Verify reversal journal entry was created
         entries_after_void = _count_journal_entries(client, admin_headers)
-        assert entries_after_void > entries_after_create, (
-            "No reversal journal entry was created after voiding the receipt"
-        )
+        assert (
+            entries_after_void > entries_after_create
+        ), "No reversal journal entry was created after voiding the receipt"
 
 
 # ── Flow 5: Expense (caused) → Journal → Pay → Status Paid ───────
@@ -439,9 +424,7 @@ class TestExpensePaymentE2EFlow:
     Then its payment_status becomes 'paid' and another journal entry appears
     """
 
-    def test_create_caused_expense_then_pay_posts_entries(
-        self, client, admin_headers
-    ):
+    def test_create_caused_expense_then_pay_posts_entries(self, client, admin_headers):
         _seed_accounts_if_needed(client, admin_headers)
 
         entries_before = _count_journal_entries(client, admin_headers)
@@ -450,7 +433,7 @@ class TestExpensePaymentE2EFlow:
         expense_resp = client.post(
             "/api/v1/accounting/expenses",
             json={
-                "puc_code": "5195",          # Gastos diversos
+                "puc_code": "5195",  # Gastos diversos
                 "concept": "Servicios públicos E2E test",
                 "amount": 120000,
                 "tax_amount": 0,
@@ -466,9 +449,7 @@ class TestExpensePaymentE2EFlow:
 
         # Step 2: Verify journal entry was created for accrual
         entries_after_create = _count_journal_entries(client, admin_headers)
-        assert entries_after_create > entries_before, (
-            "No journal entry created for caused expense"
-        )
+        assert entries_after_create > entries_before, "No journal entry created for caused expense"
 
         # Step 3: Pay the expense
         pay_resp = client.post(
@@ -478,12 +459,10 @@ class TestExpensePaymentE2EFlow:
         )
         assert pay_resp.status_code == 200, f"pay_expense failed: {pay_resp.data[:300]}"
         paid_expense = _json(pay_resp)["data"]
-        assert paid_expense["payment_status"] == "paid", (
-            f"Expected payment_status='paid' after payment, got '{paid_expense['payment_status']}'"
-        )
+        assert (
+            paid_expense["payment_status"] == "paid"
+        ), f"Expected payment_status='paid' after payment, got '{paid_expense['payment_status']}'"
 
         # Step 4: Verify another journal entry was created for the payment
         entries_after_pay = _count_journal_entries(client, admin_headers)
-        assert entries_after_pay > entries_after_create, (
-            "No journal entry created for expense payment settlement"
-        )
+        assert entries_after_pay > entries_after_create, "No journal entry created for expense payment settlement"

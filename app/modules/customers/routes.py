@@ -3,8 +3,8 @@
 from flask import g, jsonify, request
 
 from app.modules.auth_rbac.services import require_permission
-from app.modules.customers.blueprint import customers_bp
 from app.modules.customers import services as cust
+from app.modules.customers.blueprint import customers_bp
 
 
 @customers_bp.route("", methods=["GET"])
@@ -20,16 +20,18 @@ def list_customers():
 def create_customer():
     data = request.get_json()
     if not data.get("name"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "name es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "name es requerido"}), 400
 
     customer = cust.create_customer(
-        tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-        name=data["name"], tax_id=data.get("tax_id"),
+        tenant_id=g.tenant_id,
+        created_by=str(g.current_user.id),
+        name=data["name"],
+        tax_id=data.get("tax_id"),
         tax_id_type=data.get("tax_id_type", "CC"),
-        contact_name=data.get("contact_name"), phone=data.get("phone"),
-        email=data.get("email"), address=data.get("address"),
+        contact_name=data.get("contact_name"),
+        phone=data.get("phone"),
+        email=data.get("email"),
+        address=data.get("address"),
         city=data.get("city"),
         credit_limit=data.get("credit_limit", 0),
         credit_days=data.get("credit_days", 0),
@@ -61,18 +63,19 @@ def update_customer(customer_id):
 
 # ── Customer Payments (Abonos) ───────────────────────────────────
 
+
 @customers_bp.route("/<customer_id>/payments", methods=["POST"])
 @require_permission("customer_payments", "create")
 def create_payment(customer_id):
     data = request.get_json()
     if not data.get("amount"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "amount es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "amount es requerido"}), 400
     try:
         payment = cust.create_customer_payment(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-            customer_id=customer_id, amount=data["amount"],
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
+            customer_id=customer_id,
+            amount=data["amount"],
             payment_method=data.get("payment_method", "cash"),
             sale_id=data.get("sale_id"),
             reference=data.get("reference"),
@@ -106,7 +109,9 @@ def write_off(customer_id):
     data = request.get_json() or {}
     try:
         result = cust.write_off_customer(
-            g.tenant_id, customer_id, str(g.current_user.id),
+            g.tenant_id,
+            customer_id,
+            str(g.current_user.id),
             sale_id=data.get("sale_id"),
         )
         return jsonify(success=True, data=result)
@@ -116,19 +121,24 @@ def write_off(customer_id):
 
 # ── Sales Debit Notes ────────────────────────────────────────────
 
+
 @customers_bp.route("/<customer_id>/debit-notes", methods=["POST"])
 @require_permission("customers", "update")
 def create_debit_note(customer_id):
     data = request.get_json()
     if not data.get("reason") or not data.get("amount"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "reason y amount son requeridos"
-        }), 400
+        return (
+            jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "reason y amount son requeridos"}),
+            400,
+        )
     try:
         dn = cust.create_sales_debit_note(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-            customer_id=customer_id, reason=data["reason"],
-            amount=data["amount"], tax_amount=data.get("tax_amount", 0),
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
+            customer_id=customer_id,
+            reason=data["reason"],
+            amount=data["amount"],
+            tax_amount=data.get("tax_amount", 0),
             sale_id=data.get("sale_id"),
         )
         return jsonify(success=True, data=dn), 201
@@ -145,14 +155,17 @@ def list_debit_notes(customer_id):
 
 # ── Collection Campaigns ─────────────────────────────────────────
 
+
 @customers_bp.route("/campaigns/preview", methods=["POST"])
 @require_permission("customers", "read")
 def preview_campaign():
     """Preview which customers would be included in a campaign without creating it."""
     from datetime import datetime, timezone
+
+    from sqlalchemy import func
+
     from app.modules.pos.models import Sale
     from app.modules.pos.services import mark_overdue_sales
-    from sqlalchemy import func
 
     data = request.get_json() or {}
     min_days = data.get("min_days_overdue", 1)
@@ -182,9 +195,9 @@ def preview_campaign():
         customers[cid]["invoices"] += 1
 
     result = sorted(customers.values(), key=lambda x: x["total_due"], reverse=True)
-    return jsonify(success=True, data=result, total_customers=len(result),
-                   total_amount=sum(c["total_due"] for c in result))
-
+    return jsonify(
+        success=True, data=result, total_customers=len(result), total_amount=sum(c["total_due"] for c in result)
+    )
 
 
 @customers_bp.route("/campaigns", methods=["POST"])
@@ -192,12 +205,11 @@ def preview_campaign():
 def create_campaign():
     data = request.get_json()
     if not data.get("name"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "name es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "name es requerido"}), 400
     try:
         campaign = cust.create_collection_campaign(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
             name=data["name"],
             target_type=data.get("target_type", "all_overdue"),
             min_days_overdue=data.get("min_days_overdue", 1),
@@ -251,15 +263,21 @@ def execute_campaign(campaign_id):
 @require_permission("customers", "create")
 def send_campaign_notifications(campaign_id):
     """Send email notifications to all customers in a campaign."""
-    from app.modules.auth_rbac.models import Tenant
     from app.core.email_service import send_campaign_emails
+    from app.modules.auth_rbac.models import Tenant
 
     tenant = Tenant.query.get(g.tenant_id)
     if not tenant or not tenant.smtp_host:
-        return jsonify(success=False, error={
-            "code": "SMTP_NOT_CONFIGURED",
-            "message": "Configure el servidor SMTP en Mi Negocio > Notificaciones para enviar emails."
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={
+                    "code": "SMTP_NOT_CONFIGURED",
+                    "message": "Configure el servidor SMTP en Mi Negocio > Notificaciones para enviar emails.",
+                },
+            ),
+            400,
+        )
 
     campaign_data = cust.get_collection_campaign(g.tenant_id, campaign_id)
 
@@ -272,11 +290,14 @@ def send_campaign_notifications(campaign_id):
         "business_name": tenant.name,
     }
 
-    items_for_email = [{
-        "customer_email": i.get("customer_email"),
-        "rendered_message": i.get("rendered_message"),
-        "customer_name": i.get("customer_name"),
-    } for i in campaign_data.get("items", [])]
+    items_for_email = [
+        {
+            "customer_email": i.get("customer_email"),
+            "rendered_message": i.get("rendered_message"),
+            "customer_name": i.get("customer_name"),
+        }
+        for i in campaign_data.get("items", [])
+    ]
 
     result = send_campaign_emails(smtp_config, items_for_email)
 
@@ -288,8 +309,11 @@ def send_campaign_notifications(campaign_id):
                 if r and r.get("success"):
                     try:
                         cust.update_campaign_item(
-                            g.tenant_id, campaign_id, item_data["id"],
-                            contact_status="contacted", contact_method="email"
+                            g.tenant_id,
+                            campaign_id,
+                            item_data["id"],
+                            contact_status="contacted",
+                            contact_method="email",
                         )
                     except Exception:
                         pass
@@ -318,6 +342,7 @@ def complete_campaign(campaign_id):
 
 
 # ── Aging Report ─────────────────────────────────────────────────
+
 
 @customers_bp.route("/aging", methods=["GET"])
 @require_permission("reports", "read")

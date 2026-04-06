@@ -49,13 +49,9 @@ class CashReceipt(db.Model):
         Index("idx_cr_tenant_date", "tenant_id", "receipt_date"),
         CheckConstraint("amount > 0", name="ck_cr_amount"),
         CheckConstraint(
-            "source_type IN ('customer_payment', 'other_income', 'loan', 'partner_capital')",
-            name="ck_cr_source_type"
+            "source_type IN ('customer_payment', 'other_income', 'loan', 'partner_capital')", name="ck_cr_source_type"
         ),
-        CheckConstraint(
-            "payment_method IN ('cash', 'transfer', 'check', 'nequi', 'daviplata')",
-            name="ck_cr_method"
-        ),
+        CheckConstraint("payment_method IN ('cash', 'transfer', 'check', 'nequi', 'daviplata')", name="ck_cr_method"),
         CheckConstraint("status IN ('active', 'voided')", name="ck_cr_status"),
     )
 
@@ -101,12 +97,9 @@ class CashDisbursement(db.Model):
         CheckConstraint("amount > 0", name="ck_cd_amount"),
         CheckConstraint(
             "destination_type IN ('supplier_payment', 'expense', 'petty_cash', 'bank_transfer', 'other')",
-            name="ck_cd_dest_type"
+            name="ck_cd_dest_type",
         ),
-        CheckConstraint(
-            "payment_method IN ('cash', 'transfer', 'check', 'nequi', 'daviplata')",
-            name="ck_cd_method"
-        ),
+        CheckConstraint("payment_method IN ('cash', 'transfer', 'check', 'nequi', 'daviplata')", name="ck_cd_method"),
         CheckConstraint("status IN ('active', 'voided')", name="ck_cd_status"),
     )
 

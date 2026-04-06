@@ -1,0 +1,26 @@
+[flake8]
+max-line-length = 120
+exclude =
+    migrations,
+    __pycache__,
+    .git,
+    venv
+per-file-ignores =
+    # Legacy files — pre-existing style issues, fix incrementally
+    app/__init__.py: E501, F841, E127
+    app/core/audit.py: F401
+    app/core/email_service.py: E501
+    app/modules/auth_rbac/models.py: E501
+    app/modules/auth_rbac/routes.py: E305, E402, E127, E401
+    app/modules/auth_rbac/services.py: F401, E501
+    app/modules/accounting/routes.py: E501
+    app/modules/accounting/services.py: F401, E501, F541, E127, E741
+    app/modules/customers/routes.py: F401, E303
+    app/modules/customers/services.py: E501
+    app/modules/inventory/ocr_service.py: F401, F841, E501, E701
+    app/modules/invoicing/services.py: F401
+    app/modules/purchases/routes.py: E303
+    app/modules/purchases/services.py: F401
+    app/modules/reports/services.py: F401, E305, E402, E131, F841, E702, E731, E501
+    tests/conftest.py: F401, F841
+    tests/integration/test_e2e_flows.py: F841

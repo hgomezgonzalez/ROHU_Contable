@@ -30,6 +30,7 @@ LOCKOUT_MINUTES = 15
 
 # ── Password Utilities ────────────────────────────────────────────
 
+
 def hash_password(password: str) -> str:
     return ph.hash(password)
 
@@ -46,6 +47,7 @@ def hash_token(token: str) -> str:
 
 
 # ── Tenant Services ───────────────────────────────────────────────
+
 
 def create_tenant(
     name: str,
@@ -89,18 +91,12 @@ def create_tenant(
     # Assign admin role (manual insert because user_roles has tenant_id NOT NULL)
     admin_role = Role.query.filter_by(name="admin", is_system_role=True).first()
     if admin_role:
-        db.session.execute(
-            user_roles.insert().values(
-                user_id=user.id, role_id=admin_role.id, tenant_id=tenant.id
-            )
-        )
+        db.session.execute(user_roles.insert().values(user_id=user.id, role_id=admin_role.id, tenant_id=tenant.id))
 
     db.session.commit()
 
     # Re-query to fully load roles + permissions (refresh doesn't reload joined relations)
-    user = User.query.options(
-        db.joinedload(User.roles).joinedload(Role.permissions)
-    ).get(user.id)
+    user = User.query.options(db.joinedload(User.roles).joinedload(Role.permissions)).get(user.id)
 
     return {
         "tenant": _tenant_to_dict(tenant),
@@ -110,11 +106,10 @@ def create_tenant(
 
 # ── Auth Services ─────────────────────────────────────────────────
 
+
 def authenticate(email: str, password: str, tenant_id: Optional[str] = None) -> dict:
     """Authenticate user. Returns user data or raises ValueError."""
-    query = User.query.options(
-        db.joinedload(User.roles).joinedload(Role.permissions)
-    ).filter(
+    query = User.query.options(db.joinedload(User.roles).joinedload(Role.permissions)).filter(
         User.email == email.lower().strip(),
         User.is_active.is_(True),
         User.deleted_at.is_(None),
@@ -151,9 +146,7 @@ def authenticate(email: str, password: str, tenant_id: Optional[str] = None) -> 
     return _user_to_dict(user)
 
 
-def create_refresh_token_record(
-    user_id: str, tenant_id: str, raw_token: str, ip_address: str = ""
-) -> None:
+def create_refresh_token_record(user_id: str, tenant_id: str, raw_token: str, ip_address: str = "") -> None:
     """Store a hashed refresh token in the database."""
     record = RefreshToken(
         user_id=user_id,
@@ -179,6 +172,7 @@ def revoke_all_user_tokens(user_id: str) -> int:
 
 # ── User Services ─────────────────────────────────────────────────
 
+
 def create_user(
     tenant_id: str,
     email: str,
@@ -188,9 +182,7 @@ def create_user(
     role_name: str = "cashier",
 ) -> dict:
     """Create a new user within a tenant."""
-    existing = User.query.filter_by(
-        tenant_id=tenant_id, email=email.lower().strip()
-    ).first()
+    existing = User.query.filter_by(tenant_id=tenant_id, email=email.lower().strip()).first()
     if existing:
         raise ValueError("Email ya registrado en este negocio")
 
@@ -198,9 +190,7 @@ def create_user(
     if not tenant:
         raise ValueError("Negocio no encontrado")
 
-    user_count = User.query.filter_by(
-        tenant_id=tenant_id, is_active=True
-    ).count()
+    user_count = User.query.filter_by(tenant_id=tenant_id, is_active=True).count()
     if user_count >= tenant.max_users:
         raise ValueError(f"Límite de usuarios alcanzado ({tenant.max_users})")
 
@@ -220,11 +210,7 @@ def create_user(
     if not role:
         role = Role.query.filter_by(name=role_name, tenant_id=tenant_id).first()
     if role:
-        db.session.execute(
-            user_roles.insert().values(
-                user_id=user.id, role_id=role.id, tenant_id=tenant_id
-            )
-        )
+        db.session.execute(user_roles.insert().values(user_id=user.id, role_id=role.id, tenant_id=tenant_id))
 
     db.session.commit()
     db.session.refresh(user)
@@ -245,13 +231,31 @@ def update_tenant(tenant_id: str, **kwargs) -> dict:
     if not tenant:
         raise ValueError("Negocio no encontrado")
 
-    allowed = {"name", "trade_name", "tax_id", "tax_id_check_digit",
-               "fiscal_regime", "email", "phone", "address", "city",
-               "country_code", "timezone", "currency_code",
-               "logo_url", "favicon_url",
-               "dian_resolution_number", "dian_resolution_prefix",
-               "pta_provider", "pta_api_key",
-               "smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_from_email"}
+    allowed = {
+        "name",
+        "trade_name",
+        "tax_id",
+        "tax_id_check_digit",
+        "fiscal_regime",
+        "email",
+        "phone",
+        "address",
+        "city",
+        "country_code",
+        "timezone",
+        "currency_code",
+        "logo_url",
+        "favicon_url",
+        "dian_resolution_number",
+        "dian_resolution_prefix",
+        "pta_provider",
+        "pta_api_key",
+        "smtp_host",
+        "smtp_port",
+        "smtp_user",
+        "smtp_password",
+        "smtp_from_email",
+    }
 
     for key, value in kwargs.items():
         if key in allowed and value is not None:
@@ -298,7 +302,9 @@ def update_user(tenant_id: str, user_id: str, **kwargs) -> dict:
             )
             db.session.execute(
                 user_roles.insert().values(
-                    user_id=user.id, role_id=role.id, tenant_id=tenant_id,
+                    user_id=user.id,
+                    role_id=role.id,
+                    tenant_id=tenant_id,
                 )
             )
 
@@ -337,26 +343,47 @@ def reset_tenant_data(tenant_id: str) -> dict:
     Preserves: Tenant, Users, Roles, Permissions, ChartOfAccount, Products, Categories, Suppliers, Customers.
     Deletes: Everything else (sales, purchases, cash, campaigns, invoices, journal entries, etc.)
     """
-    from app.modules.pos.models import Sale, SaleItem, Payment, CashSession, CreditNote, CreditNoteItem
-    from app.modules.inventory.models import StockMovement, Product
-    from app.modules.accounting.models import JournalLine, JournalEntry, AccountingPeriod, Expense
-    from app.modules.purchases.models import (
-        PurchaseOrderItem, PurchaseOrder, SupplierPayment,
-        PurchaseCreditNoteItem, PurchaseCreditNote, PurchaseDebitNote,
-    )
-    from app.modules.cash.models import CashReceipt, CashDisbursement, CashTransfer, CashCountDetail
-    from app.modules.customers.models import (
-        CustomerPayment, SalesDebitNote,
-        CollectionCampaignItem, CollectionCampaign,
-    )
-    from app.modules.invoicing.models import ElectronicInvoice
     from app.core.audit import AuditLog
+    from app.modules.accounting.models import (
+        AccountingPeriod,
+        Expense,
+        JournalEntry,
+        JournalLine,
+    )
+    from app.modules.cash.models import (
+        CashCountDetail,
+        CashDisbursement,
+        CashReceipt,
+        CashTransfer,
+    )
+    from app.modules.customers.models import (
+        CollectionCampaign,
+        CollectionCampaignItem,
+        CustomerPayment,
+        SalesDebitNote,
+    )
+    from app.modules.inventory.models import Product, StockMovement
+    from app.modules.invoicing.models import ElectronicInvoice
+    from app.modules.pos.models import (
+        CashSession,
+        CreditNote,
+        CreditNoteItem,
+        Payment,
+        Sale,
+        SaleItem,
+    )
+    from app.modules.purchases.models import (
+        PurchaseCreditNote,
+        PurchaseCreditNoteItem,
+        PurchaseDebitNote,
+        PurchaseOrder,
+        PurchaseOrderItem,
+        SupplierPayment,
+    )
 
     # 1. Campaigns
     CollectionCampaignItem.query.filter(
-        CollectionCampaignItem.campaign_id.in_(
-            db.session.query(CollectionCampaign.id).filter_by(tenant_id=tenant_id)
-        )
+        CollectionCampaignItem.campaign_id.in_(db.session.query(CollectionCampaign.id).filter_by(tenant_id=tenant_id))
     ).delete(synchronize_session=False)
     CollectionCampaign.query.filter_by(tenant_id=tenant_id).delete()
 
@@ -366,9 +393,7 @@ def reset_tenant_data(tenant_id: str) -> dict:
 
     # 3. Cash module
     CashCountDetail.query.filter(
-        CashCountDetail.cash_session_id.in_(
-            db.session.query(CashSession.id).filter_by(tenant_id=tenant_id)
-        )
+        CashCountDetail.cash_session_id.in_(db.session.query(CashSession.id).filter_by(tenant_id=tenant_id))
     ).delete(synchronize_session=False)
     CashTransfer.query.filter_by(tenant_id=tenant_id).delete()
     CashDisbursement.query.filter_by(tenant_id=tenant_id).delete()
@@ -379,21 +404,15 @@ def reset_tenant_data(tenant_id: str) -> dict:
 
     # 5. POS: credit notes, payments, sale items, sales, sessions
     CreditNoteItem.query.filter(
-        CreditNoteItem.credit_note_id.in_(
-            db.session.query(CreditNote.id).filter_by(tenant_id=tenant_id)
-        )
+        CreditNoteItem.credit_note_id.in_(db.session.query(CreditNote.id).filter_by(tenant_id=tenant_id))
     ).delete(synchronize_session=False)
     CreditNote.query.filter_by(tenant_id=tenant_id).delete()
-    Payment.query.filter(
-        Payment.sale_id.in_(
-            db.session.query(Sale.id).filter_by(tenant_id=tenant_id)
-        )
-    ).delete(synchronize_session=False)
-    SaleItem.query.filter(
-        SaleItem.sale_id.in_(
-            db.session.query(Sale.id).filter_by(tenant_id=tenant_id)
-        )
-    ).delete(synchronize_session=False)
+    Payment.query.filter(Payment.sale_id.in_(db.session.query(Sale.id).filter_by(tenant_id=tenant_id))).delete(
+        synchronize_session=False
+    )
+    SaleItem.query.filter(SaleItem.sale_id.in_(db.session.query(Sale.id).filter_by(tenant_id=tenant_id))).delete(
+        synchronize_session=False
+    )
     Sale.query.filter_by(tenant_id=tenant_id).delete()
     CashSession.query.filter_by(tenant_id=tenant_id).delete()
 
@@ -407,17 +426,13 @@ def reset_tenant_data(tenant_id: str) -> dict:
     PurchaseDebitNote.query.filter_by(tenant_id=tenant_id).delete()
     SupplierPayment.query.filter_by(tenant_id=tenant_id).delete()
     PurchaseOrderItem.query.filter(
-        PurchaseOrderItem.order_id.in_(
-            db.session.query(PurchaseOrder.id).filter_by(tenant_id=tenant_id)
-        )
+        PurchaseOrderItem.order_id.in_(db.session.query(PurchaseOrder.id).filter_by(tenant_id=tenant_id))
     ).delete(synchronize_session=False)
     PurchaseOrder.query.filter_by(tenant_id=tenant_id).delete()
 
     # 7. Accounting: journal lines, entries, periods, expenses
     JournalLine.query.filter(
-        JournalLine.entry_id.in_(
-            db.session.query(JournalEntry.id).filter_by(tenant_id=tenant_id)
-        )
+        JournalLine.entry_id.in_(db.session.query(JournalEntry.id).filter_by(tenant_id=tenant_id))
     ).delete(synchronize_session=False)
     JournalEntry.query.filter_by(tenant_id=tenant_id).delete()
     AccountingPeriod.query.filter_by(tenant_id=tenant_id).delete()
@@ -430,9 +445,10 @@ def reset_tenant_data(tenant_id: str) -> dict:
     AuditLog.query.filter_by(tenant_id=tenant_id).delete()
 
     # 10. Delete products, categories, suppliers, customers
+    from app.modules.customers.models import Customer
     from app.modules.inventory.models import Category
     from app.modules.purchases.models import Supplier
-    from app.modules.customers.models import Customer
+
     Product.query.filter_by(tenant_id=tenant_id).delete()
     Category.query.filter_by(tenant_id=tenant_id).delete()
     Supplier.query.filter_by(tenant_id=tenant_id).delete()
@@ -445,6 +461,7 @@ def reset_tenant_data(tenant_id: str) -> dict:
 
 # ── RBAC Decorator ────────────────────────────────────────────────
 
+
 def require_permission(resource: str, action: str):
     """Decorator to enforce RBAC on a route."""
 
@@ -452,6 +469,7 @@ def require_permission(resource: str, action: str):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             import json as _json
+
             verify_jwt_in_request()
             raw_identity = get_jwt_identity()
             identity = _json.loads(raw_identity) if isinstance(raw_identity, str) else raw_identity
@@ -459,7 +477,10 @@ def require_permission(resource: str, action: str):
             if not user or not user.is_active:
                 return {"success": False, "error": {"code": "AUTH_INVALID_TOKEN", "message": "Usuario no válido"}}, 401
             if not user.has_permission(resource, action):
-                return {"success": False, "error": {"code": "AUTH_INSUFFICIENT_PERMISSIONS", "message": "No tiene permisos para esta acción"}}, 403
+                return {
+                    "success": False,
+                    "error": {"code": "AUTH_INSUFFICIENT_PERMISSIONS", "message": "No tiene permisos para esta acción"},
+                }, 403
 
             g.current_user = user
             g.tenant_id = str(user.tenant_id)
@@ -474,6 +495,7 @@ def require_permission(resource: str, action: str):
 
 # ── Custom Roles Management ───────────────────────────────────────
 
+
 def list_permissions_grouped() -> list:
     """List all permissions grouped by module for the UI."""
     perms = Permission.query.order_by(Permission.module, Permission.resource, Permission.action).all()
@@ -482,13 +504,15 @@ def list_permissions_grouped() -> list:
         module = p.module or "other"
         if module not in groups:
             groups[module] = {"module": module, "permissions": []}
-        groups[module]["permissions"].append({
-            "id": str(p.id),
-            "key": f"{p.resource}:{p.action}",
-            "resource": p.resource,
-            "action": p.action,
-            "description": p.description or f"{p.resource} - {p.action}",
-        })
+        groups[module]["permissions"].append(
+            {
+                "id": str(p.id),
+                "key": f"{p.resource}:{p.action}",
+                "resource": p.resource,
+                "action": p.action,
+                "description": p.description or f"{p.resource} - {p.action}",
+            }
+        )
     return list(groups.values())
 
 
@@ -525,9 +549,11 @@ def update_role_permissions(tenant_id: str, role_id: str, permission_ids: list) 
 
 def get_tenant_roles(tenant_id: str) -> list:
     """Get all roles available for a tenant (system + custom)."""
-    roles = Role.query.filter(
-        db.or_(Role.is_system_role.is_(True), Role.tenant_id == tenant_id)
-    ).order_by(Role.is_system_role.desc(), Role.name).all()
+    roles = (
+        Role.query.filter(db.or_(Role.is_system_role.is_(True), Role.tenant_id == tenant_id))
+        .order_by(Role.is_system_role.desc(), Role.name)
+        .all()
+    )
     return [_role_to_dict(r) for r in roles]
 
 
@@ -538,8 +564,7 @@ def _role_to_dict(r: Role) -> dict:
         "description": r.description,
         "is_system_role": r.is_system_role,
         "permissions": [
-            {"id": str(p.id), "key": f"{p.resource}:{p.action}", "module": p.module}
-            for p in r.permissions
+            {"id": str(p.id), "key": f"{p.resource}:{p.action}", "module": p.module} for p in r.permissions
         ],
         "permission_count": len(r.permissions),
     }
@@ -701,6 +726,7 @@ def seed_roles_and_permissions() -> None:
 
 
 # ── Serializers ───────────────────────────────────────────────────
+
 
 def _tenant_to_dict(tenant: Tenant) -> dict:
     return {

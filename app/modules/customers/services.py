@@ -1,14 +1,17 @@
 """Customer services — CRUD, payments, debit notes, aging report."""
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import func
 
 from app.extensions import db
 from app.modules.customers.models import (
-    Customer, CustomerPayment, SalesDebitNote,
-    CollectionCampaign, CollectionCampaignItem,
+    CollectionCampaign,
+    CollectionCampaignItem,
+    Customer,
+    CustomerPayment,
+    SalesDebitNote,
 )
 from app.modules.pos.models import Sale
 
@@ -16,19 +19,33 @@ TWO_PLACES = Decimal("0.01")
 
 
 def create_customer(
-    tenant_id: str, created_by: str, name: str,
-    tax_id: str = None, tax_id_type: str = "CC",
-    contact_name: str = None, phone: str = None,
-    email: str = None, address: str = None,
-    city: str = None, credit_limit: float = 0,
-    credit_days: int = 0, notes: str = None,
+    tenant_id: str,
+    created_by: str,
+    name: str,
+    tax_id: str = None,
+    tax_id_type: str = "CC",
+    contact_name: str = None,
+    phone: str = None,
+    email: str = None,
+    address: str = None,
+    city: str = None,
+    credit_limit: float = 0,
+    credit_days: int = 0,
+    notes: str = None,
 ) -> dict:
     customer = Customer(
-        tenant_id=tenant_id, created_by=created_by, name=name,
-        tax_id=tax_id, tax_id_type=tax_id_type,
-        contact_name=contact_name, phone=phone,
-        email=email, address=address, city=city,
-        credit_limit=credit_limit, credit_days=credit_days,
+        tenant_id=tenant_id,
+        created_by=created_by,
+        name=name,
+        tax_id=tax_id,
+        tax_id_type=tax_id_type,
+        contact_name=contact_name,
+        phone=phone,
+        email=email,
+        address=address,
+        city=city,
+        credit_limit=credit_limit,
+        credit_days=credit_days,
         notes=notes,
     )
     db.session.add(customer)
@@ -65,8 +82,17 @@ def update_customer(tenant_id: str, customer_id: str, **kwargs) -> dict:
     if not c:
         raise ValueError("Cliente no encontrado")
     allowed = {
-        "name", "tax_id", "tax_id_type", "contact_name", "phone",
-        "email", "address", "city", "credit_limit", "credit_days", "notes",
+        "name",
+        "tax_id",
+        "tax_id_type",
+        "contact_name",
+        "phone",
+        "email",
+        "address",
+        "city",
+        "credit_limit",
+        "credit_days",
+        "notes",
     }
     for k, v in kwargs.items():
         if k in allowed and v is not None:
@@ -77,13 +103,13 @@ def update_customer(tenant_id: str, customer_id: str, **kwargs) -> dict:
 
 # ── Customer Payment Services ─────────────────────────────────────
 
+
 def _next_cp_number(tenant_id: str) -> str:
     year = datetime.now(timezone.utc).year
     prefix = f"AB-{year}-"
     last = (
         db.session.query(func.max(CustomerPayment.payment_number))
-        .filter(CustomerPayment.tenant_id == tenant_id,
-                CustomerPayment.payment_number.like(f"{prefix}%"))
+        .filter(CustomerPayment.tenant_id == tenant_id, CustomerPayment.payment_number.like(f"{prefix}%"))
         .scalar()
     )
     seq = int(last.split("-")[-1]) + 1 if last else 1
@@ -91,9 +117,14 @@ def _next_cp_number(tenant_id: str) -> str:
 
 
 def create_customer_payment(
-    tenant_id: str, created_by: str, customer_id: str,
-    amount: float, payment_method: str = "cash",
-    sale_id: str = None, reference: str = None, notes: str = None,
+    tenant_id: str,
+    created_by: str,
+    customer_id: str,
+    amount: float,
+    payment_method: str = "cash",
+    sale_id: str = None,
+    reference: str = None,
+    notes: str = None,
 ) -> dict:
     """Register a payment from a customer. Updates sale balances if linked."""
     customer = Customer.query.filter_by(id=customer_id, tenant_id=tenant_id).first()
@@ -105,11 +136,15 @@ def create_customer_payment(
         raise ValueError("El monto debe ser mayor a 0")
 
     payment = CustomerPayment(
-        tenant_id=tenant_id, customer_id=customer_id, created_by=created_by,
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        created_by=created_by,
         sale_id=sale_id,
         payment_number=_next_cp_number(tenant_id),
-        amount=amt, payment_method=payment_method,
-        reference=reference, notes=notes,
+        amount=amt,
+        payment_method=payment_method,
+        reference=reference,
+        notes=notes,
     )
     db.session.add(payment)
     db.session.flush()
@@ -128,25 +163,24 @@ def create_customer_payment(
 
     # Accounting: DB 1105 Caja | CR 1305 Clientes
     from app.modules.accounting.services import create_journal_entry
+
     cash_account = "1105" if payment_method == "cash" else "1110"
     create_journal_entry(
-        tenant_id=tenant_id, created_by=created_by,
+        tenant_id=tenant_id,
+        created_by=created_by,
         entry_type="CASH_RECEIPT",
         description=f"Abono cliente {customer.name} - {payment.payment_number}",
         lines=[
-            {"puc_code": cash_account, "debit": float(amt), "credit": 0,
-             "description": f"Cobro a {customer.name}"},
-            {"puc_code": "1305", "debit": 0, "credit": float(amt),
-             "description": f"Abono cliente {customer.name}"},
+            {"puc_code": cash_account, "debit": float(amt), "credit": 0, "description": f"Cobro a {customer.name}"},
+            {"puc_code": "1305", "debit": 0, "credit": float(amt), "description": f"Abono cliente {customer.name}"},
         ],
-        source_document_type="customer_payment", source_document_id=str(payment.id),
+        source_document_type="customer_payment",
+        source_document_id=str(payment.id),
     )
 
     # Auto-update campaign items if this customer/sale is in an active campaign
     try:
-        active_items = CollectionCampaignItem.query.join(
-            CollectionCampaign
-        ).filter(
+        active_items = CollectionCampaignItem.query.join(CollectionCampaign).filter(
             CollectionCampaign.tenant_id == tenant_id,
             CollectionCampaign.status == "active",
             CollectionCampaignItem.customer_id == customer_id,
@@ -165,9 +199,14 @@ def create_customer_payment(
 
 
 def get_customer_payments(tenant_id: str, customer_id: str) -> list:
-    payments = CustomerPayment.query.filter_by(
-        tenant_id=tenant_id, customer_id=customer_id,
-    ).order_by(CustomerPayment.created_at.desc()).all()
+    payments = (
+        CustomerPayment.query.filter_by(
+            tenant_id=tenant_id,
+            customer_id=customer_id,
+        )
+        .order_by(CustomerPayment.created_at.desc())
+        .all()
+    )
     return [_cp_to_dict(p) for p in payments]
 
 
@@ -178,12 +217,16 @@ def get_customer_statement(tenant_id: str, customer_id: str) -> dict:
         raise ValueError("Cliente no encontrado")
 
     # Credit sales
-    credit_sales = Sale.query.filter(
-        Sale.tenant_id == tenant_id,
-        Sale.customer_id == customer_id,
-        Sale.sale_type == "credit",
-        Sale.status == "completed",
-    ).order_by(Sale.sale_date.desc()).all()
+    credit_sales = (
+        Sale.query.filter(
+            Sale.tenant_id == tenant_id,
+            Sale.customer_id == customer_id,
+            Sale.sale_type == "credit",
+            Sale.status == "completed",
+        )
+        .order_by(Sale.sale_date.desc())
+        .all()
+    )
 
     total_sales = sum(float(s.total_amount) for s in credit_sales)
     total_paid = sum(float(s.amount_paid) for s in credit_sales)
@@ -194,16 +237,19 @@ def get_customer_statement(tenant_id: str, customer_id: str) -> dict:
         "total_credit_sales": total_sales,
         "total_paid": total_paid,
         "total_due": total_due,
-        "sales": [{
-            "id": str(s.id),
-            "invoice_number": s.invoice_number,
-            "date": s.sale_date.isoformat(),
-            "total": float(s.total_amount),
-            "paid": float(s.amount_paid),
-            "due": float(s.amount_due),
-            "status": s.payment_status,
-            "due_date": s.due_date.isoformat() if s.due_date else None,
-        } for s in credit_sales],
+        "sales": [
+            {
+                "id": str(s.id),
+                "invoice_number": s.invoice_number,
+                "date": s.sale_date.isoformat(),
+                "total": float(s.total_amount),
+                "paid": float(s.amount_paid),
+                "due": float(s.amount_due),
+                "status": s.payment_status,
+                "due_date": s.due_date.isoformat() if s.due_date else None,
+            }
+            for s in credit_sales
+        ],
     }
 
 
@@ -233,13 +279,15 @@ def get_aging_report(tenant_id: str) -> dict:
             buckets["61_90"] += float(due)
         else:
             buckets["over_90"] += float(due)
-        items.append({
-            "customer_name": sale.customer_name,
-            "invoice": sale.invoice_number,
-            "amount_due": float(due),
-            "days": days,
-            "due_date": sale.due_date.isoformat() if sale.due_date else None,
-        })
+        items.append(
+            {
+                "customer_name": sale.customer_name,
+                "invoice": sale.invoice_number,
+                "amount_due": float(due),
+                "days": days,
+                "due_date": sale.due_date.isoformat() if sale.due_date else None,
+            }
+        )
 
     return {
         "total_outstanding": float(total),
@@ -276,17 +324,23 @@ def write_off_customer(tenant_id: str, customer_id: str, user_id: str, sale_id: 
         raise ValueError("No hay saldo pendiente para castigar")
 
     from app.modules.accounting.services import create_journal_entry
+
     create_journal_entry(
-        tenant_id=tenant_id, created_by=user_id,
+        tenant_id=tenant_id,
+        created_by=user_id,
         entry_type="ADJUSTMENT",
         description=f"Castigo cartera - {customer.name}",
         lines=[
-            {"puc_code": "5195", "debit": float(total_writeoff), "credit": 0,
-             "description": f"Cartera incobrable {customer.name}"},
-            {"puc_code": "1305", "debit": 0, "credit": float(total_writeoff),
-             "description": "Castigo cuenta cliente"},
+            {
+                "puc_code": "5195",
+                "debit": float(total_writeoff),
+                "credit": 0,
+                "description": f"Cartera incobrable {customer.name}",
+            },
+            {"puc_code": "1305", "debit": 0, "credit": float(total_writeoff), "description": "Castigo cuenta cliente"},
         ],
-        source_document_type="write_off", source_document_id=str(customer_id),
+        source_document_type="write_off",
+        source_document_id=str(customer_id),
     )
 
     db.session.commit()
@@ -295,13 +349,13 @@ def write_off_customer(tenant_id: str, customer_id: str, user_id: str, sale_id: 
 
 # ── Sales Debit Note Services ────────────────────────────────────
 
+
 def _next_sdn_number(tenant_id: str) -> str:
     year = datetime.now(timezone.utc).year
     prefix = f"NDV-{year}-"
     last = (
         db.session.query(func.max(SalesDebitNote.note_number))
-        .filter(SalesDebitNote.tenant_id == tenant_id,
-                SalesDebitNote.note_number.like(f"{prefix}%"))
+        .filter(SalesDebitNote.tenant_id == tenant_id, SalesDebitNote.note_number.like(f"{prefix}%"))
         .scalar()
     )
     seq = int(last.split("-")[-1]) + 1 if last else 1
@@ -309,8 +363,12 @@ def _next_sdn_number(tenant_id: str) -> str:
 
 
 def create_sales_debit_note(
-    tenant_id: str, created_by: str, customer_id: str,
-    reason: str, amount: float, tax_amount: float = 0,
+    tenant_id: str,
+    created_by: str,
+    customer_id: str,
+    reason: str,
+    amount: float,
+    tax_amount: float = 0,
     sale_id: str = None,
 ) -> dict:
     """Create a debit note against a customer (interest, additional charges).
@@ -325,10 +383,15 @@ def create_sales_debit_note(
     total = amt + tax
 
     dn = SalesDebitNote(
-        tenant_id=tenant_id, customer_id=customer_id, created_by=created_by,
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        created_by=created_by,
         sale_id=sale_id,
-        note_number=_next_sdn_number(tenant_id), reason=reason,
-        amount=amt, tax_amount=tax, total_amount=total,
+        note_number=_next_sdn_number(tenant_id),
+        reason=reason,
+        amount=amt,
+        tax_amount=tax,
+        total_amount=total,
     )
     db.session.add(dn)
     db.session.flush()
@@ -343,24 +406,34 @@ def create_sales_debit_note(
 
     # Accounting: DB 1305 Clientes | CR 4135 Ingresos + CR 2408 IVA
     from app.modules.accounting.services import create_journal_entry
+
     lines = [
-        {"puc_code": "1305", "debit": float(total), "credit": 0,
-         "description": f"ND {dn.note_number} - {customer.name}: {reason}"},
-        {"puc_code": "4135", "debit": 0, "credit": float(amt),
-         "description": "Ingreso por cargo adicional"},
+        {
+            "puc_code": "1305",
+            "debit": float(total),
+            "credit": 0,
+            "description": f"ND {dn.note_number} - {customer.name}: {reason}",
+        },
+        {"puc_code": "4135", "debit": 0, "credit": float(amt), "description": "Ingreso por cargo adicional"},
     ]
     if tax > 0:
-        lines.append({
-            "puc_code": "2408", "debit": 0, "credit": float(tax),
-            "description": "IVA generado",
-        })
+        lines.append(
+            {
+                "puc_code": "2408",
+                "debit": 0,
+                "credit": float(tax),
+                "description": "IVA generado",
+            }
+        )
 
     create_journal_entry(
-        tenant_id=tenant_id, created_by=created_by,
+        tenant_id=tenant_id,
+        created_by=created_by,
         entry_type="SALES_DEBIT_NOTE",
         description=f"Nota débito venta {dn.note_number}: {reason}",
         lines=lines,
-        source_document_type="sales_debit_note", source_document_id=str(dn.id),
+        source_document_type="sales_debit_note",
+        source_document_id=str(dn.id),
     )
 
     db.session.commit()
@@ -378,13 +451,13 @@ def get_sales_debit_notes(tenant_id: str, customer_id: str = None) -> list:
 
 # ── Collection Campaign Services ──────────────────────────────────
 
+
 def _next_campaign_number(tenant_id: str) -> str:
     year = datetime.now(timezone.utc).year
     prefix = f"COB-{year}-"
     last = (
         db.session.query(func.max(CollectionCampaign.campaign_number))
-        .filter(CollectionCampaign.tenant_id == tenant_id,
-                CollectionCampaign.campaign_number.like(f"{prefix}%"))
+        .filter(CollectionCampaign.tenant_id == tenant_id, CollectionCampaign.campaign_number.like(f"{prefix}%"))
         .scalar()
     )
     seq = int(last.split("-")[-1]) + 1 if last else 1
@@ -392,9 +465,13 @@ def _next_campaign_number(tenant_id: str) -> str:
 
 
 def create_collection_campaign(
-    tenant_id: str, created_by: str, name: str,
-    target_type: str = "all_overdue", min_days_overdue: int = 1,
-    min_amount_due: float = 0, message_template: str = None,
+    tenant_id: str,
+    created_by: str,
+    name: str,
+    target_type: str = "all_overdue",
+    min_days_overdue: int = 1,
+    min_amount_due: float = 0,
+    message_template: str = None,
 ) -> dict:
     """Create a collection campaign and populate it with overdue customers."""
     now = datetime.now(timezone.utc)
@@ -402,6 +479,7 @@ def create_collection_campaign(
     # Auto-mark overdue sales first
     try:
         from app.modules.pos.services import mark_overdue_sales
+
         mark_overdue_sales(tenant_id)
     except Exception:
         pass
@@ -412,9 +490,11 @@ def create_collection_campaign(
     )
 
     campaign = CollectionCampaign(
-        tenant_id=tenant_id, created_by=created_by,
+        tenant_id=tenant_id,
+        created_by=created_by,
         campaign_number=_next_campaign_number(tenant_id),
-        name=name, target_type=target_type,
+        name=name,
+        target_type=target_type,
         min_days_overdue=min_days_overdue,
         min_amount_due=Decimal(str(min_amount_due)),
         message_template=message_template or default_msg,
@@ -459,9 +539,9 @@ def create_collection_campaign(
 
 
 def get_collection_campaigns(tenant_id: str) -> list:
-    campaigns = CollectionCampaign.query.filter_by(
-        tenant_id=tenant_id
-    ).order_by(CollectionCampaign.created_at.desc()).all()
+    campaigns = (
+        CollectionCampaign.query.filter_by(tenant_id=tenant_id).order_by(CollectionCampaign.created_at.desc()).all()
+    )
     return [_campaign_summary_to_dict(c) for c in campaigns]
 
 
@@ -473,6 +553,7 @@ def get_collection_campaign(tenant_id: str, campaign_id: str) -> dict:
     # Auto-regenerate rendered_message if missing (migration or data issue)
     if c.status == "active" and c.message_template:
         from app.modules.auth_rbac.models import Tenant
+
         tenant = Tenant.query.get(tenant_id)
         tenant_name = tenant.name if tenant else "Nuestro negocio"
         needs_save = False
@@ -517,6 +598,7 @@ def update_campaign_item(tenant_id: str, campaign_id: str, item_id: str, **kwarg
 def execute_campaign(tenant_id: str, campaign_id: str) -> dict:
     """Execute campaign: render personalized messages for each customer and activate."""
     from app.modules.auth_rbac.models import Tenant
+
     c = CollectionCampaign.query.filter_by(id=campaign_id, tenant_id=tenant_id).first()
     if not c:
         raise ValueError("Campaña no encontrada")
@@ -569,6 +651,7 @@ def complete_campaign(tenant_id: str, campaign_id: str) -> dict:
 
 # ── Campaign Serializers ─────────────────────────────────────────
 
+
 def _campaign_to_dict(c: CollectionCampaign) -> dict:
     # Count statuses and calculate effectiveness
     statuses = {}
@@ -579,10 +662,7 @@ def _campaign_to_dict(c: CollectionCampaign) -> dict:
             total_collected += Decimal(str(item.amount_due))
 
     total_target = Decimal(str(c.total_amount_targeted)) if c.total_amount_targeted else Decimal("0")
-    effectiveness = (
-        round(float(total_collected / total_target * 100), 1)
-        if total_target > 0 else 0
-    )
+    effectiveness = round(float(total_collected / total_target * 100), 1) if total_target > 0 else 0
 
     return {
         "id": str(c.id),
@@ -678,13 +758,17 @@ def build_collection_letter_data(tenant_id: str, customer_id: str) -> dict:
         raise ValueError("Cliente no encontrado")
 
     # Get overdue credit sales
-    overdue_sales = Sale.query.filter(
-        Sale.tenant_id == tenant_id,
-        Sale.customer_id == customer_id,
-        Sale.sale_type == "credit",
-        Sale.status == "completed",
-        Sale.payment_status.in_(["pending", "partial", "overdue"]),
-    ).order_by(Sale.due_date).all()
+    overdue_sales = (
+        Sale.query.filter(
+            Sale.tenant_id == tenant_id,
+            Sale.customer_id == customer_id,
+            Sale.sale_type == "credit",
+            Sale.status == "completed",
+            Sale.payment_status.in_(["pending", "partial", "overdue"]),
+        )
+        .order_by(Sale.due_date)
+        .all()
+    )
 
     now = datetime.now(timezone.utc)
     invoices = []
@@ -699,12 +783,14 @@ def build_collection_letter_data(tenant_id: str, customer_id: str) -> dict:
             days = 0
         if days > max_days:
             max_days = days
-        invoices.append({
-            "number": s.invoice_number,
-            "due_date": (s.due_date or s.sale_date).strftime("%d/%m/%Y") if (s.due_date or s.sale_date) else "—",
-            "original_amount": float(s.total_amount),
-            "balance_due": due,
-        })
+        invoices.append(
+            {
+                "number": s.invoice_number,
+                "due_date": (s.due_date or s.sale_date).strftime("%d/%m/%Y") if (s.due_date or s.sale_date) else "—",
+                "original_amount": float(s.total_amount),
+                "balance_due": due,
+            }
+        )
         total_due += Decimal(str(due))
 
     seq = CollectionCampaign.query.filter_by(tenant_id=tenant_id).count() + 1
@@ -726,7 +812,19 @@ def build_collection_letter_data(tenant_id: str, customer_id: str) -> dict:
         "days_overdue": max_days,
         "suggested_due_date": (now + timedelta(days=15)).strftime("%Y-%m-%d"),
         "generated_at": now.strftime("%d/%m/%Y %H:%M"),
-        "generated_at_long": now.strftime("%d de %B de %Y").replace("January", "enero").replace("February", "febrero").replace("March", "marzo").replace("April", "abril").replace("May", "mayo").replace("June", "junio").replace("July", "julio").replace("August", "agosto").replace("September", "septiembre").replace("October", "octubre").replace("November", "noviembre").replace("December", "diciembre"),
+        "generated_at_long": now.strftime("%d de %B de %Y")
+        .replace("January", "enero")
+        .replace("February", "febrero")
+        .replace("March", "marzo")
+        .replace("April", "abril")
+        .replace("May", "mayo")
+        .replace("June", "junio")
+        .replace("July", "julio")
+        .replace("August", "agosto")
+        .replace("September", "septiembre")
+        .replace("October", "octubre")
+        .replace("November", "noviembre")
+        .replace("December", "diciembre"),
     }
 
 

@@ -3,11 +3,11 @@
 from flask import g, jsonify, request
 
 from app.modules.auth_rbac.services import require_permission
-from app.modules.purchases.blueprint import purchases_bp
 from app.modules.purchases import services as pur
-
+from app.modules.purchases.blueprint import purchases_bp
 
 # ── Suppliers ─────────────────────────────────────────────────────
+
 
 @purchases_bp.route("/suppliers", methods=["GET"])
 @require_permission("purchases", "read")
@@ -21,15 +21,17 @@ def list_suppliers():
 def create_supplier():
     data = request.get_json()
     if not data.get("name"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "name es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "name es requerido"}), 400
 
     supplier = pur.create_supplier(
-        tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-        name=data["name"], tax_id=data.get("tax_id"),
-        contact_name=data.get("contact_name"), phone=data.get("phone"),
-        email=data.get("email"), address=data.get("address"),
+        tenant_id=g.tenant_id,
+        created_by=str(g.current_user.id),
+        name=data["name"],
+        tax_id=data.get("tax_id"),
+        contact_name=data.get("contact_name"),
+        phone=data.get("phone"),
+        email=data.get("email"),
+        address=data.get("address"),
         city=data.get("city"),
         payment_terms_days=data.get("payment_terms_days", 0),
     )
@@ -49,6 +51,7 @@ def edit_supplier(supplier_id):
 
 # ── Purchase Orders ───────────────────────────────────────────────
 
+
 @purchases_bp.route("/orders", methods=["GET"])
 @require_permission("purchases", "read")
 def list_orders():
@@ -67,24 +70,24 @@ def list_orders():
 def create_order():
     data = request.get_json()
     if not data.get("supplier_id") or not data.get("items"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "supplier_id e items son requeridos"
-        }), 400
+        return (
+            jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "supplier_id e items son requeridos"}),
+            400,
+        )
 
     try:
         po = pur.create_purchase_order(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-            supplier_id=data["supplier_id"], items=data["items"],
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
+            supplier_id=data["supplier_id"],
+            items=data["items"],
             payment_type=data.get("payment_type", "cash"),
             supplier_invoice=data.get("supplier_invoice"),
             notes=data.get("notes"),
         )
         return jsonify(success=True, data=po), 201
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PO_CREATE_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "PO_CREATE_ERROR", "message": str(e)}), 400
 
 
 @purchases_bp.route("/orders/<po_id>", methods=["GET"])
@@ -94,9 +97,7 @@ def get_order(po_id):
         po = pur.get_purchase_order(g.tenant_id, po_id)
         return jsonify(success=True, data=po)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PO_NOT_FOUND", "message": str(e)
-        }), 404
+        return jsonify(success=False, error={"code": "PO_NOT_FOUND", "message": str(e)}), 404
 
 
 @purchases_bp.route("/orders/<po_id>", methods=["PATCH"])
@@ -117,9 +118,7 @@ def send_order(po_id):
         po = pur.send_purchase_order(g.tenant_id, po_id)
         return jsonify(success=True, data=po)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PO_SEND_ERROR", "message": str(e)
-        }), 409
+        return jsonify(success=False, error={"code": "PO_SEND_ERROR", "message": str(e)}), 409
 
 
 @purchases_bp.route("/orders/<po_id>/receive", methods=["POST"])
@@ -128,15 +127,14 @@ def receive_order(po_id):
     data = request.get_json() or {}
     try:
         po = pur.receive_purchase_order(
-            tenant_id=g.tenant_id, po_id=po_id,
+            tenant_id=g.tenant_id,
+            po_id=po_id,
             user_id=str(g.current_user.id),
             received_items=data.get("received_items"),
         )
         return jsonify(success=True, data=po)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PO_RECEIVE_ERROR", "message": str(e)
-        }), 409
+        return jsonify(success=False, error={"code": "PO_RECEIVE_ERROR", "message": str(e)}), 409
 
 
 @purchases_bp.route("/orders/<po_id>/cancel", methods=["POST"])
@@ -146,25 +144,24 @@ def cancel_order(po_id):
         po = pur.cancel_purchase_order(g.tenant_id, po_id)
         return jsonify(success=True, data=po)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PO_CANCEL_ERROR", "message": str(e)
-        }), 409
+        return jsonify(success=False, error={"code": "PO_CANCEL_ERROR", "message": str(e)}), 409
 
 
 # ── Supplier Payments ────────────────────────────────────────────
+
 
 @purchases_bp.route("/suppliers/<supplier_id>/payments", methods=["POST"])
 @require_permission("supplier_payments", "create")
 def create_payment(supplier_id):
     data = request.get_json()
     if not data.get("amount"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR", "message": "amount es requerido"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "amount es requerido"}), 400
     try:
         payment = pur.create_supplier_payment(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-            supplier_id=supplier_id, amount=data["amount"],
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
+            supplier_id=supplier_id,
+            amount=data["amount"],
             payment_method=data.get("payment_method", "cash"),
             purchase_order_id=data.get("purchase_order_id"),
             reference=data.get("reference"),
@@ -173,9 +170,7 @@ def create_payment(supplier_id):
         )
         return jsonify(success=True, data=payment), 201
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PAYMENT_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "PAYMENT_ERROR", "message": str(e)}), 400
 
 
 @purchases_bp.route("/suppliers/<supplier_id>/payments", methods=["GET"])
@@ -196,17 +191,14 @@ def supplier_balance(supplier_id):
 @require_permission("supplier_payments", "void")
 def void_payment(payment_id):
     try:
-        payment = pur.void_supplier_payment(
-            g.tenant_id, payment_id, str(g.current_user.id)
-        )
+        payment = pur.void_supplier_payment(g.tenant_id, payment_id, str(g.current_user.id))
         return jsonify(success=True, data=payment)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "VOID_ERROR", "message": str(e)
-        }), 409
+        return jsonify(success=False, error={"code": "VOID_ERROR", "message": str(e)}), 409
 
 
 # ── Purchase Credit Notes ────────────────────────────────────────
+
 
 @purchases_bp.route("/credit-notes", methods=["GET"])
 @require_permission("purchase_credit_notes", "read")
@@ -221,27 +213,28 @@ def list_credit_notes():
 def create_credit_note(po_id):
     data = request.get_json()
     if not data.get("reason") or not data.get("items"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "reason e items son requeridos"
-        }), 400
+        return (
+            jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "reason e items son requeridos"}),
+            400,
+        )
 
     try:
         po_obj = pur._get_po(g.tenant_id, po_id)
         cn = pur.create_purchase_credit_note(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
             supplier_id=str(po_obj.supplier_id),
-            reason=data["reason"], items=data["items"],
+            reason=data["reason"],
+            items=data["items"],
             purchase_order_id=po_id,
         )
         return jsonify(success=True, data=cn), 201
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "CN_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "CN_ERROR", "message": str(e)}), 400
 
 
 # ── Purchase Debit Notes ─────────────────────────────────────────
+
 
 @purchases_bp.route("/debit-notes", methods=["GET"])
 @require_permission("purchases", "read")
@@ -251,26 +244,26 @@ def list_debit_notes_all():
     return jsonify(success=True, data=notes)
 
 
-
 @purchases_bp.route("/suppliers/<supplier_id>/debit-notes", methods=["POST"])
 @require_permission("purchase_credit_notes", "create")
 def create_debit_note(supplier_id):
     data = request.get_json()
     if not data.get("reason") or not data.get("amount"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "reason y amount son requeridos"
-        }), 400
+        return (
+            jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "reason y amount son requeridos"}),
+            400,
+        )
 
     try:
         dn = pur.create_purchase_debit_note(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-            supplier_id=supplier_id, reason=data["reason"],
-            amount=data["amount"], tax_amount=data.get("tax_amount", 0),
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
+            supplier_id=supplier_id,
+            reason=data["reason"],
+            amount=data["amount"],
+            tax_amount=data.get("tax_amount", 0),
             purchase_order_id=data.get("purchase_order_id"),
         )
         return jsonify(success=True, data=dn), 201
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "DN_ERROR", "message": str(e)
-        }), 400
+        return jsonify(success=False, error={"code": "DN_ERROR", "message": str(e)}), 400

@@ -161,8 +161,9 @@ class Payment(db.Model):
     sale = db.relationship("Sale", back_populates="payments")
 
     __table_args__ = (
-        CheckConstraint("method IN ('cash', 'card', 'transfer', 'nequi', 'daviplata', 'mixed')",
-                        name="ck_payments_method"),
+        CheckConstraint(
+            "method IN ('cash', 'card', 'transfer', 'nequi', 'daviplata', 'mixed')", name="ck_payments_method"
+        ),
         CheckConstraint("amount > 0", name="ck_payments_amount"),
     )
 
@@ -188,12 +189,9 @@ class CreditNote(db.Model):
 
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
 
-    items = db.relationship("CreditNoteItem", back_populates="credit_note", lazy="joined",
-                            cascade="all, delete-orphan")
+    items = db.relationship("CreditNoteItem", back_populates="credit_note", lazy="joined", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "credit_note_number", name="uq_cn_tenant_number"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "credit_note_number", name="uq_cn_tenant_number"),)
 
 
 class CreditNoteItem(db.Model):
@@ -202,8 +200,7 @@ class CreditNoteItem(db.Model):
     __tablename__ = "credit_note_items"
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    credit_note_id = db.Column(UUID(as_uuid=True), db.ForeignKey("credit_notes.id", ondelete="CASCADE"),
-                               nullable=False)
+    credit_note_id = db.Column(UUID(as_uuid=True), db.ForeignKey("credit_notes.id", ondelete="CASCADE"), nullable=False)
     product_id = db.Column(UUID(as_uuid=True), db.ForeignKey("products.id"), nullable=False)
     product_name = db.Column(db.String(255), nullable=False)
     quantity = db.Column(db.Numeric(12, 4), nullable=False)

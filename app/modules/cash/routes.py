@@ -3,11 +3,11 @@
 from flask import g, jsonify, request
 
 from app.modules.auth_rbac.services import require_permission
-from app.modules.cash.blueprint import cash_bp
 from app.modules.cash import services as cash
-
+from app.modules.cash.blueprint import cash_bp
 
 # ── Cash Receipts ────────────────────────────────────────────────
+
 
 @cash_bp.route("/receipts", methods=["POST"])
 @require_permission("cash_receipts", "create")
@@ -16,13 +16,13 @@ def create_receipt():
     required = ("source_type", "concept", "amount")
     for field in required:
         if not data.get(field):
-            return jsonify(success=False, error={
-                "code": "VALIDATION_ERROR", "message": f"{field} es requerido"
-            }), 400
+            return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": f"{field} es requerido"}), 400
     try:
         receipt = cash.create_cash_receipt(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-            source_type=data["source_type"], concept=data["concept"],
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
+            source_type=data["source_type"],
+            concept=data["concept"],
             amount=data["amount"],
             payment_method=data.get("payment_method", "cash"),
             source_id=data.get("source_id"),
@@ -58,6 +58,7 @@ def void_receipt(receipt_id):
 
 # ── Cash Disbursements ───────────────────────────────────────────
 
+
 @cash_bp.route("/disbursements", methods=["POST"])
 @require_permission("cash_disbursements", "create")
 def create_disbursement():
@@ -65,13 +66,13 @@ def create_disbursement():
     required = ("destination_type", "concept", "amount")
     for field in required:
         if not data.get(field):
-            return jsonify(success=False, error={
-                "code": "VALIDATION_ERROR", "message": f"{field} es requerido"
-            }), 400
+            return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": f"{field} es requerido"}), 400
     try:
         disb = cash.create_cash_disbursement(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-            destination_type=data["destination_type"], concept=data["concept"],
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
+            destination_type=data["destination_type"],
+            concept=data["concept"],
             amount=data["amount"],
             payment_method=data.get("payment_method", "cash"),
             puc_code=data.get("puc_code"),
@@ -108,6 +109,7 @@ def void_disbursement(disb_id):
 
 # ── Cash Transfers ───────────────────────────────────────────────
 
+
 @cash_bp.route("/transfers", methods=["POST"])
 @require_permission("cash_transfers", "create")
 def create_transfer():
@@ -115,12 +117,11 @@ def create_transfer():
     required = ("from_account_puc", "to_account_puc", "amount")
     for field in required:
         if not data.get(field):
-            return jsonify(success=False, error={
-                "code": "VALIDATION_ERROR", "message": f"{field} es requerido"
-            }), 400
+            return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": f"{field} es requerido"}), 400
     try:
         transfer = cash.create_cash_transfer(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
             from_account_puc=data["from_account_puc"],
             to_account_puc=data["to_account_puc"],
             amount=data["amount"],

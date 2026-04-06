@@ -144,19 +144,16 @@ class CollectionCampaign(db.Model):
 
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
 
-    items = db.relationship("CollectionCampaignItem", back_populates="campaign",
-                            lazy="joined", cascade="all, delete-orphan")
+    items = db.relationship(
+        "CollectionCampaignItem", back_populates="campaign", lazy="joined", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "campaign_number", name="uq_cc_tenant_number"),
         CheckConstraint(
-            "target_type IN ('all_overdue', 'by_age', 'by_amount', 'specific_customers')",
-            name="ck_cc_target"
+            "target_type IN ('all_overdue', 'by_age', 'by_amount', 'specific_customers')", name="ck_cc_target"
         ),
-        CheckConstraint(
-            "status IN ('draft', 'active', 'completed', 'cancelled')",
-            name="ck_cc_status"
-        ),
+        CheckConstraint("status IN ('draft', 'active', 'completed', 'cancelled')", name="ck_cc_status"),
     )
 
     def __repr__(self):
@@ -191,13 +188,9 @@ class CollectionCampaignItem(db.Model):
     customer = db.relationship("Customer")
 
     __table_args__ = (
+        CheckConstraint("contact_method IN ('sms', 'whatsapp', 'email', 'phone_call')", name="ck_cci_method"),
         CheckConstraint(
-            "contact_method IN ('sms', 'whatsapp', 'email', 'phone_call')",
-            name="ck_cci_method"
-        ),
-        CheckConstraint(
-            "contact_status IN ('pending', 'contacted', 'promised', 'paid', 'failed')",
-            name="ck_cci_status"
+            "contact_status IN ('pending', 'contacted', 'promised', 'paid', 'failed')", name="ck_cci_status"
         ),
     )
 

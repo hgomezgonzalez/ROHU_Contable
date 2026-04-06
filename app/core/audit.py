@@ -74,6 +74,7 @@ def _get_current_user_id():
     """Get the current user ID from Flask g context, if available."""
     try:
         from flask import g, has_request_context
+
         if has_request_context() and hasattr(g, "current_user"):
             return g.current_user.id
     except Exception:
@@ -85,6 +86,7 @@ def _get_current_ip():
     """Get the current request IP address, if available."""
     try:
         from flask import has_request_context, request
+
         if has_request_context():
             return request.remote_addr
     except Exception:
@@ -110,6 +112,7 @@ def write_audit_log(action, target, changes=None, connection=None):
         return
 
     import json
+
     connection.execute(
         AuditLog.__table__.insert().values(
             id=_uuid(),
@@ -157,21 +160,35 @@ def _after_delete(mapper, connection, target):
 def init_audit_listeners(app):
     """Initialize audit event listeners for all tracked models.
     Call this in create_app() after all models are imported."""
+    from app.modules.accounting.models import AccountingPeriod, JournalEntry
     from app.modules.auth_rbac.models import Tenant, User
-    from app.modules.inventory.models import Product, Category
-    from app.modules.pos.models import Sale, CashSession, CreditNote
-    from app.modules.purchases.models import Supplier, PurchaseOrder, SupplierPayment
-    from app.modules.accounting.models import JournalEntry, AccountingPeriod
+    from app.modules.cash.models import (  # noqa: F841
+        CashCountDetail,
+        CashDisbursement,
+        CashReceipt,
+        CashTransfer,
+    )
     from app.modules.customers.models import Customer
-    from app.modules.cash.models import CashReceipt, CashDisbursement, CashTransfer, CashCountDetail  # noqa: F841
+    from app.modules.inventory.models import Category, Product
+    from app.modules.pos.models import CashSession, CreditNote, Sale
+    from app.modules.purchases.models import PurchaseOrder, Supplier, SupplierPayment
 
     tracked = [
-        Tenant, User, Product, Category,
-        Sale, CashSession, CreditNote,
-        Supplier, PurchaseOrder, SupplierPayment,
-        JournalEntry, AccountingPeriod,
+        Tenant,
+        User,
+        Product,
+        Category,
+        Sale,
+        CashSession,
+        CreditNote,
+        Supplier,
+        PurchaseOrder,
+        SupplierPayment,
+        JournalEntry,
+        AccountingPeriod,
         Customer,
-        CashReceipt, CashDisbursement,
+        CashReceipt,
+        CashDisbursement,
     ]
 
     for model in tracked:

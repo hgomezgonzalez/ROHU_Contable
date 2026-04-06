@@ -6,8 +6,14 @@ from email.mime.text import MIMEText
 
 
 def send_email(
-    smtp_host: str, smtp_port: int, smtp_user: str, smtp_password: str,
-    from_email: str, to_email: str, subject: str, body_html: str,
+    smtp_host: str,
+    smtp_port: int,
+    smtp_user: str,
+    smtp_password: str,
+    from_email: str,
+    to_email: str,
+    subject: str,
+    body_html: str,
 ) -> dict:
     """Send a single email via SMTP. Returns status dict."""
     try:
@@ -18,7 +24,8 @@ def send_email(
 
         # Plain text fallback
         import re
-        body_text = re.sub(r'<[^>]+>', '', body_html).strip()
+
+        body_text = re.sub(r"<[^>]+>", "", body_html).strip()
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
         msg.attach(MIMEText(body_html, "html", "utf-8"))
 
@@ -36,7 +43,11 @@ def send_email(
         return {"success": True, "to": to_email}
 
     except smtplib.SMTPAuthenticationError:
-        return {"success": False, "to": to_email, "error": "Error de autenticación SMTP. Verifique usuario y contraseña."}
+        return {
+            "success": False,
+            "to": to_email,
+            "error": "Error de autenticación SMTP. Verifique usuario y contraseña.",
+        }
     except smtplib.SMTPRecipientsRefused:
         return {"success": False, "to": to_email, "error": f"Email rechazado: {to_email}"}
     except Exception as e:
@@ -44,7 +55,9 @@ def send_email(
 
 
 def send_campaign_emails(
-    smtp_config: dict, items: list, subject: str = "Recordatorio de pago pendiente",
+    smtp_config: dict,
+    items: list,
+    subject: str = "Recordatorio de pago pendiente",
 ) -> dict:
     """Send campaign emails to all items with email.
 
@@ -54,7 +67,12 @@ def send_campaign_emails(
     Returns: {sent: int, failed: int, no_email: int, results: []}
     """
     if not smtp_config.get("host") or not smtp_config.get("user"):
-        return {"sent": 0, "failed": 0, "no_email": 0, "error": "SMTP no configurado. Configure en Mi Negocio > Notificaciones."}
+        return {
+            "sent": 0,
+            "failed": 0,
+            "no_email": 0,
+            "error": "SMTP no configurado. Configure en Mi Negocio > Notificaciones.",
+        }
 
     sent = 0
     failed = 0

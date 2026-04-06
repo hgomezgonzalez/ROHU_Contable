@@ -111,13 +111,17 @@ def help_page():
 @frontend_bp.route("/cobro/carta/<customer_id>")
 def collection_letter(customer_id):
     """Render formal collection letter for a customer (standalone page for printing)."""
-    from app.modules.customers.services import build_collection_letter_data
     from flask import request as req
+
+    from app.modules.customers.services import build_collection_letter_data
+
     token = req.args.get("token", "")
     # Verify JWT from query param (since this is a standalone page)
     try:
-        from flask_jwt_extended import decode_token
         import json
+
+        from flask_jwt_extended import decode_token
+
         decoded = decode_token(token)
         identity = json.loads(decoded["sub"])
         tenant_id = identity["tenant_id"]
@@ -139,10 +143,13 @@ def vouchers():
 def voucher_print(voucher_id):
     """Render voucher ticket for printing (standalone page)."""
     from flask import request as req
+
     token = req.args.get("token", "") or req.headers.get("Authorization", "").replace("Bearer ", "")
     try:
-        from flask_jwt_extended import decode_token
         import json
+
+        from flask_jwt_extended import decode_token
+
         decoded = decode_token(token) if token else None
         if decoded:
             identity = json.loads(decoded["sub"])
@@ -153,17 +160,21 @@ def voucher_print(voucher_id):
     except Exception:
         pass
 
-    from app.modules.vouchers.services import get_voucher
-    from app.modules.vouchers.print_service import build_voucher_print_data
     from app.modules.auth_rbac.models import Tenant
+    from app.modules.vouchers.print_service import build_voucher_print_data
+    from app.modules.vouchers.services import get_voucher
 
     try:
         v = get_voucher(tenant_id, voucher_id)
         if not v:
             return "<h3>Bono no encontrado</h3>", 404
         tenant = Tenant.query.get(tenant_id)
-        t_dict = {"name": tenant.name, "nit": tenant.nit or "",
-                   "address": tenant.address or "", "phone": tenant.phone or ""}
+        t_dict = {
+            "name": tenant.name,
+            "nit": tenant.nit or "",
+            "address": tenant.address or "",
+            "phone": tenant.phone or "",
+        }
         print_data = build_voucher_print_data(v, t_dict)
         return render_template("vouchers/voucher_print.html", voucher=print_data)
     except Exception as e:

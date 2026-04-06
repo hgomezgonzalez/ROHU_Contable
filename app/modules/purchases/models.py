@@ -85,16 +85,14 @@ class PurchaseOrder(db.Model):
     version = db.Column(db.Integer, nullable=False, default=1)
 
     supplier = db.relationship("Supplier", back_populates="purchase_orders")
-    items = db.relationship("PurchaseOrderItem", back_populates="order", lazy="joined",
-                            cascade="all, delete-orphan")
+    items = db.relationship("PurchaseOrderItem", back_populates="order", lazy="joined", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "order_number", name="uq_po_tenant_number"),
         Index("idx_po_tenant_status", "tenant_id", "status"),
         Index("idx_po_tenant_date", "tenant_id", "order_date"),
         CheckConstraint(
-            "status IN ('draft', 'sent', 'received', 'partially_received', 'cancelled')",
-            name="ck_po_status"
+            "status IN ('draft', 'sent', 'received', 'partially_received', 'cancelled')", name="ck_po_status"
         ),
         CheckConstraint("payment_type IN ('cash', 'credit')", name="ck_po_payment_type"),
     )
@@ -109,8 +107,7 @@ class PurchaseOrderItem(db.Model):
     __tablename__ = "purchase_order_items"
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    order_id = db.Column(UUID(as_uuid=True), db.ForeignKey("purchase_orders.id", ondelete="CASCADE"),
-                         nullable=False)
+    order_id = db.Column(UUID(as_uuid=True), db.ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False)
     product_id = db.Column(UUID(as_uuid=True), db.ForeignKey("products.id"), nullable=False)
 
     product_name = db.Column(db.String(255), nullable=False)
@@ -165,10 +162,7 @@ class SupplierPayment(db.Model):
         UniqueConstraint("tenant_id", "payment_number", name="uq_sp_tenant_number"),
         Index("idx_sp_tenant_supplier", "tenant_id", "supplier_id"),
         CheckConstraint("amount > 0", name="ck_sp_amount"),
-        CheckConstraint(
-            "payment_method IN ('cash', 'transfer', 'check', 'nequi', 'daviplata')",
-            name="ck_sp_method"
-        ),
+        CheckConstraint("payment_method IN ('cash', 'transfer', 'check', 'nequi', 'daviplata')", name="ck_sp_method"),
         CheckConstraint("status IN ('completed', 'voided')", name="ck_sp_status"),
     )
 
@@ -197,8 +191,9 @@ class PurchaseCreditNote(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
 
     supplier = db.relationship("Supplier", backref="credit_notes")
-    items = db.relationship("PurchaseCreditNoteItem", back_populates="credit_note",
-                            lazy="joined", cascade="all, delete-orphan")
+    items = db.relationship(
+        "PurchaseCreditNoteItem", back_populates="credit_note", lazy="joined", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "note_number", name="uq_pcn_tenant_number"),

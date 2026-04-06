@@ -1,10 +1,10 @@
 """Reports routes — Dashboard, sales, inventory, P&L, DIAN, exports."""
 
-from flask import g, jsonify, request, Response
+from flask import Response, g, jsonify, request
 
 from app.modules.auth_rbac.services import require_permission
-from app.modules.reports.blueprint import reports_bp
 from app.modules.reports import services as rpt
+from app.modules.reports.blueprint import reports_bp
 
 
 @reports_bp.route("/dashboard", methods=["GET"])
@@ -23,14 +23,18 @@ def sales_report():
     date_from = request.args.get("date_from")
     date_to = request.args.get("date_to")
     if not date_from or not date_to:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "date_from y date_to son requeridos (YYYY-MM-DD)"
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={"code": "VALIDATION_ERROR", "message": "date_from y date_to son requeridos (YYYY-MM-DD)"},
+            ),
+            400,
+        )
 
     data = rpt.get_sales_report(
         tenant_id=g.tenant_id,
-        date_from=date_from, date_to=date_to,
+        date_from=date_from,
+        date_to=date_to,
         group_by=request.args.get("group_by", "day"),
     )
     return jsonify(success=True, data=data)
@@ -42,8 +46,9 @@ def inventory_report():
     fmt = request.args.get("format")
     if fmt == "csv":
         csv_data = rpt.export_inventory_csv(g.tenant_id)
-        return Response(csv_data, mimetype="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=inventario_rohu.csv"})
+        return Response(
+            csv_data, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=inventario_rohu.csv"}
+        )
     data = rpt.get_inventory_report(g.tenant_id)
     return jsonify(success=True, data=data)
 
@@ -56,8 +61,11 @@ def profit_loss():
     fmt = request.args.get("format")
     if fmt == "csv":
         csv_data = rpt.export_profit_loss_csv(g.tenant_id, year, month)
-        return Response(csv_data, mimetype="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=estado_resultados_rohu.csv"})
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=estado_resultados_rohu.csv"},
+        )
     data = rpt.get_profit_loss(g.tenant_id, year, month)
     return jsonify(success=True, data=data)
 
@@ -73,16 +81,14 @@ def balance_sheet():
 
 # ── DIAN Support ──────────────────────────────────────────────────
 
+
 @reports_bp.route("/dian/iva", methods=["GET"])
 @require_permission("reports", "read")
 def dian_iva():
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
     if not year or not month:
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "year y month son requeridos"
-        }), 400
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "year y month son requeridos"}), 400
 
     data = rpt.get_dian_iva_report(g.tenant_id, year, month)
     return jsonify(success=True, data=data)
@@ -97,14 +103,16 @@ def inventory_reconciliation():
 
 # ── CSV Exports ───────────────────────────────────────────────────
 
+
 @reports_bp.route("/trial-balance/export", methods=["GET"])
 @require_permission("reports", "export")
 def export_trial_balance():
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
     csv_data = rpt.export_trial_balance_csv(g.tenant_id, year, month)
-    return Response(csv_data, mimetype="text/csv",
-                    headers={"Content-Disposition": "attachment; filename=balance_prueba_rohu.csv"})
+    return Response(
+        csv_data, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=balance_prueba_rohu.csv"}
+    )
 
 
 @reports_bp.route("/sales-by-product", methods=["GET"])
@@ -116,8 +124,11 @@ def sales_by_product():
     fmt = request.args.get("format")
     if fmt == "csv":
         csv_data = rpt.export_sales_by_product_csv(data)
-        return Response(csv_data, mimetype="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=ventas_por_producto.csv"})
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=ventas_por_producto.csv"},
+        )
     return jsonify(success=True, data=data)
 
 
@@ -133,16 +144,20 @@ def stock_alerts():
 def tax_summary():
     year = request.args.get("year", type=int)
     if not year:
-        from zoneinfo import ZoneInfo
         from datetime import datetime
+        from zoneinfo import ZoneInfo
+
         year = datetime.now(ZoneInfo("America/Bogota")).year
 
     fmt = request.args.get("format")
     data = rpt.get_annual_tax_summary(g.tenant_id, year)
     if fmt == "csv":
         csv_data = rpt.export_tax_summary_csv(data)
-        return Response(csv_data, mimetype="text/csv",
-                        headers={"Content-Disposition": f"attachment; filename=resumen_fiscal_{year}.csv"})
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=resumen_fiscal_{year}.csv"},
+        )
     return jsonify(success=True, data=data)
 
 
@@ -170,10 +185,12 @@ def health_summary():
 
 # ── Audit Log ────────────────────────────────────────────────────
 
+
 @reports_bp.route("/audit-log", methods=["GET"])
 @require_permission("audit_logs", "read")
 def audit_log():
     from app.core.audit import AuditLog
+
     page = int(request.args.get("page", 1))
     per_page = min(int(request.args.get("per_page", 50)), 100)
     entity_type = request.args.get("entity_type")
@@ -200,16 +217,19 @@ def audit_log():
     q = q.order_by(AuditLog.created_at.desc())
     pagination = q.paginate(page=page, per_page=per_page, error_out=False)
 
-    items = [{
-        "id": str(log.id),
-        "user_id": str(log.user_id) if log.user_id else None,
-        "action": log.action,
-        "entity_type": log.entity_type,
-        "entity_id": str(log.entity_id),
-        "changes": log.changes,
-        "ip_address": log.ip_address,
-        "created_at": log.created_at.isoformat(),
-    } for log in pagination.items]
+    items = [
+        {
+            "id": str(log.id),
+            "user_id": str(log.user_id) if log.user_id else None,
+            "action": log.action,
+            "entity_type": log.entity_type,
+            "entity_id": str(log.entity_id),
+            "changes": log.changes,
+            "ip_address": log.ip_address,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in pagination.items
+    ]
 
     return jsonify(
         success=True,
@@ -221,6 +241,7 @@ def audit_log():
 
 
 # ── Analytics ────────────────────────────────────────────────────
+
 
 @reports_bp.route("/analytics/margins", methods=["GET"])
 @require_permission("reports", "read")

@@ -18,12 +18,8 @@ class BaseConfig:
 
     # JWT
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.urandom(32).hex())
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(
-        seconds=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", "900"))
-    )
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(
-        seconds=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES", "2592000"))
-    )
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", "900")))
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES", "2592000")))
     JWT_TOKEN_LOCATION = ["headers"]
 
     # Timezone
@@ -34,7 +30,7 @@ class BaseConfig:
         "pool_size": 3,
         "max_overflow": 3,
         "pool_timeout": 20,
-        "pool_recycle": 300,    # Recycle connections every 5 min (avoids stale connections)
+        "pool_recycle": 300,  # Recycle connections every 5 min (avoids stale connections)
         "pool_pre_ping": True,  # Verify connection is alive before using (critical for cloud DBs)
     }
 

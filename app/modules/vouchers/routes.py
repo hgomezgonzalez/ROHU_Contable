@@ -4,8 +4,8 @@ from flask import g, jsonify, request
 
 from app.extensions import limiter
 from app.modules.auth_rbac.services import require_permission
-from app.modules.vouchers.blueprint import vouchers_bp
 from app.modules.vouchers import services as voucher_svc
+from app.modules.vouchers.blueprint import vouchers_bp
 from app.modules.vouchers.exceptions import VoucherError
 from app.modules.vouchers.schemas import (
     CancelVoucherSchema,
@@ -38,6 +38,7 @@ def _handle_voucher_error(e):
 
 
 # ── Voucher Types ────────────────────────────────────────────────
+
 
 @vouchers_bp.route("/types", methods=["POST"])
 @require_permission("vouchers", "manage")
@@ -106,6 +107,7 @@ def delete_type(type_id):
 
 # ── Emission ─────────────────────────────────────────────────────
 
+
 @vouchers_bp.route("/emit", methods=["POST"])
 @require_permission("vouchers", "manage")
 def emit():
@@ -141,6 +143,7 @@ def emit():
 
 
 # ── Voucher Queries ──────────────────────────────────────────────
+
 
 @vouchers_bp.route("/", methods=["GET"])
 @require_permission("vouchers", "read")
@@ -181,6 +184,7 @@ def get_history(voucher_id):
 
 
 # ── Validation & Redemption ──────────────────────────────────────
+
 
 @vouchers_bp.route("/validate", methods=["POST"])
 @require_permission("vouchers", "read")
@@ -228,6 +232,7 @@ def redeem():
 
 # ── Cancellation ─────────────────────────────────────────────────
 
+
 @vouchers_bp.route("/<voucher_id>/cancel", methods=["POST"])
 @require_permission("vouchers", "manage")
 def cancel(voucher_id):
@@ -252,6 +257,7 @@ def cancel(voucher_id):
 
 # ── Dashboard ────────────────────────────────────────────────────
 
+
 @vouchers_bp.route("/stats", methods=["GET"])
 @require_permission("vouchers", "read")
 def stats():
@@ -260,6 +266,7 @@ def stats():
 
 
 # ── Print Tracking ───────────────────────────────────────────────
+
 
 @vouchers_bp.route("/<voucher_id>/print", methods=["POST"])
 @require_permission("vouchers", "manage")

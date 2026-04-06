@@ -2,9 +2,9 @@
 
 from flask import g, jsonify, request
 
-from app.modules.auth_rbac.services import require_permission
-from app.modules.accounting.blueprint import accounting_bp
 from app.modules.accounting import services as acc
+from app.modules.accounting.blueprint import accounting_bp
+from app.modules.auth_rbac.services import require_permission
 
 
 @accounting_bp.route("/accounts", methods=["GET"])
@@ -21,13 +21,12 @@ def create_account():
     required = ("puc_code", "name", "account_type", "normal_balance")
     for f in required:
         if not data.get(f):
-            return jsonify(success=False, error={
-                "code": "VALIDATION_ERROR", "message": f"{f} es requerido"
-            }), 400
+            return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": f"{f} es requerido"}), 400
     try:
         account = acc.create_account(
             tenant_id=g.tenant_id,
-            puc_code=data["puc_code"], name=data["name"],
+            puc_code=data["puc_code"],
+            name=data["name"],
             account_type=data["account_type"],
             normal_balance=data["normal_balance"],
             parent_code=data.get("parent_code"),
@@ -55,7 +54,9 @@ def delete_account(account_id):
         result = acc.delete_account(g.tenant_id, account_id)
         return jsonify(success=True, data=result)
     except ValueError as e:
-        code = "SYSTEM_ACCOUNT" if "sistema" in str(e) else "HAS_MOVEMENTS" if "movimientos" in str(e) else "DELETE_ERROR"
+        code = (
+            "SYSTEM_ACCOUNT" if "sistema" in str(e) else "HAS_MOVEMENTS" if "movimientos" in str(e) else "DELETE_ERROR"
+        )
         status = 403 if "sistema" in str(e) else 409 if "movimientos" in str(e) else 400
         return jsonify(success=False, error={"code": code, "message": str(e)}), status
 
@@ -84,13 +85,14 @@ def list_entries():
 def create_entry():
     data = request.get_json()
     if not data.get("description") or not data.get("lines"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "description y lines son requeridos"
-        }), 400
+        return (
+            jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "description y lines son requeridos"}),
+            400,
+        )
 
     try:
         from app.extensions import db
+
         entry = acc.create_journal_entry(
             tenant_id=g.tenant_id,
             created_by=str(g.current_user.id),
@@ -119,9 +121,8 @@ def trial_balance():
 def list_periods(year):
     """List all periods for a year with their status."""
     from app.modules.accounting.models import AccountingPeriod
-    periods = AccountingPeriod.query.filter_by(
-        tenant_id=g.tenant_id, year=year
-    ).order_by(AccountingPeriod.month).all()
+
+    periods = AccountingPeriod.query.filter_by(tenant_id=g.tenant_id, year=year).order_by(AccountingPeriod.month).all()
     result = {}
     for p in periods:
         result[p.month] = {"status": p.status, "closed_at": p.closed_at.isoformat() if p.closed_at else None}
@@ -133,14 +134,14 @@ def list_periods(year):
 def close_period(year, month):
     try:
         result = acc.monthly_close(
-            tenant_id=g.tenant_id, year=year, month=month,
+            tenant_id=g.tenant_id,
+            year=year,
+            month=month,
             user_id=str(g.current_user.id),
         )
         return jsonify(success=True, data=result)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PERIOD_CLOSE_ERROR", "message": str(e)
-        }), 409
+        return jsonify(success=False, error={"code": "PERIOD_CLOSE_ERROR", "message": str(e)}), 409
 
 
 @accounting_bp.route("/periods/<int:year>/<int:month>/reopen", methods=["POST"])
@@ -150,32 +151,40 @@ def reopen_period_route(year, month):
         data = request.get_json() or {}
         reason = data.get("reason", "")
         period = acc.reopen_period(
-            tenant_id=g.tenant_id, year=year, month=month,
-            user_id=str(g.current_user.id), reason=reason,
+            tenant_id=g.tenant_id,
+            year=year,
+            month=month,
+            user_id=str(g.current_user.id),
+            reason=reason,
         )
         return jsonify(success=True, data=period)
     except ValueError as e:
-        return jsonify(success=False, error={
-            "code": "PERIOD_REOPEN_ERROR", "message": str(e)
-        }), 409
+        return jsonify(success=False, error={"code": "PERIOD_REOPEN_ERROR", "message": str(e)}), 409
 
 
 # ── Expenses ─────────────────────────────────────────────────────
+
 
 @accounting_bp.route("/expenses", methods=["POST"])
 @require_permission("journal_entries", "create")
 def create_expense():
     data = request.get_json()
     if not data.get("puc_code") or not data.get("concept") or not data.get("amount"):
-        return jsonify(success=False, error={
-            "code": "VALIDATION_ERROR",
-            "message": "puc_code, concept y amount son requeridos"
-        }), 400
+        return (
+            jsonify(
+                success=False,
+                error={"code": "VALIDATION_ERROR", "message": "puc_code, concept y amount son requeridos"},
+            ),
+            400,
+        )
     try:
         expense = acc.create_expense(
-            tenant_id=g.tenant_id, created_by=str(g.current_user.id),
-            puc_code=data["puc_code"], concept=data["concept"],
-            amount=data["amount"], tax_amount=data.get("tax_amount", 0),
+            tenant_id=g.tenant_id,
+            created_by=str(g.current_user.id),
+            puc_code=data["puc_code"],
+            concept=data["concept"],
+            amount=data["amount"],
+            tax_amount=data.get("tax_amount", 0),
             payment_status=data.get("payment_status", "paid"),
             payment_method=data.get("payment_method", "cash"),
             supplier_id=data.get("supplier_id"),
@@ -204,7 +213,9 @@ def pay_expense(expense_id):
     data = request.get_json() or {}
     try:
         expense = acc.pay_expense(
-            g.tenant_id, expense_id, str(g.current_user.id),
+            g.tenant_id,
+            expense_id,
+            str(g.current_user.id),
             payment_method=data.get("payment_method", "cash"),
         )
         return jsonify(success=True, data=expense)
@@ -213,6 +224,7 @@ def pay_expense(expense_id):
 
 
 # ── Opening Balance (Saldos Iniciales) ──────────────────────────
+
 
 @accounting_bp.route("/opening-balance", methods=["GET"])
 @require_permission("journal_entries", "create")
@@ -227,7 +239,8 @@ def create_opening():
     data = request.get_json()
     try:
         result = acc.create_opening_balance(
-            tenant_id=g.tenant_id, user_id=str(g.current_user.id),
+            tenant_id=g.tenant_id,
+            user_id=str(g.current_user.id),
             opening_date=data.get("opening_date", ""),
             cash=float(data.get("cash", 0)),
             bank=float(data.get("bank", 0)),
@@ -243,6 +256,7 @@ def create_opening():
 
 
 # ── Withholdings ─────────────────────────────────────────────────
+
 
 @accounting_bp.route("/withholdings", methods=["GET"])
 @require_permission("chart_of_accounts", "manage")
@@ -260,34 +274,42 @@ def seed_withholdings():
 
 # ── Accounting Errors ────────────────────────────────────────────
 
+
 @accounting_bp.route("/errors", methods=["GET"])
 @require_permission("chart_of_accounts", "manage")
 def list_accounting_errors():
     from app.modules.accounting.models import AccountingError
-    errors = AccountingError.query.filter_by(
-        tenant_id=g.tenant_id, status="pending"
-    ).order_by(AccountingError.created_at.desc()).all()
-    return jsonify(success=True, data=[{
-        "id": str(e.id),
-        "sale_id": str(e.sale_id) if e.sale_id else None,
-        "error_message": e.error_message,
-        "status": e.status,
-        "created_at": e.created_at.isoformat(),
-    } for e in errors])
+
+    errors = (
+        AccountingError.query.filter_by(tenant_id=g.tenant_id, status="pending")
+        .order_by(AccountingError.created_at.desc())
+        .all()
+    )
+    return jsonify(
+        success=True,
+        data=[
+            {
+                "id": str(e.id),
+                "sale_id": str(e.sale_id) if e.sale_id else None,
+                "error_message": e.error_message,
+                "status": e.status,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in errors
+        ],
+    )
 
 
 @accounting_bp.route("/reprocess-pending", methods=["POST"])
 @require_permission("chart_of_accounts", "manage")
 def reprocess_pending():
     """Reprocess failed accounting entries for completed sales."""
-    from app.modules.accounting.models import AccountingError
-    from app.modules.pos.models import Sale
-    from app.modules.auth_rbac.models import Tenant
     from app.extensions import db
+    from app.modules.accounting.models import AccountingError
+    from app.modules.auth_rbac.models import Tenant
+    from app.modules.pos.models import Sale
 
-    errors = AccountingError.query.filter_by(
-        tenant_id=g.tenant_id, status="pending"
-    ).all()
+    errors = AccountingError.query.filter_by(tenant_id=g.tenant_id, status="pending").all()
 
     tenant_obj = Tenant.query.get(g.tenant_id)
     fiscal = tenant_obj.fiscal_regime if tenant_obj else "simplified"
@@ -302,15 +324,16 @@ def reprocess_pending():
             continue
         try:
             # Calculate cost from sale items
-            cost_total = sum(
-                float(item.unit_cost) * float(item.quantity) for item in sale.items
-            )
+            cost_total = sum(float(item.unit_cost) * float(item.quantity) for item in sale.items)
             payment_method = sale.payments[0].method if sale.payments else "cash"
             acc.post_sale_entry(
-                tenant_id=str(g.tenant_id), created_by=str(g.current_user.id),
+                tenant_id=str(g.tenant_id),
+                created_by=str(g.current_user.id),
                 sale_id=str(sale.id),
-                subtotal=float(sale.subtotal), tax_amount=float(sale.tax_amount),
-                total_amount=float(sale.total_amount), cost_total=cost_total,
+                subtotal=float(sale.subtotal),
+                tax_amount=float(sale.tax_amount),
+                total_amount=float(sale.total_amount),
+                cost_total=cost_total,
                 payment_method="credit" if sale.sale_type == "credit" else payment_method,
                 fiscal_regime=fiscal,
             )
@@ -324,8 +347,11 @@ def reprocess_pending():
             failed += 1
 
     db.session.commit()
-    return jsonify(success=True, data={
-        "total_processed": len(errors),
-        "resolved": resolved,
-        "failed": failed,
-    })
+    return jsonify(
+        success=True,
+        data={
+            "total_processed": len(errors),
+            "resolved": resolved,
+            "failed": failed,
+        },
+    )

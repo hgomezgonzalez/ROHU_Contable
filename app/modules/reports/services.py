@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, case, desc, and_, text
+from sqlalchemy import and_, case, desc, func, text
 
 BOGOTA_TZ = ZoneInfo("America/Bogota")
 
@@ -35,15 +35,26 @@ def _bogota_year_filter(column, year):
     col_bogota = func.timezone("America/Bogota", column)
     return func.extract("year", col_bogota) == year
 
-from app.extensions import db
-from app.modules.pos.models import Sale, SaleItem, Payment, CreditNote
-from app.modules.inventory.models import Product, StockMovement
-from app.modules.accounting.models import ChartOfAccount, JournalEntry, JournalLine, AccountingPeriod
-from app.modules.accounting.services import get_trial_balance
-from app.modules.purchases.models import PurchaseOrder, SupplierPayment, PurchaseCreditNote, PurchaseDebitNote
 
+from app.extensions import db
+from app.modules.accounting.models import (
+    AccountingPeriod,
+    ChartOfAccount,
+    JournalEntry,
+    JournalLine,
+)
+from app.modules.accounting.services import get_trial_balance
+from app.modules.inventory.models import Product, StockMovement
+from app.modules.pos.models import CreditNote, Payment, Sale, SaleItem
+from app.modules.purchases.models import (
+    PurchaseCreditNote,
+    PurchaseDebitNote,
+    PurchaseOrder,
+    SupplierPayment,
+)
 
 # ── Dashboard ─────────────────────────────────────────────────────
+
 
 def _parse_date_range(date_from: str = None, date_to: str = None):
     """Parse date range strings into timezone-aware datetimes. Defaults to today (Bogotá)."""
@@ -77,6 +88,7 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
     """Main dashboard with KPIs, top products, alerts. Supports date range."""
     # Determine fiscal regime for IVA display
     from app.modules.auth_rbac.models import Tenant
+
     tenant_obj = Tenant.query.get(tenant_id)
     fiscal_regime = tenant_obj.fiscal_regime if tenant_obj else "simplified"
     is_vat_responsible = fiscal_regime != "simplified"
@@ -105,6 +117,7 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
     # Auto-mark overdue credit sales
     try:
         from app.modules.pos.services import mark_overdue_sales
+
         mark_overdue_sales(tenant_id)
     except Exception:
         pass
@@ -181,13 +194,10 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
     )
 
     # Pending purchase orders
-    pending_po = (
-        PurchaseOrder.query.filter(
-            PurchaseOrder.tenant_id == tenant_id,
-            PurchaseOrder.status.in_(["sent", "partially_received"]),
-        )
-        .count()
-    )
+    pending_po = PurchaseOrder.query.filter(
+        PurchaseOrder.tenant_id == tenant_id,
+        PurchaseOrder.status.in_(["sent", "partially_received"]),
+    ).count()
 
     # Purchases KPIs for today
     purchases_kpi = (
@@ -218,34 +228,42 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
     )
 
     # CxP balance (total credit purchases - payments - credit notes)
-    total_credit_purchases = db.session.query(
-        func.coalesce(func.sum(PurchaseOrder.total_amount), 0)
-    ).filter(
-        PurchaseOrder.tenant_id == tenant_id,
-        PurchaseOrder.payment_type == "credit",
-        PurchaseOrder.status.in_(["received", "partially_received"]),
-    ).scalar()
+    total_credit_purchases = (
+        db.session.query(func.coalesce(func.sum(PurchaseOrder.total_amount), 0))
+        .filter(
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.payment_type == "credit",
+            PurchaseOrder.status.in_(["received", "partially_received"]),
+        )
+        .scalar()
+    )
 
-    total_supplier_payments = db.session.query(
-        func.coalesce(func.sum(SupplierPayment.amount), 0)
-    ).filter(
-        SupplierPayment.tenant_id == tenant_id,
-        SupplierPayment.status == "completed",
-    ).scalar()
+    total_supplier_payments = (
+        db.session.query(func.coalesce(func.sum(SupplierPayment.amount), 0))
+        .filter(
+            SupplierPayment.tenant_id == tenant_id,
+            SupplierPayment.status == "completed",
+        )
+        .scalar()
+    )
 
-    total_purchase_cn = db.session.query(
-        func.coalesce(func.sum(PurchaseCreditNote.total_amount), 0)
-    ).filter(
-        PurchaseCreditNote.tenant_id == tenant_id,
-        PurchaseCreditNote.status == "active",
-    ).scalar()
+    total_purchase_cn = (
+        db.session.query(func.coalesce(func.sum(PurchaseCreditNote.total_amount), 0))
+        .filter(
+            PurchaseCreditNote.tenant_id == tenant_id,
+            PurchaseCreditNote.status == "active",
+        )
+        .scalar()
+    )
 
-    total_purchase_dn = db.session.query(
-        func.coalesce(func.sum(PurchaseDebitNote.total_amount), 0)
-    ).filter(
-        PurchaseDebitNote.tenant_id == tenant_id,
-        PurchaseDebitNote.status == "active",
-    ).scalar()
+    total_purchase_dn = (
+        db.session.query(func.coalesce(func.sum(PurchaseDebitNote.total_amount), 0))
+        .filter(
+            PurchaseDebitNote.tenant_id == tenant_id,
+            PurchaseDebitNote.status == "active",
+        )
+        .scalar()
+    )
 
     cxp_balance = (
         float(total_credit_purchases)
@@ -258,9 +276,8 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
     accounting_errors_count = 0
     try:
         from app.modules.accounting.models import AccountingError
-        accounting_errors_count = AccountingError.query.filter_by(
-            tenant_id=tenant_id, status="pending"
-        ).count()
+
+        accounting_errors_count = AccountingError.query.filter_by(tenant_id=tenant_id, status="pending").count()
     except Exception:
         pass
 
@@ -285,14 +302,8 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
             "total": float(purchases_kpi.total or 0),
         },
         "cxp_balance": cxp_balance,
-        "sales_by_hour": [
-            {"hour": int(h.hour), "count": h.count, "total": float(h.total)}
-            for h in sales_by_hour
-        ],
-        "payment_methods": [
-            {"method": p.method, "total": float(p.total), "count": p.count}
-            for p in payment_breakdown
-        ],
+        "sales_by_hour": [{"hour": int(h.hour), "count": h.count, "total": float(h.total)} for h in sales_by_hour],
+        "payment_methods": [{"method": p.method, "total": float(p.total), "count": p.count} for p in payment_breakdown],
         "top_products": [
             {
                 "name": t.product_name,
@@ -307,8 +318,7 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
         "alerts": {
             "low_stock_count": len(low_stock),
             "low_stock_items": [
-                {"name": p.name, "stock": float(p.stock_current), "minimum": float(p.stock_minimum)}
-                for p in low_stock
+                {"name": p.name, "stock": float(p.stock_current), "minimum": float(p.stock_minimum)} for p in low_stock
             ],
             "pending_purchase_orders": pending_po,
             "accounting_errors": accounting_errors_count,
@@ -318,8 +328,11 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
 
 # ── Sales Report ──────────────────────────────────────────────────
 
+
 def get_sales_report(
-    tenant_id: str, date_from: str, date_to: str,
+    tenant_id: str,
+    date_from: str,
+    date_to: str,
     group_by: str = "day",
 ) -> dict:
     """Sales report grouped by day, week, or month."""
@@ -375,13 +388,15 @@ def get_sales_report(
     total_count = sum(r.count or 0 for r in rows)
 
     # Returns (credit notes) in period
-    total_returns = db.session.query(
-        func.coalesce(func.sum(CreditNote.total_amount), 0)
-    ).filter(
-        CreditNote.tenant_id == tenant_id,
-        _date_in_bogota(CreditNote.created_at) >= date_from,
-        _date_in_bogota(CreditNote.created_at) <= date_to,
-    ).scalar()
+    total_returns = (
+        db.session.query(func.coalesce(func.sum(CreditNote.total_amount), 0))
+        .filter(
+            CreditNote.tenant_id == tenant_id,
+            _date_in_bogota(CreditNote.created_at) >= date_from,
+            _date_in_bogota(CreditNote.created_at) <= date_to,
+        )
+        .scalar()
+    )
     total_returns = float(total_returns)
     net_revenue = total_revenue - total_returns
 
@@ -400,10 +415,7 @@ def get_sales_report(
             }
             for r in rows
         ],
-        "top_products": [
-            {"name": t.product_name, "quantity": float(t.qty), "revenue": float(t.revenue)}
-            for t in top
-        ],
+        "top_products": [{"name": t.product_name, "quantity": float(t.qty), "revenue": float(t.revenue)} for t in top],
         "summary": {
             "total_sales": total_count,
             "gross_revenue": total_revenue,
@@ -416,6 +428,7 @@ def get_sales_report(
 
 
 # ── Inventory Report ──────────────────────────────────────────────
+
 
 def get_inventory_report(tenant_id: str) -> dict:
     """Current inventory valuation and status."""
@@ -442,18 +455,20 @@ def get_inventory_report(tenant_id: str) -> dict:
         if p.is_low_stock:
             low_stock_count += 1
 
-        items.append({
-            "name": p.name,
-            "sku": p.sku,
-            "stock": float(p.stock_current),
-            "minimum": float(p.stock_minimum),
-            "is_low_stock": p.is_low_stock,
-            "unit": p.unit,
-            "sale_price": float(p.sale_price),
-            "cost_average": float(p.cost_average),
-            "value_at_sale": float(value_at_sale),
-            "value_at_cost": float(value_at_cost),
-        })
+        items.append(
+            {
+                "name": p.name,
+                "sku": p.sku,
+                "stock": float(p.stock_current),
+                "minimum": float(p.stock_minimum),
+                "is_low_stock": p.is_low_stock,
+                "unit": p.unit,
+                "sale_price": float(p.sale_price),
+                "cost_average": float(p.cost_average),
+                "value_at_sale": float(value_at_sale),
+                "value_at_cost": float(value_at_cost),
+            }
+        )
 
     return {
         "total_products": len(items),
@@ -466,6 +481,7 @@ def get_inventory_report(tenant_id: str) -> dict:
 
 
 # ── Profit & Loss ─────────────────────────────────────────────────
+
 
 def get_profit_loss(tenant_id: str, year: int = None, month: int = None) -> dict:
     """Simplified P&L (Estado de Resultados) from accounting entries."""
@@ -488,17 +504,19 @@ def get_profit_loss(tenant_id: str, year: int = None, month: int = None) -> dict
 
     if year and month:
         # Accumulated P&L: January through selected month (NIIF standard)
-        q = q.join(
-            AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id
-        ).filter(AccountingPeriod.year == year, AccountingPeriod.month <= month)
+        q = q.join(AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id).filter(
+            AccountingPeriod.year == year, AccountingPeriod.month <= month
+        )
     elif year:
-        q = q.join(
-            AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id
-        ).filter(AccountingPeriod.year == year)
+        q = q.join(AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id).filter(
+            AccountingPeriod.year == year
+        )
 
     q = q.group_by(
-        ChartOfAccount.puc_code, ChartOfAccount.name,
-        ChartOfAccount.account_type, ChartOfAccount.normal_balance,
+        ChartOfAccount.puc_code,
+        ChartOfAccount.name,
+        ChartOfAccount.account_type,
+        ChartOfAccount.normal_balance,
     ).order_by(ChartOfAccount.puc_code)
 
     rows = q.all()
@@ -545,6 +563,7 @@ def get_profit_loss(tenant_id: str, year: int = None, month: int = None) -> dict
 
 # ── Balance General (Estado de Situación Financiera) ─────────────
 
+
 def get_balance_sheet(tenant_id: str, year: int = None, month: int = None) -> dict:
     """Structured Balance Sheet (ESF) classified by current/non-current."""
     balance = get_trial_balance(tenant_id, year, month)
@@ -590,21 +609,28 @@ def get_balance_sheet(tenant_id: str, year: int = None, month: int = None) -> di
 
         # Add to balance sheet groups (use signed balance, not abs)
         if group and abs(bal) > 0.01:
-            groups[group]["items"].append({
-                "puc_code": acc["puc_code"], "name": acc["name"],
-                "balance": bal if bal > 0 else -bal,  # display positive
-                "is_negative": bal < 0,
-            })
+            groups[group]["items"].append(
+                {
+                    "puc_code": acc["puc_code"],
+                    "name": acc["name"],
+                    "balance": bal if bal > 0 else -bal,  # display positive
+                    "is_negative": bal < 0,
+                }
+            )
             groups[group]["total"] += bal  # SIGNED total (not abs!)
 
     # Add period result to equity (income - expenses - costs)
     period_result = round(period_income - period_expense, 2)
     if abs(period_result) > 0.01:
         label = "Resultado del periodo (utilidad)" if period_result > 0 else "Resultado del periodo (pérdida)"
-        groups["equity"]["items"].append({
-            "puc_code": "—", "name": label, "balance": abs(period_result),
-            "is_negative": period_result < 0,
-        })
+        groups["equity"]["items"].append(
+            {
+                "puc_code": "—",
+                "name": label,
+                "balance": abs(period_result),
+                "is_negative": period_result < 0,
+            }
+        )
         groups["equity"]["total"] += period_result
 
     total_assets = groups["asset_current"]["total"] + groups["asset_non_current"]["total"]
@@ -612,7 +638,8 @@ def get_balance_sheet(tenant_id: str, year: int = None, month: int = None) -> di
     total_equity = groups["equity"]["total"]
 
     return {
-        "year": year, "month": month,
+        "year": year,
+        "month": month,
         "assets": {
             "current": groups["asset_current"],
             "non_current": groups["asset_non_current"],
@@ -631,14 +658,19 @@ def get_balance_sheet(tenant_id: str, year: int = None, month: int = None) -> di
 
 # ── DIAN Support Reports ──────────────────────────────────────────
 
+
 def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
     """IVA summary: generated vs deductible = net payable."""
     from app.modules.accounting.models import (
-        AccountingPeriod, ChartOfAccount, JournalEntry, JournalLine,
+        AccountingPeriod,
+        ChartOfAccount,
+        JournalEntry,
+        JournalLine,
     )
 
     # Check fiscal regime
     from app.modules.auth_rbac.models import Tenant
+
     tenant_obj = Tenant.query.get(tenant_id)
     fiscal_regime = tenant_obj.fiscal_regime if tenant_obj else "simplified"
     is_vat_responsible = fiscal_regime != "simplified"
@@ -701,36 +733,49 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
 
     # Sales by IVA rate (segregation for F-300)
     from app.modules.pos.models import SaleItem
-    sales_by_rate = db.session.query(
-        SaleItem.tax_rate,
-        func.coalesce(func.sum(SaleItem.subtotal), 0).label("base"),
-        func.coalesce(func.sum(SaleItem.tax_amount), 0).label("tax"),
-    ).join(Sale).filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
-        _bogota_period_filter(Sale.sale_date, year, month),
-    ).group_by(SaleItem.tax_rate).all()
+
+    sales_by_rate = (
+        db.session.query(
+            SaleItem.tax_rate,
+            func.coalesce(func.sum(SaleItem.subtotal), 0).label("base"),
+            func.coalesce(func.sum(SaleItem.tax_amount), 0).label("tax"),
+        )
+        .join(Sale)
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            _bogota_period_filter(Sale.sale_date, year, month),
+        )
+        .group_by(SaleItem.tax_rate)
+        .all()
+    )
 
     iva_by_rate = []
     for r in sales_by_rate:
         rate = float(r.tax_rate or 0)
-        iva_by_rate.append({
-            "rate": rate,
-            "label": f"IVA {rate}%" if rate > 0 else "Excluido/Exento",
-            "base": float(r.base),
-            "tax": float(r.tax),
-        })
+        iva_by_rate.append(
+            {
+                "rate": rate,
+                "label": f"IVA {rate}%" if rate > 0 else "Excluido/Exento",
+                "base": float(r.base),
+                "tax": float(r.tax),
+            }
+        )
 
     # Withholdings applied in period (ReteFuente)
-    rete_applied = db.session.query(
-        func.coalesce(func.sum(JournalLine.credit_amount), 0).label("total")
-    ).join(JournalEntry).join(ChartOfAccount, JournalLine.account_id == ChartOfAccount.id).join(
-        AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id
-    ).filter(
-        ChartOfAccount.tenant_id == tenant_id,
-        ChartOfAccount.puc_code.like("2365%"),
-        AccountingPeriod.year == year,
-        AccountingPeriod.month == month,
-    ).scalar()
+    rete_applied = (
+        db.session.query(func.coalesce(func.sum(JournalLine.credit_amount), 0).label("total"))
+        .join(JournalEntry)
+        .join(ChartOfAccount, JournalLine.account_id == ChartOfAccount.id)
+        .join(AccountingPeriod, JournalEntry.period_id == AccountingPeriod.id)
+        .filter(
+            ChartOfAccount.tenant_id == tenant_id,
+            ChartOfAccount.puc_code.like("2365%"),
+            AccountingPeriod.year == year,
+            AccountingPeriod.month == month,
+        )
+        .scalar()
+    )
 
     result = {
         "period": f"{year}-{month:02d}",
@@ -762,6 +807,7 @@ def get_dian_iva_report(tenant_id: str, year: int, month: int) -> dict:
 
 # ── Inventory Reconciliation ─────────────────────────────────────
 
+
 def get_inventory_reconciliation(tenant_id: str) -> dict:
     """Compare accounting balance of 1435 vs physical inventory value.
     Returns overall totals and per-product detail.
@@ -771,9 +817,15 @@ def get_inventory_reconciliation(tenant_id: str) -> dict:
     book_value = get_inventory_accounting_balance(tenant_id)
 
     # Single query for both physical value and product details
-    products = Product.query.filter_by(
-        tenant_id=tenant_id, is_active=True,
-    ).filter(Product.deleted_at.is_(None)).order_by(Product.name).all()
+    products = (
+        Product.query.filter_by(
+            tenant_id=tenant_id,
+            is_active=True,
+        )
+        .filter(Product.deleted_at.is_(None))
+        .order_by(Product.name)
+        .all()
+    )
 
     physical_value = 0.0
     product_details = []
@@ -782,14 +834,16 @@ def get_inventory_reconciliation(tenant_id: str) -> dict:
         cost_avg = float(p.cost_average or p.purchase_price or 0)
         value = round(stock * cost_avg, 2)
         physical_value += value
-        product_details.append({
-            "product_id": str(p.id),
-            "name": p.name,
-            "sku": p.sku,
-            "stock_current": stock,
-            "cost_average": cost_avg,
-            "physical_value": value,
-        })
+        product_details.append(
+            {
+                "product_id": str(p.id),
+                "name": p.name,
+                "sku": p.sku,
+                "stock_current": stock,
+                "cost_average": cost_avg,
+                "physical_value": value,
+            }
+        )
 
     physical_value = round(physical_value, 2)
     difference = round(book_value - physical_value, 2)
@@ -807,6 +861,7 @@ def get_inventory_reconciliation(tenant_id: str) -> dict:
 
 # ── CSV Export Helpers ────────────────────────────────────────────
 
+
 def export_trial_balance_csv(tenant_id: str, year: int = None, month: int = None) -> str:
     """Export trial balance as CSV string."""
     import csv
@@ -817,11 +872,20 @@ def export_trial_balance_csv(tenant_id: str, year: int = None, month: int = None
     writer = csv.writer(output)
     writer.writerow(["Cuenta PUC", "Nombre", "Tipo", "Débito", "Crédito", "Saldo"])
     for a in data["accounts"]:
-        writer.writerow([a["puc_code"], a["name"], a["account_type"],
-                         a["total_debit"], a["total_credit"], a["balance"]])
+        writer.writerow(
+            [a["puc_code"], a["name"], a["account_type"], a["total_debit"], a["total_credit"], a["balance"]]
+        )
     writer.writerow([])
-    writer.writerow(["TOTALES", "", "", data["total_debit"], data["total_credit"],
-                     "Cuadrado" if data["is_balanced"] else "DESCUADRE"])
+    writer.writerow(
+        [
+            "TOTALES",
+            "",
+            "",
+            data["total_debit"],
+            data["total_credit"],
+            "Cuadrado" if data["is_balanced"] else "DESCUADRE",
+        ]
+    )
     return output.getvalue()
 
 
@@ -860,19 +924,42 @@ def export_inventory_csv(tenant_id: str) -> str:
     data = get_inventory_report(tenant_id)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Producto", "SKU", "Stock", "Mínimo", "Unidad",
-                     "Precio Venta", "Costo Promedio", "Valor Costo", "Valor Venta", "Estado"])
+    writer.writerow(
+        [
+            "Producto",
+            "SKU",
+            "Stock",
+            "Mínimo",
+            "Unidad",
+            "Precio Venta",
+            "Costo Promedio",
+            "Valor Costo",
+            "Valor Venta",
+            "Estado",
+        ]
+    )
     for i in data["items"]:
-        writer.writerow([i["name"], i["sku"], i["stock"], i["minimum"], i["unit"],
-                         i["sale_price"], i["cost_average"], i["value_at_cost"],
-                         i["value_at_sale"], "BAJO" if i["is_low_stock"] else "OK"])
+        writer.writerow(
+            [
+                i["name"],
+                i["sku"],
+                i["stock"],
+                i["minimum"],
+                i["unit"],
+                i["sale_price"],
+                i["cost_average"],
+                i["value_at_cost"],
+                i["value_at_sale"],
+                "BAJO" if i["is_low_stock"] else "OK",
+            ]
+        )
     writer.writerow([])
-    writer.writerow(["TOTALES", "", "", "", "", "", "",
-                     data["total_value_at_cost"], data["total_value_at_sale"]])
+    writer.writerow(["TOTALES", "", "", "", "", "", "", data["total_value_at_cost"], data["total_value_at_sale"]])
     return output.getvalue()
 
 
 # ── Sales by Product Report ───────────────────────────────────────
+
 
 def get_sales_by_product(tenant_id: str, date_from: str = None, date_to: str = None) -> list:
     """Sales breakdown by product for a date range."""
@@ -926,12 +1013,12 @@ def export_sales_by_product_csv(data: list) -> str:
     writer = csv.writer(output)
     writer.writerow(["Producto", "Cantidad Vendida", "Subtotal", "IVA", "Total", "# Ventas"])
     for r in data:
-        writer.writerow([r["product_name"], r["quantity_sold"], r["revenue"],
-                         r["tax"], r["total"], r["num_sales"]])
+        writer.writerow([r["product_name"], r["quantity_sold"], r["revenue"], r["tax"], r["total"], r["num_sales"]])
     return output.getvalue()
 
 
 # ── Stock Alerts ──────────────────────────────────────────────────
+
 
 def get_stock_alerts(tenant_id: str) -> list:
     """Products with stock at or below minimum."""
@@ -954,8 +1041,9 @@ def get_stock_alerts(tenant_id: str) -> list:
             "stock_current": float(p.stock_current),
             "stock_minimum": float(p.stock_minimum),
             "deficit": float(p.stock_minimum - p.stock_current),
-            "cost_to_restock": float((p.stock_minimum - p.stock_current) * p.cost_average)
-                if p.stock_current < p.stock_minimum else 0,
+            "cost_to_restock": (
+                float((p.stock_minimum - p.stock_current) * p.cost_average) if p.stock_current < p.stock_minimum else 0
+            ),
         }
         for p in products
     ]
@@ -963,9 +1051,13 @@ def get_stock_alerts(tenant_id: str) -> list:
 
 # ── Transactions Report ──────────────────────────────────────────
 
+
 def get_transactions(
-    tenant_id: str, page: int = 1, per_page: int = 50,
-    date_from: str = None, date_to: str = None,
+    tenant_id: str,
+    page: int = 1,
+    per_page: int = 50,
+    date_from: str = None,
+    date_to: str = None,
 ) -> dict:
     """All sales transactions with detail."""
     q = Sale.query.filter(Sale.tenant_id == tenant_id)
@@ -976,9 +1068,7 @@ def get_transactions(
         q = q.filter(_date_in_bogota(Sale.sale_date) <= date_to)
 
     total = q.count()
-    sales = q.order_by(Sale.sale_date.desc()).offset(
-        (page - 1) * per_page
-    ).limit(per_page).all()
+    sales = q.order_by(Sale.sale_date.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
     return {
         "data": [
@@ -993,25 +1083,37 @@ def get_transactions(
                 "items_count": len(s.items),
                 "payment_method": s.payments[0].method if s.payments else None,
                 "items": [
-                    {"name": i.product_name, "qty": float(i.quantity),
-                     "price": float(i.unit_price), "total": float(i.total)}
+                    {
+                        "name": i.product_name,
+                        "qty": float(i.quantity),
+                        "price": float(i.unit_price),
+                        "total": float(i.total),
+                    }
                     for i in s.items
                 ],
             }
             for s in sales
         ],
         "pagination": {
-            "page": page, "per_page": per_page,
-            "total": total, "has_next": page * per_page < total,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "has_next": page * per_page < total,
         },
     }
 
 
 # ── Annual Tax Summary (Renta) ────────────────────────────────────
 
+
 def get_annual_tax_summary(tenant_id: str, year: int) -> dict:
     """Annual fiscal summary for Colombian income tax declaration (renta)."""
-    from app.modules.accounting.models import ChartOfAccount, JournalEntry, JournalLine, AccountingPeriod
+    from app.modules.accounting.models import (
+        AccountingPeriod,
+        ChartOfAccount,
+        JournalEntry,
+        JournalLine,
+    )
 
     def _sum_accounts(puc_codes: list, yr: int) -> Decimal:
         """Sum balance for given PUC codes in a year."""
@@ -1086,7 +1188,8 @@ def get_annual_tax_summary(tenant_id: str, year: int) -> dict:
 
     # Sales and purchases counts — using Bogota timezone
     sales_count = Sale.query.filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
+        Sale.tenant_id == tenant_id,
+        Sale.status == "completed",
         _bogota_year_filter(Sale.sale_date, year),
     ).count()
 
@@ -1119,6 +1222,7 @@ def export_tax_summary_csv(data: dict) -> str:
     """Export annual tax summary as CSV."""
     import csv
     import io
+
     output = io.StringIO()
     w = csv.writer(output)
     w.writerow(["RESUMEN FISCAL ANUAL", data["year"]])
@@ -1148,6 +1252,7 @@ def export_tax_summary_csv(data: dict) -> str:
 
 # ── Analytics Reports ────────────────────────────────────────────
 
+
 def get_product_margins(tenant_id: str, date_from: str = None, date_to: str = None) -> list:
     """Top products by gross margin percentage."""
     q = (
@@ -1167,21 +1272,25 @@ def get_product_margins(tenant_id: str, date_from: str = None, date_to: str = No
 
     rows = q.group_by(SaleItem.product_name).order_by(desc("revenue")).limit(15).all()
 
-    return [{
-        "name": r.product_name,
-        "qty": float(r.qty),
-        "revenue": float(r.revenue),
-        "cost": float(r.cost),
-        "margin": float(r.revenue) - float(r.cost),
-        "margin_pct": round((float(r.revenue) - float(r.cost)) / max(float(r.revenue), 0.01) * 100, 1),
-    } for r in rows]
+    return [
+        {
+            "name": r.product_name,
+            "qty": float(r.qty),
+            "revenue": float(r.revenue),
+            "cost": float(r.cost),
+            "margin": float(r.revenue) - float(r.cost),
+            "margin_pct": round((float(r.revenue) - float(r.cost)) / max(float(r.revenue), 0.01) * 100, 1),
+        }
+        for r in rows
+    ]
 
 
 def get_expenses_trend(tenant_id: str, months: int = 6) -> list:
     """Monthly expenses grouped by PUC code (top categories)."""
-    from app.modules.accounting.models import Expense
-    from datetime import datetime
     import calendar
+    from datetime import datetime
+
+    from app.modules.accounting.models import Expense
 
     now = datetime.now(BOGOTA_TZ)
     results = []
@@ -1251,30 +1360,48 @@ def get_profit_trend(tenant_id: str, period: str = "daily", days: int = 30) -> l
         cn_trunc = func.date_trunc("day", func.timezone("America/Bogota", CreditNote.created_at))
 
     # Query 1: revenue + cost grouped by period (1 query instead of N×2)
-    sales_data = db.session.query(
-        trunc.label("period"),
-        func.coalesce(func.sum(Sale.subtotal), 0).label("revenue"),
-    ).filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
-        Sale.sale_date >= start,
-    ).group_by("period").all()
+    sales_data = (
+        db.session.query(
+            trunc.label("period"),
+            func.coalesce(func.sum(Sale.subtotal), 0).label("revenue"),
+        )
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date >= start,
+        )
+        .group_by("period")
+        .all()
+    )
 
-    cost_data = db.session.query(
-        trunc.label("period"),
-        func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0).label("cost"),
-    ).join(Sale).filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
-        Sale.sale_date >= start,
-    ).group_by("period").all()
+    cost_data = (
+        db.session.query(
+            trunc.label("period"),
+            func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0).label("cost"),
+        )
+        .join(Sale)
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date >= start,
+        )
+        .group_by("period")
+        .all()
+    )
 
     # Query 2: credit notes grouped by period
-    cn_data = db.session.query(
-        cn_trunc.label("period"),
-        func.coalesce(func.sum(CreditNote.subtotal), 0).label("cn_total"),
-    ).filter(
-        CreditNote.tenant_id == tenant_id,
-        CreditNote.created_at >= start,
-    ).group_by("period").all()
+    cn_data = (
+        db.session.query(
+            cn_trunc.label("period"),
+            func.coalesce(func.sum(CreditNote.subtotal), 0).label("cn_total"),
+        )
+        .filter(
+            CreditNote.tenant_id == tenant_id,
+            CreditNote.created_at >= start,
+        )
+        .group_by("period")
+        .all()
+    )
 
     # Merge into dict by period key
     rev_map = {r.period.strftime("%Y-%m-%d" if period != "monthly" else "%Y-%m"): float(r.revenue) for r in sales_data}
@@ -1288,21 +1415,34 @@ def get_profit_trend(tenant_id: str, period: str = "daily", days: int = 30) -> l
             m = now.month - i
             y = now.year
             while m <= 0:
-                m += 12; y -= 1
+                m += 12
+                y -= 1
             key = f"{y}-{m:02d}"
             rev = rev_map.get(key, 0) - cn_map.get(key, 0)
             cst = cost_map.get(key, 0)
-            results.append({"period": key, "revenue": rev, "cost": cst,
-                            "profit": round(rev - cst, 2),
-                            "margin_pct": round((rev - cst) / max(rev, 0.01) * 100, 1)})
+            results.append(
+                {
+                    "period": key,
+                    "revenue": rev,
+                    "cost": cst,
+                    "profit": round(rev - cst, 2),
+                    "margin_pct": round((rev - cst) / max(rev, 0.01) * 100, 1),
+                }
+            )
     else:
         for i in range(days - 1, -1, -1):
             key = (now - timedelta(days=i)).strftime("%Y-%m-%d")
             rev = rev_map.get(key, 0) - cn_map.get(key, 0)
             cst = cost_map.get(key, 0)
-            results.append({"period": key, "revenue": rev, "cost": cst,
-                            "profit": round(rev - cst, 2),
-                            "margin_pct": round((rev - cst) / max(rev, 0.01) * 100, 1)})
+            results.append(
+                {
+                    "period": key,
+                    "revenue": rev,
+                    "cost": cst,
+                    "profit": round(rev - cst, 2),
+                    "margin_pct": round((rev - cst) / max(rev, 0.01) * 100, 1),
+                }
+            )
 
     total_rev = sum(r["revenue"] for r in results)
     total_cost = sum(r["cost"] for r in results)
@@ -1312,16 +1452,18 @@ def get_profit_trend(tenant_id: str, period: str = "daily", days: int = 30) -> l
         "period_type": period,
         "data": results,
         "totals": {
-            "revenue": total_rev, "cost": total_cost, "profit": total_profit,
+            "revenue": total_rev,
+            "cost": total_cost,
+            "profit": total_profit,
             "margin_pct": round(total_profit / max(total_rev, 0.01) * 100, 1),
-        }
+        },
     }
 
 
 def get_cash_flow(tenant_id: str, days: int = 30) -> list:
     """Daily cash flow: inflows vs outflows. Includes expenses paid in cash."""
-    from app.modules.cash.models import CashReceipt, CashDisbursement
     from app.modules.accounting.models import Expense
+    from app.modules.cash.models import CashDisbursement, CashReceipt
 
     now = datetime.now(BOGOTA_TZ)
     start = now - timedelta(days=days)
@@ -1332,45 +1474,67 @@ def get_cash_flow(tenant_id: str, days: int = 30) -> list:
     day_trunc_exp = func.date_trunc("day", func.timezone("America/Bogota", Expense.expense_date))
 
     # Inflows: cash receipts grouped by day
-    cr_data = db.session.query(
-        day_trunc_cr.label("day"), func.coalesce(func.sum(CashReceipt.amount), 0).label("total")
-    ).filter(
-        CashReceipt.tenant_id == tenant_id, CashReceipt.status == "active",
-        CashReceipt.receipt_date >= start,
-    ).group_by("day").all()
+    cr_data = (
+        db.session.query(day_trunc_cr.label("day"), func.coalesce(func.sum(CashReceipt.amount), 0).label("total"))
+        .filter(
+            CashReceipt.tenant_id == tenant_id,
+            CashReceipt.status == "active",
+            CashReceipt.receipt_date >= start,
+        )
+        .group_by("day")
+        .all()
+    )
 
     # Inflows: sale cash payments grouped by day
-    sp_data = db.session.query(
-        day_trunc_sale.label("day"), func.coalesce(func.sum(Payment.amount), 0).label("total")
-    ).join(Sale, Payment.sale_id == Sale.id).filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
-        Sale.sale_date >= start, Payment.method == "cash",
-    ).group_by("day").all()
+    sp_data = (
+        db.session.query(day_trunc_sale.label("day"), func.coalesce(func.sum(Payment.amount), 0).label("total"))
+        .join(Sale, Payment.sale_id == Sale.id)
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date >= start,
+            Payment.method == "cash",
+        )
+        .group_by("day")
+        .all()
+    )
 
     # Outflows: cash disbursements grouped by day
-    cd_data = db.session.query(
-        day_trunc_cd.label("day"), func.coalesce(func.sum(CashDisbursement.amount), 0).label("total")
-    ).filter(
-        CashDisbursement.tenant_id == tenant_id, CashDisbursement.status == "active",
-        CashDisbursement.disbursement_date >= start,
-    ).group_by("day").all()
+    cd_data = (
+        db.session.query(day_trunc_cd.label("day"), func.coalesce(func.sum(CashDisbursement.amount), 0).label("total"))
+        .filter(
+            CashDisbursement.tenant_id == tenant_id,
+            CashDisbursement.status == "active",
+            CashDisbursement.disbursement_date >= start,
+        )
+        .group_by("day")
+        .all()
+    )
 
     # Outflows: supplier payments grouped by day
-    sup_data = db.session.query(
-        day_trunc_sp.label("day"), func.coalesce(func.sum(SupplierPayment.amount), 0).label("total")
-    ).filter(
-        SupplierPayment.tenant_id == tenant_id, SupplierPayment.status == "completed",
-        SupplierPayment.payment_date >= start,
-    ).group_by("day").all()
+    sup_data = (
+        db.session.query(day_trunc_sp.label("day"), func.coalesce(func.sum(SupplierPayment.amount), 0).label("total"))
+        .filter(
+            SupplierPayment.tenant_id == tenant_id,
+            SupplierPayment.status == "completed",
+            SupplierPayment.payment_date >= start,
+        )
+        .group_by("day")
+        .all()
+    )
 
     # Outflows: paid expenses (arriendo, servicios, nómina, etc.)
-    exp_data = db.session.query(
-        day_trunc_exp.label("day"), func.coalesce(func.sum(Expense.total_amount), 0).label("total")
-    ).filter(
-        Expense.tenant_id == tenant_id, Expense.status == "active",
-        Expense.payment_status == "paid",
-        Expense.expense_date >= start,
-    ).group_by("day").all()
+    exp_data = (
+        db.session.query(day_trunc_exp.label("day"), func.coalesce(func.sum(Expense.total_amount), 0).label("total"))
+        .filter(
+            Expense.tenant_id == tenant_id,
+            Expense.status == "active",
+            Expense.payment_status == "paid",
+            Expense.expense_date >= start,
+        )
+        .group_by("day")
+        .all()
+    )
 
     # Merge into dicts
     fmt = lambda r: r.day.strftime("%Y-%m-%d")
@@ -1393,30 +1557,36 @@ def get_cash_flow(tenant_id: str, days: int = 30) -> list:
 def get_receivables_vs_payables(tenant_id: str) -> dict:
     """CxC vs CxP comparison."""
     # CxC: outstanding credit sales
-    cxc = db.session.query(
-        func.coalesce(func.sum(Sale.amount_due), 0)
-    ).filter(
-        Sale.tenant_id == tenant_id,
-        Sale.sale_type == "credit",
-        Sale.status == "completed",
-        Sale.payment_status.in_(["pending", "partial", "overdue"]),
-    ).scalar()
+    cxc = (
+        db.session.query(func.coalesce(func.sum(Sale.amount_due), 0))
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.sale_type == "credit",
+            Sale.status == "completed",
+            Sale.payment_status.in_(["pending", "partial", "overdue"]),
+        )
+        .scalar()
+    )
 
     # CxP: use existing balance logic
-    total_credit_purchases = db.session.query(
-        func.coalesce(func.sum(PurchaseOrder.total_amount), 0)
-    ).filter(
-        PurchaseOrder.tenant_id == tenant_id,
-        PurchaseOrder.payment_type == "credit",
-        PurchaseOrder.status.in_(["received", "partially_received"]),
-    ).scalar()
+    total_credit_purchases = (
+        db.session.query(func.coalesce(func.sum(PurchaseOrder.total_amount), 0))
+        .filter(
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.payment_type == "credit",
+            PurchaseOrder.status.in_(["received", "partially_received"]),
+        )
+        .scalar()
+    )
 
-    total_supplier_payments = db.session.query(
-        func.coalesce(func.sum(SupplierPayment.amount), 0)
-    ).filter(
-        SupplierPayment.tenant_id == tenant_id,
-        SupplierPayment.status == "completed",
-    ).scalar()
+    total_supplier_payments = (
+        db.session.query(func.coalesce(func.sum(SupplierPayment.amount), 0))
+        .filter(
+            SupplierPayment.tenant_id == tenant_id,
+            SupplierPayment.status == "completed",
+        )
+        .scalar()
+    )
 
     cxp = float(total_credit_purchases) - float(total_supplier_payments)
 
@@ -1443,31 +1613,43 @@ def get_health_summary(tenant_id: str, date_from: str = None, date_to: str = Non
     y, m = now.year, now.month
 
     # Sales in selected range (uses index-friendly range filter)
-    cur_sales = db.session.query(
-        func.coalesce(func.sum(Sale.subtotal), 0).label("revenue"),
-        func.coalesce(func.sum(Sale.total_amount), 0).label("total"),
-    ).filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
-        Sale.sale_date >= date_from_dt,
-        Sale.sale_date <= date_to_dt,
-    ).first()
+    cur_sales = (
+        db.session.query(
+            func.coalesce(func.sum(Sale.subtotal), 0).label("revenue"),
+            func.coalesce(func.sum(Sale.total_amount), 0).label("total"),
+        )
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date >= date_from_dt,
+            Sale.sale_date <= date_to_dt,
+        )
+        .first()
+    )
 
-    cur_cost = db.session.query(
-        func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
-    ).join(Sale).filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
-        Sale.sale_date >= date_from_dt,
-        Sale.sale_date <= date_to_dt,
-    ).scalar()
+    cur_cost = (
+        db.session.query(func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0))
+        .join(Sale)
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date >= date_from_dt,
+            Sale.sale_date <= date_to_dt,
+        )
+        .scalar()
+    )
 
     # Expenses in selected range
-    cur_expenses = db.session.query(
-        func.coalesce(func.sum(Expense.total_amount), 0)
-    ).filter(
-        Expense.tenant_id == tenant_id, Expense.status == "active",
-        Expense.expense_date >= date_from_dt,
-        Expense.expense_date <= date_to_dt,
-    ).scalar()
+    cur_expenses = (
+        db.session.query(func.coalesce(func.sum(Expense.total_amount), 0))
+        .filter(
+            Expense.tenant_id == tenant_id,
+            Expense.status == "active",
+            Expense.expense_date >= date_from_dt,
+            Expense.expense_date <= date_to_dt,
+        )
+        .scalar()
+    )
 
     revenue = float(cur_sales.revenue or 0)
     cost = float(cur_cost or 0)
@@ -1487,21 +1669,28 @@ def get_health_summary(tenant_id: str, date_from: str = None, date_to: str = Non
     pm = prev_from.month
     py = prev_from.year
 
-    prev_sales = db.session.query(
-        func.coalesce(func.sum(Sale.subtotal), 0)
-    ).filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
-        Sale.sale_date >= prev_from,
-        Sale.sale_date <= prev_to,
-    ).scalar()
+    prev_sales = (
+        db.session.query(func.coalesce(func.sum(Sale.subtotal), 0))
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date >= prev_from,
+            Sale.sale_date <= prev_to,
+        )
+        .scalar()
+    )
 
-    prev_cost = db.session.query(
-        func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
-    ).join(Sale).filter(
-        Sale.tenant_id == tenant_id, Sale.status == "completed",
-        Sale.sale_date >= prev_from,
-        Sale.sale_date <= prev_to,
-    ).scalar()
+    prev_cost = (
+        db.session.query(func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0))
+        .join(Sale)
+        .filter(
+            Sale.tenant_id == tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date >= prev_from,
+            Sale.sale_date <= prev_to,
+        )
+        .scalar()
+    )
 
     prev_rev = float(prev_sales or 0)
     prev_cst = float(prev_cost or 0)
@@ -1518,21 +1707,42 @@ def get_health_summary(tenant_id: str, date_from: str = None, date_to: str = Non
         while tm <= 0:
             tm += 12
             ty -= 1
-        t_rev = db.session.query(func.coalesce(func.sum(Sale.subtotal), 0)).filter(
-            Sale.tenant_id == tenant_id, Sale.status == "completed",
-            func.extract("year", Sale.sale_date) == ty, func.extract("month", Sale.sale_date) == tm,
-        ).scalar()
-        t_cost = db.session.query(func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)).join(Sale).filter(
-            Sale.tenant_id == tenant_id, Sale.status == "completed",
-            func.extract("year", Sale.sale_date) == ty, func.extract("month", Sale.sale_date) == tm,
-        ).scalar()
-        t_exp = db.session.query(func.coalesce(func.sum(Expense.total_amount), 0)).filter(
-            Expense.tenant_id == tenant_id, Expense.status == "active",
-            func.extract("year", Expense.expense_date) == ty, func.extract("month", Expense.expense_date) == tm,
-        ).scalar()
+        t_rev = (
+            db.session.query(func.coalesce(func.sum(Sale.subtotal), 0))
+            .filter(
+                Sale.tenant_id == tenant_id,
+                Sale.status == "completed",
+                func.extract("year", Sale.sale_date) == ty,
+                func.extract("month", Sale.sale_date) == tm,
+            )
+            .scalar()
+        )
+        t_cost = (
+            db.session.query(func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0))
+            .join(Sale)
+            .filter(
+                Sale.tenant_id == tenant_id,
+                Sale.status == "completed",
+                func.extract("year", Sale.sale_date) == ty,
+                func.extract("month", Sale.sale_date) == tm,
+            )
+            .scalar()
+        )
+        t_exp = (
+            db.session.query(func.coalesce(func.sum(Expense.total_amount), 0))
+            .filter(
+                Expense.tenant_id == tenant_id,
+                Expense.status == "active",
+                func.extract("year", Expense.expense_date) == ty,
+                func.extract("month", Expense.expense_date) == tm,
+            )
+            .scalar()
+        )
         t_r = float(t_rev or 0)
         t_c = float(t_cost or 0) + float(t_exp or 0)
-        trend.append({"period": f"{ty}-{tm:02d}", "sales": t_r, "total_expenses": t_c, "net_result": round(t_r - t_c, 2)})
+        trend.append(
+            {"period": f"{ty}-{tm:02d}", "sales": t_r, "total_expenses": t_c, "net_result": round(t_r - t_c, 2)}
+        )
 
     # Trend verdict
     if len(trend) >= 2:
@@ -1548,34 +1758,71 @@ def get_health_summary(tenant_id: str, date_from: str = None, date_to: str = Non
         verdict = "insufficient_data"
 
     # CxP pending
-    cxp = db.session.query(func.coalesce(func.sum(PurchaseOrder.total_amount), 0)).filter(
-        PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.payment_type == "credit",
-        PurchaseOrder.status.in_(["received", "partially_received"]),
-    ).scalar()
-    cxp_paid = db.session.query(func.coalesce(func.sum(SupplierPayment.amount), 0)).filter(
-        SupplierPayment.tenant_id == tenant_id, SupplierPayment.status == "completed",
-    ).scalar()
+    cxp = (
+        db.session.query(func.coalesce(func.sum(PurchaseOrder.total_amount), 0))
+        .filter(
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.payment_type == "credit",
+            PurchaseOrder.status.in_(["received", "partially_received"]),
+        )
+        .scalar()
+    )
+    cxp_paid = (
+        db.session.query(func.coalesce(func.sum(SupplierPayment.amount), 0))
+        .filter(
+            SupplierPayment.tenant_id == tenant_id,
+            SupplierPayment.status == "completed",
+        )
+        .scalar()
+    )
     cxp_pending = max(float(cxp or 0) - float(cxp_paid or 0), 0)
 
-    MONTHS_ES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    MONTHS_ES = [
+        "",
+        "Enero",
+        "Febrero",
+        "Marzo",
+        "Abril",
+        "Mayo",
+        "Junio",
+        "Julio",
+        "Agosto",
+        "Septiembre",
+        "Octubre",
+        "Noviembre",
+        "Diciembre",
+    ]
 
     return {
         "breakeven": {
-            "total_expenses": total_costs, "total_sales": revenue,
-            "coverage_pct": coverage_pct, "gap": round(revenue - total_costs, 2),
+            "total_expenses": total_costs,
+            "total_sales": revenue,
+            "coverage_pct": coverage_pct,
+            "gap": round(revenue - total_costs, 2),
             "has_expenses": expenses > 0,
             "cost_of_goods": cost,
             "operating_expenses": expenses,
         },
         "month_comparison": {
-            "current": {"label": date_from_dt.strftime("%d/%m") + "—" + date_to_dt.strftime("%d/%m"), "sales": revenue, "gross_profit": gross_profit},
-            "previous": {"label": prev_from.strftime("%d/%m") + "—" + prev_to.strftime("%d/%m"), "sales": prev_rev, "gross_profit": prev_profit},
-            "sales_delta_pct": sales_delta, "profit_delta_pct": profit_delta,
+            "current": {
+                "label": date_from_dt.strftime("%d/%m") + "—" + date_to_dt.strftime("%d/%m"),
+                "sales": revenue,
+                "gross_profit": gross_profit,
+            },
+            "previous": {
+                "label": prev_from.strftime("%d/%m") + "—" + prev_to.strftime("%d/%m"),
+                "sales": prev_rev,
+                "gross_profit": prev_profit,
+            },
+            "sales_delta_pct": sales_delta,
+            "profit_delta_pct": profit_delta,
         },
         "net_pocket": {
-            "sales": revenue, "cost_of_goods": cost, "operating_expenses": expenses,
-            "result": net_result, "cxp_pending": cxp_pending,
+            "sales": revenue,
+            "cost_of_goods": cost,
+            "operating_expenses": expenses,
+            "result": net_result,
+            "cxp_pending": cxp_pending,
         },
         "trend": trend,
         "trend_verdict": verdict,
@@ -1632,12 +1879,16 @@ def get_inventory_rotation(tenant_id: str) -> dict:
     )
 
     return {
-        "fast_movers": [{
-            "name": r.product_name, "qty_sold": float(r.qty), "revenue": float(r.revenue)
-        } for r in fast_movers],
-        "dead_stock": [{
-            "name": p.name, "stock": float(p.stock_current),
-            "value": float(p.stock_current * p.cost_average),
-        } for p in dead_stock],
+        "fast_movers": [
+            {"name": r.product_name, "qty_sold": float(r.qty), "revenue": float(r.revenue)} for r in fast_movers
+        ],
+        "dead_stock": [
+            {
+                "name": p.name,
+                "stock": float(p.stock_current),
+                "value": float(p.stock_current * p.cost_average),
+            }
+            for p in dead_stock
+        ],
         "dead_stock_total_value": sum(float(p.stock_current * p.cost_average) for p in dead_stock),
     }

@@ -10,13 +10,13 @@ from sqlalchemy import func
 from app.extensions import db
 from app.modules.auth_rbac.models import Tenant
 from app.modules.invoicing.models import ElectronicInvoice
-from app.modules.pos.models import Sale, CreditNote
+from app.modules.pos.models import CreditNote, Sale
 
 
 def _next_einvoice_number(tenant_id: str) -> tuple:
     """Generate next sequential e-invoice number with tenant prefix."""
     tenant = Tenant.query.get(tenant_id)
-    prefix = getattr(tenant, 'dian_resolution_prefix', '') or 'FE'
+    prefix = getattr(tenant, "dian_resolution_prefix", "") or "FE"
 
     last = (
         db.session.query(func.max(ElectronicInvoice.invoice_number))
@@ -28,7 +28,7 @@ def _next_einvoice_number(tenant_id: str) -> tuple:
     )
 
     if last:
-        seq = int(last.replace(prefix, '')) + 1
+        seq = int(last.replace(prefix, "")) + 1
     else:
         seq = 1
 
@@ -36,8 +36,11 @@ def _next_einvoice_number(tenant_id: str) -> tuple:
 
 
 def generate_invoice(
-    tenant_id: str, sale_id: str, created_by: str,
-    customer_name: str = None, customer_tax_id: str = None,
+    tenant_id: str,
+    sale_id: str,
+    created_by: str,
+    customer_name: str = None,
+    customer_tax_id: str = None,
     customer_email: str = None,
 ) -> dict:
     """Generate an electronic invoice for a sale."""
@@ -60,7 +63,7 @@ def generate_invoice(
         invoice_number=number,
         prefix=prefix,
         status="draft",
-        pta_provider=getattr(tenant, 'pta_provider', None) or "factus",
+        pta_provider=getattr(tenant, "pta_provider", None) or "factus",
         subtotal=sale.subtotal,
         tax_amount=sale.tax_amount,
         total_amount=sale.total_amount,
@@ -76,7 +79,7 @@ def generate_invoice(
     payload = _build_pta_payload(invoice, sale, tenant)
 
     # Try to send to PTA
-    pta_api_key = getattr(tenant, 'pta_api_key', None)
+    pta_api_key = getattr(tenant, "pta_api_key", None)
     if pta_api_key:
         try:
             result = _send_to_pta(invoice, payload, pta_api_key)
@@ -97,10 +100,12 @@ def generate_invoice(
     else:
         # No PTA configured — generate in draft mode
         invoice.status = "draft"
-        invoice.pta_response = json.dumps({
-            "message": "PTA no configurado. Configure su proveedor tecnológico en Mi Negocio.",
-            "payload": payload,
-        })
+        invoice.pta_response = json.dumps(
+            {
+                "message": "PTA no configurado. Configure su proveedor tecnológico en Mi Negocio.",
+                "payload": payload,
+            }
+        )
 
     db.session.commit()
     return _invoice_to_dict(invoice)
@@ -185,7 +190,9 @@ def _send_to_pta(invoice, payload, api_key):
 
 
 def generate_credit_note_invoice(
-    tenant_id: str, credit_note_id: str, created_by: str,
+    tenant_id: str,
+    credit_note_id: str,
+    created_by: str,
 ) -> dict:
     """Generate an electronic credit note (NC tipo 91) for DIAN."""
     cn = CreditNote.query.filter_by(id=credit_note_id, tenant_id=tenant_id).first()
@@ -198,19 +205,16 @@ def generate_credit_note_invoice(
         return _invoice_to_dict(existing)
 
     # Find original invoice for billing reference
-    original_invoice = ElectronicInvoice.query.filter_by(
-        sale_id=cn.sale_id, document_type="01"
-    ).first()
+    original_invoice = ElectronicInvoice.query.filter_by(sale_id=cn.sale_id, document_type="01").first()
 
     tenant = Tenant.query.get(tenant_id)
     prefix = "NC"
     last = (
         db.session.query(func.max(ElectronicInvoice.invoice_number))
-        .filter(ElectronicInvoice.tenant_id == tenant_id,
-                ElectronicInvoice.invoice_number.like(f"{prefix}%"))
+        .filter(ElectronicInvoice.tenant_id == tenant_id, ElectronicInvoice.invoice_number.like(f"{prefix}%"))
         .scalar()
     )
-    seq = int(last.replace(prefix, '')) + 1 if last else 1
+    seq = int(last.replace(prefix, "")) + 1 if last else 1
     number = f"{prefix}{seq:06d}"
 
     invoice = ElectronicInvoice(
@@ -222,7 +226,7 @@ def generate_credit_note_invoice(
         invoice_number=number,
         prefix=prefix,
         status="draft",
-        pta_provider=getattr(tenant, 'pta_provider', None) or "factus",
+        pta_provider=getattr(tenant, "pta_provider", None) or "factus",
         subtotal=cn.subtotal,
         tax_amount=cn.tax_amount,
         total_amount=cn.total_amount,
@@ -267,7 +271,7 @@ def generate_credit_note_invoice(
     }
 
     # Send to PTA (simulated for now)
-    pta_api_key = getattr(tenant, 'pta_api_key', None)
+    pta_api_key = getattr(tenant, "pta_api_key", None)
     if pta_api_key:
         try:
             result = _send_to_pta(invoice, payload, pta_api_key)
@@ -294,15 +298,15 @@ def list_invoices(tenant_id: str, page: int = 1, per_page: int = 20) -> dict:
     """List electronic invoices."""
     q = ElectronicInvoice.query.filter_by(tenant_id=tenant_id)
     total = q.count()
-    invoices = q.order_by(ElectronicInvoice.created_at.desc()).offset(
-        (page - 1) * per_page
-    ).limit(per_page).all()
+    invoices = q.order_by(ElectronicInvoice.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
     return {
         "data": [_invoice_to_dict(i) for i in invoices],
         "pagination": {
-            "page": page, "per_page": per_page,
-            "total": total, "has_next": page * per_page < total,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "has_next": page * per_page < total,
         },
     }
 

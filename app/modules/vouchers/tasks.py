@@ -30,6 +30,7 @@ def expire_vouchers_task(tenant_id: str = None):
         for v in result["vouchers"]:
             try:
                 from app.modules.accounting.services import post_voucher_expiry_entry
+
                 post_voucher_expiry_entry(
                     tenant_id=v["tenant_id"],
                     created_by="system",
@@ -37,14 +38,13 @@ def expire_vouchers_task(tenant_id: str = None):
                     amount=v["expired_balance"],
                     quarantine=True,
                 )
-                logger.info(
-                    "Created quarantine entry for voucher %s ($%s)",
-                    v["code"], v["expired_balance"]
-                )
+                logger.info("Created quarantine entry for voucher %s ($%s)", v["code"], v["expired_balance"])
             except Exception as e:
                 logger.error(
                     "Failed to create accounting entry for expired voucher %s: %s",
-                    v["voucher_id"], str(e), exc_info=True,
+                    v["voucher_id"],
+                    str(e),
+                    exc_info=True,
                 )
     else:
         logger.info("No vouchers to expire")
@@ -59,9 +59,10 @@ def recognize_quarantine_vouchers_task(tenant_id: str = None):
     Should run daily after expire_vouchers_task.
     Moves 291002 (quarantine) → 429505 (non-operational income).
     """
+    from datetime import timedelta
+
     from app.extensions import db
     from app.modules.vouchers.models import Voucher, VoucherTransaction
-    from datetime import timedelta
 
     logger.info("Starting quarantine recognition task (tenant=%s)", tenant_id or "ALL")
 
@@ -69,14 +70,17 @@ def recognize_quarantine_vouchers_task(tenant_id: str = None):
     quarantine_cutoff = now - timedelta(days=30)
 
     # Find vouchers expired > 30 days ago that haven't been recognized yet
-    q = Voucher.query.filter(
-        Voucher.status == "expired",
-    ).join(
-        VoucherTransaction,
-        (VoucherTransaction.voucher_id == Voucher.id) &
-        (VoucherTransaction.transaction_type == "expired")
-    ).filter(
-        VoucherTransaction.occurred_at < quarantine_cutoff,
+    q = (
+        Voucher.query.filter(
+            Voucher.status == "expired",
+        )
+        .join(
+            VoucherTransaction,
+            (VoucherTransaction.voucher_id == Voucher.id) & (VoucherTransaction.transaction_type == "expired"),
+        )
+        .filter(
+            VoucherTransaction.occurred_at < quarantine_cutoff,
+        )
     )
 
     if tenant_id:
@@ -87,30 +91,38 @@ def recognize_quarantine_vouchers_task(tenant_id: str = None):
 
     for voucher in vouchers:
         # Check if already recognized (look for a recognition transaction)
-        already = VoucherTransaction.query.filter_by(
-            voucher_id=voucher.id,
-            transaction_type="adjusted",
-        ).filter(
-            VoucherTransaction.notes.like("%cuarentena%reconocimiento%")
-        ).first()
+        already = (
+            VoucherTransaction.query.filter_by(
+                voucher_id=voucher.id,
+                transaction_type="adjusted",
+            )
+            .filter(VoucherTransaction.notes.like("%cuarentena%reconocimiento%"))
+            .first()
+        )
 
         if already:
             continue
 
         try:
             from app.modules.accounting.services import post_voucher_expiry_entry
+
             post_voucher_expiry_entry(
                 tenant_id=str(voucher.tenant_id),
                 created_by="system",
                 voucher_id=str(voucher.id),
-                amount=float(voucher.face_value - voucher.remaining_balance)
-                if voucher.remaining_balance > 0 else float(voucher.face_value),
+                amount=(
+                    float(voucher.face_value - voucher.remaining_balance)
+                    if voucher.remaining_balance > 0
+                    else float(voucher.face_value)
+                ),
                 quarantine=False,
             )
 
             # Log the recognition
-            from app.modules.vouchers.services import _log_transaction
             from decimal import Decimal
+
+            from app.modules.vouchers.services import _log_transaction
+
             _log_transaction(
                 voucher=voucher,
                 transaction_type="adjusted",
@@ -125,7 +137,9 @@ def recognize_quarantine_vouchers_task(tenant_id: str = None):
         except Exception as e:
             logger.error(
                 "Failed to recognize quarantine voucher %s: %s",
-                voucher.id, str(e), exc_info=True,
+                voucher.id,
+                str(e),
+                exc_info=True,
             )
 
     logger.info("Recognized %d quarantine vouchers", recognized)

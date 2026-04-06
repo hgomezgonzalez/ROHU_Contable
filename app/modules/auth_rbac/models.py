@@ -22,7 +22,9 @@ def _now():
 role_permissions = db.Table(
     "role_permissions",
     db.Column("role_id", UUID(as_uuid=True), db.ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
-    db.Column("permission_id", UUID(as_uuid=True), db.ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True),
+    db.Column(
+        "permission_id", UUID(as_uuid=True), db.ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True
+    ),
     db.Column("granted_at", db.DateTime(timezone=True), default=_now, nullable=False),
 )
 
@@ -37,6 +39,7 @@ user_roles = db.Table(
 
 # ── Tenant ────────────────────────────────────────────────────────
 
+
 class Tenant(db.Model):
     """A business subscribed to ROHU. Root of multi-tenant isolation."""
 
@@ -47,9 +50,7 @@ class Tenant(db.Model):
     trade_name = db.Column(db.String(255))
     tax_id = db.Column(db.String(20), nullable=False, unique=True)
     tax_id_check_digit = db.Column(db.String(1))
-    fiscal_regime = db.Column(
-        db.String(50), nullable=False, default="simplified"
-    )
+    fiscal_regime = db.Column(db.String(50), nullable=False, default="simplified")
     email = db.Column(db.String(255), nullable=False)
     phone = db.Column(db.String(30))
     address = db.Column(db.String(500))
@@ -83,11 +84,12 @@ class Tenant(db.Model):
     deleted_at = db.Column(db.DateTime(timezone=True))
     version = db.Column(db.Integer, nullable=False, default=1)
 
-    users = db.relationship("User", back_populates="tenant", lazy="dynamic",
-                            foreign_keys="[User.tenant_id]")
+    users = db.relationship("User", back_populates="tenant", lazy="dynamic", foreign_keys="[User.tenant_id]")
 
     __table_args__ = (
-        CheckConstraint("fiscal_regime IN ('simplified', 'common', 'simple', 'special')", name="ck_tenants_fiscal_regime"),
+        CheckConstraint(
+            "fiscal_regime IN ('simplified', 'common', 'simple', 'special')", name="ck_tenants_fiscal_regime"
+        ),
         CheckConstraint("plan_type IN ('starter', 'professional', 'enterprise')", name="ck_tenants_plan_type"),
         CheckConstraint("max_users > 0", name="ck_tenants_max_users"),
     )
@@ -97,6 +99,7 @@ class Tenant(db.Model):
 
 
 # ── User ──────────────────────────────────────────────────────────
+
 
 class User(db.Model):
     """System user scoped to a single tenant."""
@@ -121,13 +124,10 @@ class User(db.Model):
     deleted_at = db.Column(db.DateTime(timezone=True))
     version = db.Column(db.Integer, nullable=False, default=1)
 
-    tenant = db.relationship("Tenant", back_populates="users",
-                             foreign_keys=[tenant_id])
+    tenant = db.relationship("Tenant", back_populates="users", foreign_keys=[tenant_id])
     roles = db.relationship("Role", secondary=user_roles, back_populates="users", lazy="joined")
 
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),)
 
     @property
     def full_name(self):
@@ -151,6 +151,7 @@ class User(db.Model):
 
 # ── Role ──────────────────────────────────────────────────────────
 
+
 class Role(db.Model):
     """RBAC role. System roles are shared; tenant roles are custom."""
 
@@ -169,15 +170,14 @@ class Role(db.Model):
     permissions = db.relationship("Permission", secondary=role_permissions, back_populates="roles", lazy="joined")
     users = db.relationship("User", secondary=user_roles, back_populates="roles")
 
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "name", name="uq_roles_tenant_name"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_roles_tenant_name"),)
 
     def __repr__(self):
         return f"<Role {self.name}>"
 
 
 # ── Permission ────────────────────────────────────────────────────
+
 
 class Permission(db.Model):
     """Atomic system capability. Platform-defined, not per-tenant."""
@@ -193,15 +193,14 @@ class Permission(db.Model):
 
     roles = db.relationship("Role", secondary=role_permissions, back_populates="permissions")
 
-    __table_args__ = (
-        UniqueConstraint("resource", "action", name="uq_permissions_resource_action"),
-    )
+    __table_args__ = (UniqueConstraint("resource", "action", name="uq_permissions_resource_action"),)
 
     def __repr__(self):
         return f"<Permission {self.resource}:{self.action}>"
 
 
 # ── Refresh Token ─────────────────────────────────────────────────
+
 
 class RefreshToken(db.Model):
     """Persistent refresh token. Only hash is stored."""

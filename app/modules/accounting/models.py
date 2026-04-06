@@ -66,8 +66,7 @@ class ChartOfAccount(db.Model):
         UniqueConstraint("tenant_id", "puc_code", name="uq_coa_tenant_puc"),
         Index("idx_coa_tenant_type", "tenant_id", "account_type"),
         CheckConstraint(
-            "account_type IN ('asset', 'liability', 'equity', 'income', 'expense', 'cost')",
-            name="ck_coa_type"
+            "account_type IN ('asset', 'liability', 'equity', 'income', 'expense', 'cost')", name="ck_coa_type"
         ),
         CheckConstraint("normal_balance IN ('debit', 'credit')", name="ck_coa_balance"),
     )
@@ -113,7 +112,7 @@ class JournalEntry(db.Model):
             "'CASH_RECEIPT', 'CASH_DISBURSEMENT', 'TRANSFER', "
             "'EXPENSE', 'SUPPLIER_PAYMENT', 'CREDIT_NOTE_PURCHASE', "
             "'DEBIT_NOTE', 'SALES_DEBIT_NOTE', 'OPENING')",
-            name="ck_je_type"
+            name="ck_je_type",
         ),
     )
 
@@ -145,7 +144,7 @@ class JournalLine(db.Model):
         CheckConstraint("credit_amount >= 0", name="ck_jl_credit"),
         CheckConstraint(
             "(debit_amount > 0 AND credit_amount = 0) OR (debit_amount = 0 AND credit_amount > 0)",
-            name="ck_jl_exclusive"
+            name="ck_jl_exclusive",
         ),
     )
 
@@ -187,10 +186,7 @@ class Expense(db.Model):
         UniqueConstraint("tenant_id", "expense_number", name="uq_exp_tenant_number"),
         Index("idx_exp_tenant_date", "tenant_id", "expense_date"),
         CheckConstraint("amount > 0", name="ck_exp_amount"),
-        CheckConstraint(
-            "payment_status IN ('paid', 'pending')",
-            name="ck_exp_pay_status"
-        ),
+        CheckConstraint("payment_status IN ('paid', 'pending')", name="ck_exp_pay_status"),
         CheckConstraint("status IN ('active', 'voided')", name="ck_exp_status"),
     )
 
@@ -217,14 +213,8 @@ class WithholdingConfig(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
 
     __table_args__ = (
-        CheckConstraint(
-            "type IN ('retefuente', 'reteica', 'reteiva')",
-            name="ck_wc_type"
-        ),
-        CheckConstraint(
-            "applies_to IN ('purchases', 'sales', 'both')",
-            name="ck_wc_applies"
-        ),
+        CheckConstraint("type IN ('retefuente', 'reteica', 'reteiva')", name="ck_wc_type"),
+        CheckConstraint("applies_to IN ('purchases', 'sales', 'both')", name="ck_wc_applies"),
         CheckConstraint("rate > 0 AND rate <= 100", name="ck_wc_rate"),
     )
 
@@ -249,8 +239,5 @@ class AccountingError(db.Model):
 
     __table_args__ = (
         Index("idx_ae_tenant_status", "tenant_id", "status"),
-        CheckConstraint(
-            "status IN ('pending', 'resolved', 'failed')",
-            name="ck_ae_status"
-        ),
+        CheckConstraint("status IN ('pending', 'resolved', 'failed')", name="ck_ae_status"),
     )

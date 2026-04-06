@@ -17,6 +17,9 @@ def test_list_transfers(client, admin_headers):
 
 
 def test_cashier_cannot_create_disbursement(client, cashier_headers):
-    resp = client.post("/api/v1/cash/disbursements", headers=cashier_headers,
-                       json={"destination_type": "expense", "concept": "test", "amount": 1000})
+    resp = client.post(
+        "/api/v1/cash/disbursements",
+        headers=cashier_headers,
+        json={"destination_type": "expense", "concept": "test", "amount": 1000},
+    )
     assert resp.status_code == 403

@@ -7,8 +7,8 @@ The HMAC binds the code to the tenant, preventing cross-tenant reuse.
 Verification happens BEFORE any DB query to reject forgeries cheaply.
 """
 
-import hmac
 import hashlib
+import hmac
 import os
 import secrets
 
@@ -23,7 +23,7 @@ def _get_hmac_secret() -> str:
     if not secret or len(secret) < 32:
         raise RuntimeError(
             "VOUCHER_HMAC_SECRET must be set and at least 32 characters. "
-            "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            'Generate with: python -c "import secrets; print(secrets.token_hex(32))"'
         )
     return secret
 
@@ -41,11 +41,7 @@ def _encode_crockford(data: bytes, length: int) -> str:
 def _compute_checksum(tenant_id: str, payload: str) -> str:
     """Compute HMAC-SHA256 checksum truncated to 4 Crockford chars."""
     message = f"{tenant_id}:{payload}".encode("utf-8")
-    mac = hmac.new(
-        _get_hmac_secret().encode("utf-8"),
-        message,
-        hashlib.sha256
-    ).digest()
+    mac = hmac.new(_get_hmac_secret().encode("utf-8"), message, hashlib.sha256).digest()
     return _encode_crockford(mac[:3], 4)
 
 
