@@ -181,9 +181,18 @@ def upgrade():
     op.create_index('idx_vtx_sale', 'voucher_transactions', ['sale_id'])
 
     # ── 4. ALTER payments.method CHECK to include 'voucher' ───────────
-    op.drop_constraint('ck_payments_method', 'payments', type_='check')
+    # Drop existing constraint (may be named ck_pay_method or ck_payments_method)
+    op.execute("""
+        DO $$
+        BEGIN
+            ALTER TABLE payments DROP CONSTRAINT IF EXISTS ck_pay_method;
+            ALTER TABLE payments DROP CONSTRAINT IF EXISTS ck_payments_method;
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END $$;
+    """)
     op.create_check_constraint(
-        'ck_payments_method', 'payments',
+        'ck_pay_method', 'payments',
         "method IN ('cash', 'card', 'transfer', 'nequi', "
         "'daviplata', 'mixed', 'voucher')")
 
@@ -195,7 +204,7 @@ def upgrade():
                     ['voucher_id'])
 
     # ── 6. ADD new entry_types to journal_entries CHECK ───────────────
-    op.drop_constraint('ck_je_type', 'journal_entries', type_='check')
+    op.execute("ALTER TABLE journal_entries DROP CONSTRAINT IF EXISTS ck_je_type")
     op.create_check_constraint(
         'ck_je_type', 'journal_entries',
         "entry_type IN ('SALE', 'SALE_COST', 'PURCHASE', 'PAYMENT', "
@@ -208,7 +217,7 @@ def upgrade():
 
 def downgrade():
     # Restore original journal_entries CHECK
-    op.drop_constraint('ck_je_type', 'journal_entries', type_='check')
+    op.execute("ALTER TABLE journal_entries DROP CONSTRAINT IF EXISTS ck_je_type")
     op.create_check_constraint(
         'ck_je_type', 'journal_entries',
         "entry_type IN ('SALE', 'SALE_COST', 'PURCHASE', 'PAYMENT', "
@@ -222,9 +231,12 @@ def downgrade():
     op.drop_column('journal_entries', 'voucher_id')
 
     # Restore original payments CHECK
-    op.drop_constraint('ck_payments_method', 'payments', type_='check')
+    try:
+        op.drop_constraint('ck_pay_method', 'payments', type_='check')
+    except Exception:
+        pass
     op.create_check_constraint(
-        'ck_payments_method', 'payments',
+        'ck_pay_method', 'payments',
         "method IN ('cash', 'card', 'transfer', 'nequi', "
         "'daviplata', 'mixed')")
 

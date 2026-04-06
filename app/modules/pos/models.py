@@ -162,9 +162,9 @@ class Payment(db.Model):
 
     __table_args__ = (
         CheckConstraint(
-            "method IN ('cash', 'card', 'transfer', 'nequi', 'daviplata', 'mixed')", name="ck_payments_method"
+            "method IN ('cash', 'card', 'transfer', 'nequi', 'daviplata', 'mixed', 'voucher')", name="ck_pay_method"
         ),
-        CheckConstraint("amount > 0", name="ck_payments_amount"),
+        CheckConstraint("amount > 0", name="ck_pay_amount"),
     )
 
     def __repr__(self):
