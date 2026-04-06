@@ -1,7 +1,7 @@
 name: Deploy to All Clients
 
 on:
-  workflow_dispatch:  # Manual trigger only (no auto-deploy on push for safety)
+  workflow_dispatch:
     inputs:
       confirm:
         description: 'Type "deploy" to confirm deployment to ALL clients'
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.read-clients.outputs.matrix) }}
-      fail-fast: false  # Don't stop all deploys if one fails
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,11 +41,21 @@ jobs:
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
         run: |
-          # Check if VOUCHER_HMAC_SECRET is already set
-          EXISTING=$(heroku config:get VOUCHER_HMAC_SECRET -a ${{ matrix.app }} 2>/dev/null || echo "")
+          # Read current config vars via Heroku Platform API
+          EXISTING=$(curl -s \
+            -H "Authorization: Bearer $HEROKU_API_KEY" \
+            -H "Accept: application/vnd.heroku+json; version=3" \
+            "https://api.heroku.com/apps/${{ matrix.app }}/config-vars" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('VOUCHER_HMAC_SECRET',''))" 2>/dev/null || echo "")
+
           if [ -z "$EXISTING" ]; then
             SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-            heroku config:set VOUCHER_HMAC_SECRET="$SECRET" -a ${{ matrix.app }}
+            curl -s -X PATCH \
+              -H "Authorization: Bearer $HEROKU_API_KEY" \
+              -H "Accept: application/vnd.heroku+json; version=3" \
+              -H "Content-Type: application/json" \
+              -d "{\"VOUCHER_HMAC_SECRET\": \"$SECRET\"}" \
+              "https://api.heroku.com/apps/${{ matrix.app }}/config-vars" > /dev/null
             echo "VOUCHER_HMAC_SECRET configured for ${{ matrix.app }}"
           else
             echo "VOUCHER_HMAC_SECRET already set for ${{ matrix.app }}"
@@ -65,14 +75,24 @@ jobs:
         run: |
           echo "Waiting for release phase (migrations + seed-puc)..."
           for i in $(seq 1 12); do
-            STATUS=$(heroku releases -a ${{ matrix.app }} -n 1 --json | python3 -c "import sys,json; r=json.load(sys.stdin)[0]; print(r.get('status',''))" 2>/dev/null || echo "pending")
+            STATUS=$(curl -s \
+              -H "Authorization: Bearer $HEROKU_API_KEY" \
+              -H "Accept: application/vnd.heroku+json; version=3" \
+              -H "Range: version ..; order=desc,max=1" \
+              "https://api.heroku.com/apps/${{ matrix.app }}/releases" \
+              | python3 -c "import sys,json; r=json.load(sys.stdin); print(r[0].get('status','') if r else 'pending')" 2>/dev/null || echo "pending")
             echo "  Attempt $i: release status = $STATUS"
             if [ "$STATUS" = "succeeded" ]; then
               echo "Release phase completed"
               break
             elif [ "$STATUS" = "failed" ]; then
               echo "Release phase FAILED"
-              heroku logs -a ${{ matrix.app }} -n 50 --source app --dyno release
+              # Fetch recent logs via API
+              curl -s \
+                -H "Authorization: Bearer $HEROKU_API_KEY" \
+                -H "Accept: application/vnd.heroku+json; version=3" \
+                "https://api.heroku.com/apps/${{ matrix.app }}/releases" \
+                | python3 -c "import sys,json; r=json.load(sys.stdin); print(json.dumps(r[0], indent=2) if r else '{}')"
               exit 1
             fi
             sleep 10

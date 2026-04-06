@@ -460,6 +460,40 @@ def list_saas_clients():
         return jsonify(success=False, error={"code": "FILE_ERROR", "message": str(e)}), 500
 
 
+@auth_bp.route("/deploy-all", methods=["POST"])
+@require_permission("tenants", "manage")
+def deploy_all():
+    """Trigger deployment to all SaaS client replicas via Heroku Build API."""
+    data = request.get_json() or {}
+    if data.get("confirm") != "DEPLOY":
+        return (
+            jsonify(
+                success=False,
+                error={"code": "CONFIRMATION_REQUIRED", "message": 'Envíe {"confirm": "DEPLOY"} para confirmar'},
+            ),
+            400,
+        )
+
+    try:
+        from app.modules.auth_rbac.deploy_service import start_deploy_all
+
+        state = start_deploy_all()
+        return jsonify(success=True, data=state), 202
+    except ValueError as e:
+        return jsonify(success=False, error={"code": "DEPLOY_ERROR", "message": str(e)}), 409
+    except Exception as e:
+        return jsonify(success=False, error={"code": "DEPLOY_ERROR", "message": str(e)}), 500
+
+
+@auth_bp.route("/deploy-status", methods=["GET"])
+@require_permission("tenants", "manage")
+def deploy_status():
+    """Get current deployment status (for polling)."""
+    from app.modules.auth_rbac.deploy_service import get_deploy_status
+
+    return jsonify(success=True, data=get_deploy_status())
+
+
 @auth_bp.route("/me", methods=["GET"])
 @jwt_required()
 def me():

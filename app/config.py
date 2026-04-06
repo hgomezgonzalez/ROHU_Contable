@@ -25,6 +25,10 @@ class BaseConfig:
     # Timezone
     TIMEZONE = os.getenv("TIMEZONE", "America/Bogota")
 
+    # Heroku deploy integration
+    HEROKU_API_KEY = os.getenv("HEROKU_API_KEY", "")
+    GITHUB_REPO = os.getenv("GITHUB_REPO", "hgomezgonzalez/ROHU_Contable")
+
     # Connection pool — critical for production stability
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_size": 3,

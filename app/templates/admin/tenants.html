@@ -6,12 +6,32 @@
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Clientes SaaS</h1>
-  <button class="btn btn-primary" onclick="document.getElementById('new-client-modal').style.display='flex'">+ Nuevo Cliente</button>
+  <div style="display:flex; gap:8px;">
+    <button class="btn btn-primary" id="btn-sync" onclick="startDeploy()" style="background:#059669;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      Sincronizar Replicas
+    </button>
+    <button class="btn btn-primary" onclick="document.getElementById('new-client-modal').style.display='flex'">+ Nuevo Cliente</button>
+  </div>
 </div>
 
 <div class="alert alert-warning" style="margin-bottom:16px;">
   Desde aquí puede ver y gestionar las instancias desplegadas de ROHU Contable.
   Cada cliente tiene su propia aplicación y base de datos independiente.
+</div>
+
+<!-- Deploy Progress Panel -->
+<div id="deploy-panel" style="display:none; margin-bottom:20px;">
+  <div class="card" style="border-left:4px solid #3B82F6; padding:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <div>
+        <h3 id="deploy-title" style="margin:0; font-size:16px;">Desplegando cambios...</h3>
+        <p id="deploy-subtitle" style="margin:4px 0 0; font-size:13px; color:var(--text-light);">Sincronizando codigo con todas las replicas</p>
+      </div>
+      <div id="deploy-summary" style="font-size:13px; color:var(--text-light);"></div>
+    </div>
+    <div id="deploy-apps" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </div>
 </div>
 
 <!-- Clients table -->
@@ -87,7 +107,9 @@
 <script>
   const token = localStorage.getItem('access_token');
   const headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
+  let pollInterval = null;
 
+  // ── Load Clients Table ────────────────────────────────────────
   async function loadClients() {
     try {
       const resp = await fetch('/api/v1/auth/saas-clients', {headers});
@@ -101,11 +123,11 @@
       }
       tbody.innerHTML = r.data.map(c => `
         <tr>
-          <td><strong>${c.name}</strong></td>
-          <td><code style="font-size:11px;">${c.app}</code></td>
-          <td><a href="${c.url}" target="_blank" style="font-size:12px;">${c.url ? 'Abrir' : '—'}</a></td>
-          <td style="font-size:12px;">${c.admin_email || '—'}</td>
-          <td style="font-size:12px;">${c.created_at || '—'}</td>
+          <td><strong>${esc(c.name)}</strong></td>
+          <td><code style="font-size:11px;">${esc(c.app)}</code></td>
+          <td><a href="${esc(c.url)}" target="_blank" style="font-size:12px;">${c.url ? 'Abrir' : '—'}</a></td>
+          <td style="font-size:12px;">${esc(c.admin_email || '—')}</td>
+          <td style="font-size:12px;">${esc(c.created_at || '—')}</td>
           <td><span class="badge badge-success">Activo</span></td>
         </tr>
       `).join('');
@@ -114,6 +136,128 @@
     }
   }
 
+  // ── Deploy All ────────────────────────────────────────────────
+  async function startDeploy() {
+    if (!confirm('¿Desplegar los cambios más recientes a TODAS las réplicas de clientes?\n\nEsto ejecutará migraciones y actualizará el código en cada app.')) return;
+
+    const btn = document.getElementById('btn-sync');
+    btn.disabled = true;
+    btn.classList.add('btn-loading');
+
+    try {
+      const resp = await fetch('/api/v1/auth/deploy-all', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({confirm: 'DEPLOY'}),
+      });
+      const r = await resp.json();
+
+      if (!r.success) {
+        rohuAlert(r.error?.message || 'Error al iniciar despliegue', 'error');
+        btn.disabled = false;
+        btn.classList.remove('btn-loading');
+        return;
+      }
+
+      // Show progress panel and start polling
+      showDeployPanel(r.data);
+      pollInterval = setInterval(pollDeployStatus, 4000);
+
+    } catch(e) {
+      rohuAlert('Error de conexión al iniciar despliegue', 'error');
+      btn.disabled = false;
+      btn.classList.remove('btn-loading');
+    }
+  }
+
+  function showDeployPanel(state) {
+    const panel = document.getElementById('deploy-panel');
+    panel.style.display = 'block';
+    updateDeployUI(state);
+  }
+
+  async function pollDeployStatus() {
+    try {
+      const resp = await fetch('/api/v1/auth/deploy-status', {headers});
+      const r = await resp.json();
+      if (!r.success) return;
+
+      updateDeployUI(r.data);
+
+      if (!r.data.running) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        const btn = document.getElementById('btn-sync');
+        btn.disabled = false;
+        btn.classList.remove('btn-loading');
+      }
+    } catch(e) {
+      // Continue polling on transient errors
+    }
+  }
+
+  function updateDeployUI(state) {
+    const appsDiv = document.getElementById('deploy-apps');
+    const title = document.getElementById('deploy-title');
+    const subtitle = document.getElementById('deploy-subtitle');
+    const summary = document.getElementById('deploy-summary');
+    const panel = document.getElementById('deploy-panel');
+
+    if (state.running) {
+      title.textContent = 'Desplegando cambios...';
+      panel.querySelector('.card').style.borderLeftColor = '#3B82F6';
+    } else if (state.failed > 0) {
+      title.textContent = 'Despliegue completado con errores';
+      panel.querySelector('.card').style.borderLeftColor = '#EF4444';
+    } else {
+      title.textContent = 'Despliegue completado';
+      panel.querySelector('.card').style.borderLeftColor = '#059669';
+    }
+
+    summary.textContent = `${state.completed || 0}/${state.total || 0} completados` + (state.failed ? ` · ${state.failed} con error` : '');
+
+    if (!state.apps) return;
+
+    const statusConfig = {
+      pending:   {icon: '⏳', color: '#94A3B8', label: 'En espera'},
+      building:  {icon: '🔨', color: '#3B82F6', label: 'Construyendo'},
+      releasing: {icon: '🔄', color: '#F59E0B', label: 'Migrando'},
+      healthy:   {icon: '✅', color: '#059669', label: 'Completado'},
+      failed:    {icon: '❌', color: '#EF4444', label: 'Error'},
+    };
+
+    appsDiv.innerHTML = Object.entries(state.apps).map(([appName, app]) => {
+      const cfg = statusConfig[app.status] || statusConfig.pending;
+      const isActive = ['building', 'releasing'].includes(app.status);
+      return `
+        <div style="display:flex; align-items:center; gap:12px; padding:10px 14px; background:#F8FAFC; border-radius:8px; border-left:3px solid ${cfg.color};">
+          <span style="font-size:18px;${isActive ? 'animation:spin 1.5s linear infinite;' : ''}">${cfg.icon}</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13px;">${esc(app.name || appName)}</div>
+            <div style="font-size:12px; color:${cfg.color};">${esc(app.detail || cfg.label)}</div>
+          </div>
+          <code style="font-size:11px; color:var(--text-light);">${esc(appName)}</code>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ── Check if deploy is already running on page load ───────────
+  async function checkExistingDeploy() {
+    try {
+      const resp = await fetch('/api/v1/auth/deploy-status', {headers});
+      const r = await resp.json();
+      if (r.success && r.data.running) {
+        showDeployPanel(r.data);
+        const btn = document.getElementById('btn-sync');
+        btn.disabled = true;
+        btn.classList.add('btn-loading');
+        pollInterval = setInterval(pollDeployStatus, 4000);
+      }
+    } catch(e) { /* ignore */ }
+  }
+
+  // ── New Client Modal ──────────────────────────────────────────
   document.getElementById('new-client-form').addEventListener('submit', function(e) {
     e.preventDefault();
     const name = document.getElementById('nc-name').value.trim();
@@ -133,6 +277,11 @@
     });
   }
 
+  // ── Init ──────────────────────────────────────────────────────
   loadClients();
+  checkExistingDeploy();
 </script>
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
 {% endblock %}
