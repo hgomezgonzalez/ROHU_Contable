@@ -37,7 +37,8 @@ def _heroku_headers(api_key: str) -> dict:
 
 
 def _read_clients() -> list:
-    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "clients.json")
+    # __file__ = app/modules/auth_rbac/deploy_service.py → need 4 levels up to reach project root
+    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json")
     with open(clients_file, "r") as f:
         return json.load(f)
 

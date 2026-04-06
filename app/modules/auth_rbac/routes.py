@@ -449,7 +449,7 @@ def list_saas_clients():
     import json
     import os
 
-    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "clients.json")
+    clients_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json")
     try:
         with open(clients_file, "r") as f:
             clients = json.load(f)
