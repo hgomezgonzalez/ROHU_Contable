@@ -196,6 +196,70 @@ def update_tenant_info():
         return jsonify(success=False, error={"code": "TENANT_UPDATE_ERROR", "message": str(e)}), 400
 
 
+@auth_bp.route("/tenant/logo", methods=["POST"])
+@require_permission("tenants", "manage")
+def upload_logo():
+    """Upload tenant logo as image file. Stores as base64 data URI in DB."""
+    from flask import g
+
+    if "logo" not in request.files:
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "Campo 'logo' requerido"}), 400
+
+    file = request.files["logo"]
+    if not file.filename:
+        return jsonify(success=False, error={"code": "VALIDATION_ERROR", "message": "Archivo vacio"}), 400
+
+    # Validate size (500KB max)
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > 512000:
+        return (
+            jsonify(success=False, error={"code": "FILE_TOO_LARGE", "message": "El logo debe ser menor a 500 KB"}),
+            400,
+        )
+
+    # Validate MIME type
+    allowed_types = {"image/png", "image/jpeg", "image/svg+xml", "image/webp"}
+    if file.content_type not in allowed_types:
+        return (
+            jsonify(
+                success=False,
+                error={"code": "INVALID_TYPE", "message": "Formato no soportado. Use PNG, JPG, SVG o WebP."},
+            ),
+            400,
+        )
+
+    import base64
+    import io
+
+    # For raster images, resize if too large
+    if file.content_type in ("image/png", "image/jpeg", "image/webp"):
+        from PIL import Image
+
+        img = Image.open(file)
+        max_size = 200
+        if img.width > max_size or img.height > max_size:
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
+        buf = io.BytesIO()
+        fmt = "PNG" if file.content_type != "image/jpeg" else "JPEG"
+        img.save(buf, format=fmt, quality=85, optimize=True)
+        img_bytes = buf.getvalue()
+        mime = "image/png" if fmt == "PNG" else "image/jpeg"
+    else:
+        # SVG — store as-is
+        img_bytes = file.read()
+        mime = file.content_type
+
+    data_uri = f"data:{mime};base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+
+    try:
+        tenant = update_tenant(g.tenant_id, logo_url=data_uri)
+        return jsonify(success=True, data={"logo_url": tenant["logo_url"]})
+    except ValueError as e:
+        return jsonify(success=False, error={"code": "UPLOAD_ERROR", "message": str(e)}), 500
+
+
 # ── Roles & Permissions ───────────────────────────────────────────
 
 

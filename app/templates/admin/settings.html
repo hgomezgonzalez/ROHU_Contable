@@ -73,30 +73,46 @@
 
   <!-- Logo & Favicon -->
   <div class="card" style="margin-top:16px;">
-    <div class="card-title">Logo e Ícono del Navegador</div>
+    <div class="card-title">Logo e Imagen Corporativa</div>
     <p style="font-size:12px; color:var(--text-light); margin-bottom:12px;">
-      Pegue la URL de una imagen (PNG, JPG o SVG). Puede usar servicios gratuitos como
-      <a href="https://imgbb.com/" target="_blank">imgbb.com</a> o
-      <a href="https://postimages.org/" target="_blank">postimages.org</a> para subir su imagen y obtener la URL.
+      Suba el logo de su negocio. Aparecera en el sidebar, recibos, bonos y facturacion.
+      Formatos: PNG, JPG o SVG. Tamano maximo: 500 KB.
     </p>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-      <div class="form-group">
-        <label>URL del Logo (sidebar, login, recibos)</label>
-        <input type="url" name="logo_url" class="form-control" id="f-logo_url"
-               placeholder="https://ejemplo.com/mi-logo.png" oninput="updateLogoPreview()">
-        <div id="logo-preview" style="margin-top:8px; text-align:center; min-height:50px;">
-          <img id="logo-preview-img" style="max-height:50px; max-width:200px; display:none;">
-          <span id="logo-preview-text" style="font-size:12px; color:var(--text-light);">Sin logo personalizado (se usa logo ROHU por defecto)</span>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      <!-- Logo Upload -->
+      <div>
+        <label style="font-size:13px;font-weight:600;margin-bottom:8px;display:block;">Logo del negocio</label>
+        <input type="hidden" name="logo_url" id="f-logo_url">
+        <div id="logo-upload-area" style="border:2px dashed var(--border);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg);" onclick="document.getElementById('logo-file-input').click()" ondragover="event.preventDefault();this.style.borderColor='var(--primary)';this.style.background='#EFF6FF';" ondragleave="this.style.borderColor='var(--border)';this.style.background='var(--bg)';" ondrop="event.preventDefault();this.style.borderColor='var(--border)';this.style.background='var(--bg)';handleLogoDrop(event);">
+          <div id="logo-preview" style="margin-bottom:8px;">
+            <img id="logo-preview-img" style="max-height:80px;max-width:200px;display:none;border-radius:8px;">
+            <div id="logo-placeholder" style="width:64px;height:64px;border-radius:12px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin:0 auto;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="width:28px;height:28px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+          </div>
+          <div id="logo-upload-text" style="font-size:12px;color:var(--text-light);">
+            Haga clic o arrastre una imagen aqui
+          </div>
         </div>
+        <input type="file" id="logo-file-input" accept="image/png,image/jpeg,image/svg+xml,image/webp" style="display:none;" onchange="handleLogoFile(this.files[0])">
+        <div id="logo-upload-status" style="font-size:11px;margin-top:6px;text-align:center;"></div>
+        <button type="button" id="btn-remove-logo" style="display:none;margin-top:6px;width:100%;padding:6px;border:1px solid #FECACA;border-radius:6px;background:#FEF2F2;color:#DC2626;font-size:11px;cursor:pointer;" onclick="removeLogo()">Quitar logo</button>
       </div>
+
+      <!-- Favicon -->
       <div class="form-group">
-        <label>URL del Favicon (ícono pestaña del navegador)</label>
-        <input type="url" name="favicon_url" class="form-control" id="f-favicon_url"
-               placeholder="https://ejemplo.com/mi-icono.png" oninput="updateFaviconPreview()">
-        <div id="favicon-preview" style="margin-top:8px; text-align:center;">
-          <img id="favicon-preview-img" style="width:32px; height:32px; display:none; border:1px solid var(--border); border-radius:4px;">
-          <span id="favicon-preview-text" style="font-size:12px; color:var(--text-light);">Sin favicon personalizado (se usa ícono ROHU por defecto)</span>
+        <label>Favicon (icono pestana del navegador)</label>
+        <input type="hidden" name="favicon_url" id="f-favicon_url">
+        <div id="favicon-upload-area" style="border:2px dashed var(--border);border-radius:12px;padding:20px;text-align:center;cursor:pointer;background:var(--bg);" onclick="document.getElementById('favicon-file-input').click()">
+          <div id="favicon-preview" style="margin-bottom:8px;">
+            <img id="favicon-preview-img" style="width:32px;height:32px;display:none;border:1px solid var(--border);border-radius:4px;">
+            <div id="favicon-placeholder" style="width:32px;height:32px;border-radius:6px;background:var(--border);display:flex;align-items:center;justify-content:center;margin:0 auto;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2" style="width:16px;height:16px;"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-light);">Subir favicon (32x32px)</div>
         </div>
+        <input type="file" id="favicon-file-input" accept="image/png,image/svg+xml,image/x-icon" style="display:none;" onchange="handleFaviconFile(this.files[0])">
       </div>
     </div>
   </div>
@@ -287,10 +303,96 @@
     }
   });
 
+  // ── Logo Upload Functions ───────────────────────────────────
+  async function handleLogoFile(file) {
+    if (!file) return;
+    if (file.size > 512000) { rohuAlert('El logo debe ser menor a 500 KB', 'warning'); return; }
+    if (!['image/png','image/jpeg','image/svg+xml','image/webp'].includes(file.type)) { rohuAlert('Formato no soportado. Use PNG, JPG, SVG o WebP.', 'warning'); return; }
+
+    const statusEl = document.getElementById('logo-upload-status');
+    statusEl.textContent = 'Subiendo logo...'; statusEl.style.color = '#3B82F6';
+
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    try {
+      const resp = await fetch('/api/v1/auth/tenant/logo', {
+        method: 'POST',
+        headers: {'Authorization': 'Bearer ' + token},
+        body: formData,
+      });
+      const r = await resp.json();
+      if (r.success) {
+        document.getElementById('f-logo_url').value = r.data.logo_url;
+        showLogoPreview(r.data.logo_url);
+        statusEl.textContent = 'Logo actualizado'; statusEl.style.color = '#059669';
+        // Update sidebar logo immediately
+        const sidebarLogo = document.getElementById('sidebar-logo');
+        if (sidebarLogo) sidebarLogo.src = r.data.logo_url;
+        // Update localStorage tenant
+        const t = JSON.parse(localStorage.getItem('tenant') || '{}');
+        t.logo_url = r.data.logo_url;
+        localStorage.setItem('tenant', JSON.stringify(t));
+      } else {
+        statusEl.textContent = r.error?.message || 'Error al subir'; statusEl.style.color = '#EF4444';
+      }
+    } catch (e) {
+      statusEl.textContent = 'Error de conexion'; statusEl.style.color = '#EF4444';
+    }
+  }
+
+  function handleLogoDrop(e) {
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleLogoFile(file);
+  }
+
+  function showLogoPreview(url) {
+    const img = document.getElementById('logo-preview-img');
+    const placeholder = document.getElementById('logo-placeholder');
+    const removeBtn = document.getElementById('btn-remove-logo');
+    if (url) {
+      img.src = url; img.style.display = 'inline'; placeholder.style.display = 'none';
+      removeBtn.style.display = 'block';
+      document.getElementById('logo-upload-text').textContent = 'Clic para cambiar el logo';
+    } else {
+      img.style.display = 'none'; placeholder.style.display = 'flex';
+      removeBtn.style.display = 'none';
+      document.getElementById('logo-upload-text').textContent = 'Haga clic o arrastre una imagen aqui';
+    }
+  }
+
+  async function removeLogo() {
+    document.getElementById('f-logo_url').value = '';
+    showLogoPreview('');
+    // Save empty logo
+    try {
+      await fetch('/api/v1/auth/tenant', {method:'PATCH', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:JSON.stringify({logo_url:''})});
+      const sidebarLogo = document.getElementById('sidebar-logo');
+      if (sidebarLogo) sidebarLogo.src = '/static/img/logo-rohu.svg';
+    } catch(e) {}
+  }
+
+  async function handleFaviconFile(file) {
+    if (!file) return;
+    if (file.size > 256000) { rohuAlert('El favicon debe ser menor a 256 KB', 'warning'); return; }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUri = e.target.result;
+      document.getElementById('f-favicon_url').value = dataUri;
+      document.getElementById('favicon-preview-img').src = dataUri;
+      document.getElementById('favicon-preview-img').style.display = 'inline';
+      document.getElementById('favicon-placeholder').style.display = 'none';
+      // Save immediately
+      try {
+        await fetch('/api/v1/auth/tenant', {method:'PATCH', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:JSON.stringify({favicon_url:dataUri})});
+      } catch(e) {}
+    };
+    reader.readAsDataURL(file);
+  }
+
   function updateLogoPreview() {
     const url = document.getElementById('f-logo_url').value;
-    const img = document.getElementById('logo-preview-img');
-    const txt = document.getElementById('logo-preview-text');
+    showLogoPreview(url);
     if (url) { img.src = url; img.style.display = 'inline'; txt.style.display = 'none'; img.onerror = () => { img.style.display='none'; txt.style.display='inline'; txt.textContent='URL no válida'; }; }
     else { img.style.display = 'none'; txt.style.display = 'inline'; txt.textContent = 'Sin logo personalizado'; }
   }
