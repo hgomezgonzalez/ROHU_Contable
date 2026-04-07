@@ -126,7 +126,8 @@ def _deploy_worker(clients: list, api_key: str, source_url: str):
             continue
 
         try:
-            _deploy_single_app(app_name, headers, source_url, state)
+            client_url = client.get("url", "").rstrip("/")
+            _deploy_single_app(app_name, headers, source_url, state, health_url=client_url)
             state["completed"] += 1
         except Exception as e:
             logger.error("Deploy failed for %s: %s", app_name, str(e), exc_info=True)
@@ -144,7 +145,7 @@ def _deploy_worker(clients: list, api_key: str, source_url: str):
     logger.info("Deploy finished: %d ok, %d failed", state["completed"], state["failed"])
 
 
-def _deploy_single_app(app_name: str, headers: dict, source_url: str, state: dict):
+def _deploy_single_app(app_name: str, headers: dict, source_url: str, state: dict, health_url: str = ""):
     # Step 1: Config
     _update_status(state, app_name, "building", "Verificando configuracion...")
     _ensure_voucher_secret(app_name, headers)
@@ -163,9 +164,9 @@ def _deploy_single_app(app_name: str, headers: dict, source_url: str, state: dic
 
     # Step 5: Health check (wait for dyno restart)
     _update_status(state, app_name, "releasing", "Esperando reinicio de la app...")
-    time.sleep(15)  # Heroku needs time to restart dynos after release
+    time.sleep(15)
     _update_status(state, app_name, "releasing", "Verificando app...")
-    _health_check(app_name)
+    _health_check(app_name, health_url)
 
     _update_status(state, app_name, "healthy", "Sincronizado correctamente")
 
@@ -252,8 +253,8 @@ def _wait_for_release(app_name: str, headers: dict, state: dict):
     raise RuntimeError("Release timeout (10 min)")
 
 
-def _health_check(app_name: str):
-    url = f"https://{app_name}.herokuapp.com/health"
+def _health_check(app_name: str, base_url: str = ""):
+    url = f"{base_url}/health" if base_url else f"https://{app_name}.herokuapp.com/health"
     deadline = time.time() + 120  # 2 minutes for health check
     attempt = 0
     while time.time() < deadline:
