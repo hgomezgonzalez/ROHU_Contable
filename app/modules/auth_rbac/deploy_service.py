@@ -18,12 +18,31 @@ HEROKU_HEADERS = {
     "Content-Type": "application/json",
 }
 
+# Timeouts (seconds)
+BUILD_TIMEOUT = 600  # 10 min
+RELEASE_TIMEOUT = 600  # 10 min
+HEALTH_TIMEOUT = 60  # 1 min
+MAX_TOTAL_TIMEOUT = 900  # 15 min absolute max
+
 
 def _read_state() -> dict:
     try:
         with open(STATE_FILE, "r") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+            state = json.load(f)
+        # Auto-expire stuck deploys (> 15 min)
+        if state.get("running") and state.get("started_at"):
+            started = datetime.fromisoformat(state["started_at"])
+            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+            if elapsed > MAX_TOTAL_TIMEOUT:
+                state["running"] = False
+                state["finished_at"] = datetime.now(timezone.utc).isoformat()
+                for app_data in state.get("apps", {}).values():
+                    if app_data.get("status") not in ("healthy", "failed"):
+                        app_data["status"] = "failed"
+                        app_data["detail"] = "Timeout - el despliegue tomo mas de 15 minutos"
+                _write_state(state)
+        return state
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
         return {"running": False, "apps": {}, "started_at": None, "finished_at": None}
 
 
@@ -36,29 +55,22 @@ def _heroku_headers(api_key: str) -> dict:
     return {**HEROKU_HEADERS, "Authorization": f"Bearer {api_key}"}
 
 
-def _get_current_app_name() -> str:
-    """Get the Heroku app name of the current instance."""
-    return os.getenv("HEROKU_APP_NAME", "rohu-contable-prod")
-
-
 def _read_clients() -> list:
-    """Read clients.json excluding the current app (don't deploy to self)."""
+    """Read clients.json excluding the current app."""
     clients_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json"
     )
     with open(clients_file, "r") as f:
         all_clients = json.load(f)
-    current_app = _get_current_app_name()
+    current_app = os.getenv("HEROKU_APP_NAME", "rohu-contable-prod")
     return [c for c in all_clients if c.get("app") != current_app]
 
 
 def get_deploy_status() -> dict:
-    """Return current deploy state (for polling)."""
     return _read_state()
 
 
 def start_deploy_all() -> dict:
-    """Start deploying to all client apps. Returns initial state."""
     state = _read_state()
     if state.get("running"):
         raise ValueError("Ya hay un despliegue en curso. Espere a que termine.")
@@ -69,20 +81,18 @@ def start_deploy_all() -> dict:
     github_repo = current_app.config.get("GITHUB_REPO") or os.getenv("GITHUB_REPO", "hgomezgonzalez/ROHU_Contable")
 
     if not api_key:
-        raise ValueError("HEROKU_API_KEY no está configurada. Agréguela en las variables de entorno de Heroku.")
+        raise ValueError("ROHU_HEROKU_KEY no configurada. Agreguela en Heroku Config Vars.")
 
     clients = _read_clients()
     if not clients:
-        raise ValueError("No hay clientes registrados en clients.json")
+        raise ValueError("No hay replicas para sincronizar en clients.json")
 
     source_url = f"https://github.com/{github_repo}/archive/refs/heads/main.tar.gz"
 
-    # Initialize state
     state = {
         "running": True,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "finished_at": None,
-        "source_url": source_url,
         "total": len(clients),
         "completed": 0,
         "failed": 0,
@@ -90,66 +100,75 @@ def start_deploy_all() -> dict:
     }
     _write_state(state)
 
-    # Start background thread
-    t = threading.Thread(
-        target=_deploy_worker,
-        args=(clients, api_key, source_url),
-        daemon=True,
-    )
+    t = threading.Thread(target=_deploy_worker, args=(clients, api_key, source_url), daemon=True)
     t.start()
 
     return state
 
 
 def _deploy_worker(clients: list, api_key: str, source_url: str):
-    """Background worker: deploy to each app sequentially."""
     headers = _heroku_headers(api_key)
     state = _read_state()
+    start_time = time.time()
 
     for client in clients:
         app_name = client["app"]
+
+        # Check absolute timeout
+        if time.time() - start_time > MAX_TOTAL_TIMEOUT:
+            state["apps"][app_name] = {
+                "name": client.get("name", app_name),
+                "status": "failed",
+                "detail": "Timeout global alcanzado",
+            }
+            state["failed"] += 1
+            _write_state(state)
+            continue
+
         try:
             _deploy_single_app(app_name, headers, source_url, state)
             state["completed"] += 1
         except Exception as e:
             logger.error("Deploy failed for %s: %s", app_name, str(e), exc_info=True)
-            state["apps"][app_name] = {"name": client.get("name", app_name), "status": "failed", "detail": str(e)[:200]}
+            state["apps"][app_name] = {
+                "name": client.get("name", app_name),
+                "status": "failed",
+                "detail": str(e)[:200],
+            }
             state["failed"] += 1
             _write_state(state)
 
     state["running"] = False
     state["finished_at"] = datetime.now(timezone.utc).isoformat()
     _write_state(state)
-    logger.info("Deploy all finished: %d completed, %d failed", state["completed"], state["failed"])
+    logger.info("Deploy finished: %d ok, %d failed", state["completed"], state["failed"])
 
 
 def _deploy_single_app(app_name: str, headers: dict, source_url: str, state: dict):
-    """Deploy to a single Heroku app: build → release → health check."""
-
-    # Step 1: Ensure VOUCHER_HMAC_SECRET
-    _update_app_status(state, app_name, "building", "Verificando configuracion...")
+    # Step 1: Config
+    _update_status(state, app_name, "building", "Verificando configuracion...")
     _ensure_voucher_secret(app_name, headers)
 
     # Step 2: Create build
-    _update_app_status(state, app_name, "building", "Creando build...")
+    _update_status(state, app_name, "building", "Iniciando build...")
     build_id = _create_build(app_name, headers, source_url)
 
-    # Step 3: Wait for build to complete
-    _update_app_status(state, app_name, "building", "Construyendo aplicacion...")
+    # Step 3: Wait for build
+    _update_status(state, app_name, "building", "Compilando aplicacion...")
     _wait_for_build(app_name, headers, build_id, state)
 
-    # Step 4: Wait for release phase (migrations + seed)
-    _update_app_status(state, app_name, "releasing", "Ejecutando migraciones y seeds...")
+    # Step 4: Wait for release
+    _update_status(state, app_name, "releasing", "Ejecutando migraciones...")
     _wait_for_release(app_name, headers, state)
 
     # Step 5: Health check
-    _update_app_status(state, app_name, "releasing", "Verificando salud de la app...")
-    _health_check(app_name, state)
+    _update_status(state, app_name, "releasing", "Verificando app...")
+    _health_check(app_name)
 
-    _update_app_status(state, app_name, "healthy", "Desplegado correctamente")
+    _update_status(state, app_name, "healthy", "Sincronizado correctamente")
 
 
-def _update_app_status(state: dict, app_name: str, status: str, detail: str):
+def _update_status(state: dict, app_name: str, status: str, detail: str):
     if app_name in state["apps"]:
         state["apps"][app_name]["status"] = status
         state["apps"][app_name]["detail"] = detail
@@ -157,25 +176,22 @@ def _update_app_status(state: dict, app_name: str, status: str, detail: str):
 
 
 def _ensure_voucher_secret(app_name: str, headers: dict):
-    """Ensure VOUCHER_HMAC_SECRET is set on the app."""
-    resp = requests.get(f"{HEROKU_API}/apps/{app_name}/config-vars", headers=headers, timeout=15)
-    if resp.status_code == 200:
-        config = resp.json()
-        if not config.get("VOUCHER_HMAC_SECRET"):
+    try:
+        resp = requests.get(f"{HEROKU_API}/apps/{app_name}/config-vars", headers=headers, timeout=15)
+        if resp.status_code == 200 and not resp.json().get("VOUCHER_HMAC_SECRET"):
             import secrets
 
-            secret = secrets.token_hex(32)
             requests.patch(
                 f"{HEROKU_API}/apps/{app_name}/config-vars",
                 headers=headers,
-                json={"VOUCHER_HMAC_SECRET": secret},
+                json={"VOUCHER_HMAC_SECRET": secrets.token_hex(32)},
                 timeout=15,
             )
-            logger.info("Set VOUCHER_HMAC_SECRET for %s", app_name)
+    except Exception as e:
+        logger.warning("Could not check VOUCHER_HMAC_SECRET for %s: %s", app_name, e)
 
 
 def _create_build(app_name: str, headers: dict, source_url: str) -> str:
-    """Create a Heroku build from GitHub tarball. Returns build ID."""
     resp = requests.post(
         f"{HEROKU_API}/apps/{app_name}/builds",
         headers=headers,
@@ -183,77 +199,66 @@ def _create_build(app_name: str, headers: dict, source_url: str) -> str:
         timeout=30,
     )
     if resp.status_code not in (200, 201):
-        raise RuntimeError(f"Error creando build: {resp.status_code} — {resp.text[:200]}")
-
-    build = resp.json()
-    return build["id"]
+        raise RuntimeError(f"Build API error {resp.status_code}: {resp.text[:150]}")
+    return resp.json()["id"]
 
 
 def _wait_for_build(app_name: str, headers: dict, build_id: str, state: dict):
-    """Poll build status until succeeded or failed. Max ~5 minutes."""
-    for attempt in range(30):
-        resp = requests.get(f"{HEROKU_API}/apps/{app_name}/builds/{build_id}", headers=headers, timeout=15)
-        if resp.status_code != 200:
-            time.sleep(10)
-            continue
-
-        build = resp.json()
-        status = build.get("status", "pending")
-
-        if status == "succeeded":
-            return
-        elif status == "failed":
-            raise RuntimeError(f"Build fallido para {app_name}")
-
-        _update_app_status(state, app_name, "building", f"Construyendo... (intento {attempt + 1})")
+    deadline = time.time() + BUILD_TIMEOUT
+    attempt = 0
+    while time.time() < deadline:
+        attempt += 1
+        try:
+            resp = requests.get(f"{HEROKU_API}/apps/{app_name}/builds/{build_id}", headers=headers, timeout=15)
+            if resp.status_code == 200:
+                status = resp.json().get("status", "pending")
+                if status == "succeeded":
+                    return
+                if status == "failed":
+                    raise RuntimeError("Build fallido — revise los logs en Heroku Dashboard")
+                _update_status(state, app_name, "building", f"Compilando... ({attempt * 10}s)")
+        except requests.RequestException:
+            pass
         time.sleep(10)
-
-    raise RuntimeError(f"Build timeout para {app_name} (5 min)")
+    raise RuntimeError("Build timeout (10 min)")
 
 
 def _wait_for_release(app_name: str, headers: dict, state: dict):
-    """Wait for release phase (migrations + seed) to complete. Max ~3 minutes."""
-    time.sleep(5)  # Give Heroku a moment to start the release
-
-    for attempt in range(18):
-        resp = requests.get(
-            f"{HEROKU_API}/apps/{app_name}/releases",
-            headers={**headers, "Range": "version ..; order=desc,max=1"},
-            timeout=15,
-        )
-        if resp.status_code != 200:
-            time.sleep(10)
-            continue
-
-        releases = resp.json()
-        if not releases:
-            time.sleep(10)
-            continue
-
-        status = releases[0].get("status", "pending")
-        if status == "succeeded":
-            return
-        elif status == "failed":
-            raise RuntimeError(f"Release fallido para {app_name} (migraciones o seeds)")
-
-        _update_app_status(state, app_name, "releasing", f"Migraciones en curso... (intento {attempt + 1})")
-        time.sleep(10)
-
-    raise RuntimeError(f"Release timeout para {app_name} (3 min)")
-
-
-def _health_check(app_name: str, state: dict):
-    """Verify the app is healthy after deploy."""
-    url = f"https://{app_name}.herokuapp.com/health"
-
-    for attempt in range(3):
+    time.sleep(10)  # Give Heroku time to start release
+    deadline = time.time() + RELEASE_TIMEOUT
+    attempt = 0
+    while time.time() < deadline:
+        attempt += 1
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(
+                f"{HEROKU_API}/apps/{app_name}/releases",
+                headers={**headers, "Range": "version ..; order=desc,max=1"},
+                timeout=15,
+            )
+            if resp.status_code in (200, 206):
+                releases = resp.json()
+                if releases:
+                    status = releases[0].get("status", "pending")
+                    if status == "succeeded":
+                        return
+                    if status == "failed":
+                        raise RuntimeError("Release fallido — migraciones o seeds con error")
+                    _update_status(state, app_name, "releasing", f"Migraciones... ({attempt * 10}s)")
+        except requests.RequestException:
+            pass
+        time.sleep(10)
+    raise RuntimeError("Release timeout (10 min)")
+
+
+def _health_check(app_name: str):
+    url = f"https://{app_name}.herokuapp.com/health"
+    deadline = time.time() + HEALTH_TIMEOUT
+    while time.time() < deadline:
+        try:
+            resp = requests.get(url, timeout=10)
             if resp.status_code == 200:
                 return
         except requests.RequestException:
             pass
-        _update_app_status(state, app_name, "releasing", f"Health check intento {attempt + 1}/3...")
-        time.sleep(10)
-
-    raise RuntimeError(f"Health check fallido para {app_name}")
+        time.sleep(5)
+    raise RuntimeError("Health check fallido despues de 1 minuto")
