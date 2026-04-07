@@ -30,13 +30,12 @@ def create_app(config_name: str = "development") -> Flask:
     # App version and deploy timestamp
     import os
 
-    APP_VERSION = "1.2.2"
+    APP_VERSION = "1.2.3"
     DEPLOY_COMMIT = os.getenv("SOURCE_VERSION", "")[:8]
-    DEPLOY_TIME = os.getenv("DEPLOY_TIME", None)
-    if not DEPLOY_TIME:
-        from datetime import datetime, timezone
+    from datetime import datetime, timezone
 
-        DEPLOY_TIME = datetime.now(timezone.utc).isoformat()
+    DEPLOY_TIME = datetime.now(timezone.utc).isoformat()
+    os.environ["DEPLOY_TIME"] = DEPLOY_TIME
 
     # Register health check
     # Security + cache headers

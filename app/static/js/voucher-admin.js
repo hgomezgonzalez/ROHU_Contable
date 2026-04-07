@@ -34,8 +34,16 @@ async function loadStats() {
 // ── Voucher Types (card grid) ───────────────────────────────────
 async function loadTypes() {
   try {
-    const r = (await (await fetch(`${API}/types?include_inactive=true`, { headers: authHeaders() })).json());
-    if (!r.success) return;
+    const resp = await fetch(`${API}/types?include_inactive=true`, { headers: authHeaders() });
+    if (resp.status === 401 || resp.status === 403) {
+      document.getElementById("types-grid").innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-light);">No tiene permisos para ver bonos. Cierre sesion e inicie de nuevo.</div>';
+      return;
+    }
+    const r = await resp.json();
+    if (!r.success) {
+      document.getElementById("types-grid").innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--danger);">Error: ${r.error?.message || 'No se pudieron cargar los tipos de bono'}</div>`;
+      return;
+    }
     voucherTypesMap = {};
     r.data.forEach(vt => { voucherTypesMap[vt.id] = vt; });
 

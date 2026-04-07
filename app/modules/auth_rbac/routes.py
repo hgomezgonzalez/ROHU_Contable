@@ -529,14 +529,15 @@ def list_saas_clients():
 @auth_bp.route("/sync-status", methods=["GET"])
 @require_permission("tenants", "manage")
 def sync_status():
-    """Check sync status of all replicas by comparing their /health version with this app's."""
+    """Check sync status of all replicas by comparing their /health deployed_at with this app's."""
     import json
     import os
 
     import requests as http
 
-    # Get this app's version
-    main_version = "1.2.2"
+    # Get this app's deploy time from health endpoint
+    main_version = "1.2.3"
+    main_deployed = os.getenv("DEPLOY_TIME", "")
 
     clients_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json"
@@ -566,10 +567,18 @@ def sync_status():
             if resp.status_code == 200:
                 data = resp.json()
                 replica_version = data.get("version", "")
+                replica_deployed = data.get("deployed_at", "")
                 entry["status"] = "online"
                 entry["version"] = replica_version
-                entry["deployed_at"] = data.get("deployed_at", "")
-                entry["synced"] = replica_version == main_version
+                entry["deployed_at"] = replica_deployed
+                # Synced if same version AND deployed after or same as main
+                if replica_version == main_version:
+                    if main_deployed and replica_deployed:
+                        entry["synced"] = replica_deployed >= main_deployed
+                    else:
+                        entry["synced"] = True
+                else:
+                    entry["synced"] = False
             else:
                 entry["status"] = "error"
                 entry["synced"] = False
