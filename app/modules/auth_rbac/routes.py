@@ -536,8 +536,7 @@ def sync_status():
     import requests as http
 
     # Get this app's deploy time from health endpoint
-    main_version = "1.2.3"
-    main_deployed = os.getenv("DEPLOY_TIME", "")
+    main_version = "1.3.0"
 
     clients_file = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "clients.json"
@@ -567,18 +566,10 @@ def sync_status():
             if resp.status_code == 200:
                 data = resp.json()
                 replica_version = data.get("version", "")
-                replica_deployed = data.get("deployed_at", "")
                 entry["status"] = "online"
                 entry["version"] = replica_version
-                entry["deployed_at"] = replica_deployed
-                # Synced if same version AND deployed after or same as main
-                if replica_version == main_version:
-                    if main_deployed and replica_deployed:
-                        entry["synced"] = replica_deployed >= main_deployed
-                    else:
-                        entry["synced"] = True
-                else:
-                    entry["synced"] = False
+                entry["deployed_at"] = data.get("deployed_at", "")
+                entry["synced"] = replica_version == main_version
             else:
                 entry["status"] = "error"
                 entry["synced"] = False

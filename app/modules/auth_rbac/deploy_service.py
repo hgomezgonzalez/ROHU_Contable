@@ -161,7 +161,9 @@ def _deploy_single_app(app_name: str, headers: dict, source_url: str, state: dic
     _update_status(state, app_name, "releasing", "Ejecutando migraciones...")
     _wait_for_release(app_name, headers, state)
 
-    # Step 5: Health check
+    # Step 5: Health check (wait for dyno restart)
+    _update_status(state, app_name, "releasing", "Esperando reinicio de la app...")
+    time.sleep(15)  # Heroku needs time to restart dynos after release
     _update_status(state, app_name, "releasing", "Verificando app...")
     _health_check(app_name)
 
@@ -252,13 +254,15 @@ def _wait_for_release(app_name: str, headers: dict, state: dict):
 
 def _health_check(app_name: str):
     url = f"https://{app_name}.herokuapp.com/health"
-    deadline = time.time() + HEALTH_TIMEOUT
+    deadline = time.time() + 120  # 2 minutes for health check
+    attempt = 0
     while time.time() < deadline:
+        attempt += 1
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=15)
             if resp.status_code == 200:
                 return
         except requests.RequestException:
             pass
-        time.sleep(5)
-    raise RuntimeError("Health check fallido despues de 1 minuto")
+        time.sleep(10)
+    raise RuntimeError(f"Health check fallido despues de {attempt} intentos (2 min)")

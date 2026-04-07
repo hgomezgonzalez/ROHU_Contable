@@ -30,12 +30,14 @@ def create_app(config_name: str = "development") -> Flask:
     # App version and deploy timestamp
     import os
 
-    APP_VERSION = "1.2.3"
+    APP_VERSION = "1.3.0"
     DEPLOY_COMMIT = os.getenv("SOURCE_VERSION", "")[:8]
     from datetime import datetime, timezone
 
     DEPLOY_TIME = datetime.now(timezone.utc).isoformat()
     os.environ["DEPLOY_TIME"] = DEPLOY_TIME
+    # Build version ID: version + short timestamp for sync verification
+    BUILD_ID = f"{APP_VERSION}-{DEPLOY_TIME[5:16].replace('-','').replace(':','').replace('T','')}"
 
     # Register health check
     # Security + cache headers
@@ -104,7 +106,7 @@ def create_app(config_name: str = "development") -> Flask:
             "status": "ok",
             "service": "rohu-contable",
             "version": APP_VERSION,
-            "commit": DEPLOY_COMMIT,
+            "build_id": BUILD_ID,
             "deployed_at": DEPLOY_TIME,
         }
 
