@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
+echo "--- Release phase for $HEROKU_APP_NAME (schema: ${DB_SCHEMA:-public}) ---"
 echo "--- Running Alembic migrations ---"
 flask db upgrade
 

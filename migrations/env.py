@@ -1,9 +1,16 @@
 import logging
+import os
 from logging.config import fileConfig
 
 from flask import current_app
+from sqlalchemy import text
 
 from alembic import context
+
+# Per-app Postgres schema. Matches DB_SCHEMA env var read in app/config.py.
+# All DDL (CREATE TABLE, alembic_version, etc.) lands inside this schema so
+# multiple Heroku apps can share a single Postgres database safely.
+DB_SCHEMA = os.getenv("DB_SCHEMA", "public")
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -97,9 +104,20 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
+        # Ensure the target schema exists before any Alembic introspection/DDL
+        # runs. Pinning search_path via the engine connect_args isn't enough
+        # during the release phase because the schema may not exist yet.
+        # This keeps alembic_version and all ORM tables inside DB_SCHEMA,
+        # isolating SaaS instances on a single shared Postgres database.
+        logger.info("Using Postgres schema: %s", DB_SCHEMA)
+        with connection.begin():
+            connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{DB_SCHEMA}"'))
+            connection.execute(text(f'SET search_path TO "{DB_SCHEMA}", public'))
+
         context.configure(
             connection=connection,
             target_metadata=get_metadata(),
+            version_table_schema=DB_SCHEMA,
             **conf_args
         )
 

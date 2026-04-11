@@ -16,6 +16,13 @@ class BaseConfig:
     _db_url = os.getenv("DATABASE_URL", "")
     SQLALCHEMY_DATABASE_URI = _db_url.replace("postgres://", "postgresql://", 1)
 
+    # Per-app Postgres schema (single shared DB, one schema per SaaS instance).
+    # Default to "public" so local dev keeps working without env changes.
+    DB_SCHEMA = os.getenv("DB_SCHEMA", "public")
+
+    # Redis (shared across all SaaS instances; use rediss:// for TLS on Heroku).
+    REDIS_URL = os.getenv("REDIS_URL", os.getenv("REDIS_TLS_URL", ""))
+
     # JWT
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.urandom(32).hex())
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", "900")))
@@ -29,13 +36,19 @@ class BaseConfig:
     HEROKU_API_KEY = os.getenv("ROHU_HEROKU_KEY", "")
     GITHUB_REPO = os.getenv("GITHUB_REPO", "hgomezgonzalez/ROHU_Contable")
 
-    # Connection pool — critical for production stability
+    # Connection pool — critical for production stability.
+    # connect_args pins the Postgres search_path to the per-app schema so every
+    # query, relationship and migration lands in the correct namespace without
+    # touching models. Fallback to "public" is intentional for OOB tables.
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_size": 3,
         "max_overflow": 3,
         "pool_timeout": 20,
         "pool_recycle": 300,  # Recycle connections every 5 min (avoids stale connections)
         "pool_pre_ping": True,  # Verify connection is alive before using (critical for cloud DBs)
+        "connect_args": {
+            "options": f"-csearch_path={DB_SCHEMA},public",
+        },
     }
 
 
