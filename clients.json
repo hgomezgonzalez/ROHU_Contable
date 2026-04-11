@@ -3,7 +3,7 @@
     "name": "ROHU Accountant",
     "app": "rohu-accountant",
     "schema": "rohu_accountant",
-    "url": "https://rohu-accountant.herokuapp.com",
+    "url": "https://rohu-accountant-42a1913f511f.herokuapp.com",
     "admin_email": "hgomezgonzalez@gmail.com",
     "created_at": "2026-04-11"
   }
