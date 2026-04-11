@@ -62,7 +62,7 @@ def _read_clients() -> list:
     )
     with open(clients_file, "r") as f:
         all_clients = json.load(f)
-    current_app = os.getenv("HEROKU_APP_NAME", "rohu-contable-prod")
+    current_app = os.getenv("HEROKU_APP_NAME", "rohu-accountant")
     return [c for c in all_clients if c.get("app") != current_app]
 
 
@@ -254,7 +254,11 @@ def _wait_for_release(app_name: str, headers: dict, state: dict):
 
 
 def _health_check(app_name: str, base_url: str = ""):
-    url = f"{base_url}/health" if base_url else f"https://{app_name}.herokuapp.com/health"
+    # Heroku assigns hashed subdomains (e.g. rohu-accountant-42a1913f511f.herokuapp.com),
+    # so the real URL must come from clients.json; we no longer guess it.
+    if not base_url:
+        raise RuntimeError(f"No URL registered in clients.json for {app_name}")
+    url = f"{base_url.rstrip('/')}/health"
     deadline = time.time() + 120  # 2 minutes for health check
     attempt = 0
     while time.time() < deadline:

@@ -551,7 +551,9 @@ def sync_status():
     for c in clients:
         app_name = c.get("app", "")
         url = c.get("url", "").rstrip("/")
-        health_url = f"{url}/health" if url else f"https://{app_name}.herokuapp.com/health"
+        # Heroku now assigns hashed subdomains, so we never guess the URL
+        # from the app name — it must be present in clients.json.
+        health_url = f"{url}/health" if url else ""
 
         entry = {
             "name": c.get("name", app_name),
@@ -560,6 +562,12 @@ def sync_status():
             "admin_email": c.get("admin_email", ""),
             "created_at": c.get("created_at", ""),
         }
+
+        if not health_url:
+            entry["status"] = "no_url"
+            entry["synced"] = False
+            results.append(entry)
+            continue
 
         try:
             resp = http.get(health_url, timeout=8)

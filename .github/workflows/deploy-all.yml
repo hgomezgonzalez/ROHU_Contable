@@ -16,14 +16,17 @@ jobs:
       - uses: actions/checkout@v4
       - id: set-matrix
         run: |
-          APPS=$(python3 -c "
+          # Build matrix with both the Heroku app name and the actual URL
+          # (Heroku assigns hashed subdomains like rohu-accountant-42a1913f511f.herokuapp.com,
+          # so we must read the real URL from clients.json instead of guessing it).
+          MATRIX=$(python3 -c "
           import json
           with open('clients.json') as f:
               clients = json.load(f)
-          apps = [c['app'] for c in clients]
-          print(json.dumps(apps))
+          include = [{'app': c['app'], 'url': c['url'].rstrip('/')} for c in clients]
+          print(json.dumps({'include': include}))
           ")
-          echo "matrix={\"app\":$APPS}" >> $GITHUB_OUTPUT
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
   deploy:
     needs: read-clients
@@ -100,7 +103,7 @@ jobs:
 
       - name: Health check ${{ matrix.app }}
         run: |
-          URL="https://${{ matrix.app }}.herokuapp.com/health/full"
+          URL="${{ matrix.url }}/health/full"
           STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" "$URL" || echo "000")
           if [ "$STATUS" = "200" ]; then
             echo "✅ ${{ matrix.app }} is healthy"
