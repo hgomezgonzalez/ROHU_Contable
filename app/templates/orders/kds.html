@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% set active_page = 'orders' %}
+{% block title %}Cocina (KDS) — ROHU{% endblock %}
+{% block header_title %}Vista de Cocina{% endblock %}
+
+{% block head %}
+<style>
+  .kds-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px; padding: 16px;
+  }
+  .kds-card {
+    border-radius: 12px; background: white; box-shadow: var(--shadow);
+    overflow: hidden; transition: all 0.3s;
+  }
+  .kds-card.age-ok { border-left: 5px solid #059669; }
+  .kds-card.age-warn { border-left: 5px solid #F59E0B; }
+  .kds-card.age-late { border-left: 5px solid #EF4444; }
+  .kds-header {
+    padding: 12px 16px; display: flex; justify-content: space-between;
+    align-items: center; font-weight: 700; font-size: 18px;
+  }
+  .kds-items { padding: 8px 16px; }
+  .kds-item {
+    padding: 8px 0; border-bottom: 1px solid #F1F5F9;
+    display: flex; justify-content: space-between; font-size: 16px;
+  }
+  .kds-item:last-child { border-bottom: none; }
+  .kds-item-qty { font-weight: 700; color: var(--primary); min-width: 40px; }
+  .kds-item-name { flex: 1; }
+  .kds-item-notes { font-size: 12px; color: #F59E0B; font-style: italic; }
+  .kds-footer { padding: 12px 16px; }
+  .kds-timer { font-size: 14px; font-weight: 600; }
+  .btn-kds-ready {
+    width: 100%; padding: 14px; border: none; border-radius: 8px;
+    background: #059669; color: white; font-size: 18px; font-weight: 700;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .btn-kds-ready:hover { background: #047857; }
+  .kds-empty {
+    text-align: center; padding: 80px 20px; color: var(--text-light);
+    font-size: 20px;
+  }
+  @media (max-width: 768px) {
+    .kds-grid { grid-template-columns: 1fr; padding: 8px; }
+    .kds-item { font-size: 18px; }
+    .kds-header { font-size: 22px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="kds-container" class="kds-grid">
+  <div class="kds-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:64px;height:64px;margin-bottom:16px;opacity:0.3;"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    <div>Sin pedidos pendientes</div>
+    <div style="font-size:14px;margin-top:8px;">Los pedidos confirmados apareceran aqui automaticamente</div>
+  </div>
+</div>
+
+<script>
+const token = localStorage.getItem('access_token');
+const headers = {'Authorization': 'Bearer ' + token};
+let kdsInterval = null;
+
+async function loadKDS() {
+  try {
+    const resp = await fetch('/api/v1/orders/kds', {headers});
+    const r = await resp.json();
+    if (!r.success) return;
+
+    const container = document.getElementById('kds-container');
+    if (!r.data.length) {
+      container.innerHTML = `
+        <div class="kds-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:64px;height:64px;margin-bottom:16px;opacity:0.3;"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <div>Sin pedidos pendientes</div>
+          <div style="font-size:14px;margin-top:8px;">Los pedidos confirmados apareceran aqui</div>
+        </div>`;
+      return;
+    }
+
+    const now = new Date();
+    container.innerHTML = r.data.map(o => {
+      const created = new Date(o.created_at);
+      const mins = Math.floor((now - created) / 60000);
+      const ageClass = mins < 5 ? 'age-ok' : mins < 10 ? 'age-warn' : 'age-late';
+      const statusLabel = o.status === 'confirmed' ? 'NUEVO' : o.status === 'in_preparation' ? 'EN PREP.' : 'LISTO';
+
+      return `
+        <div class="kds-card ${ageClass}">
+          <div class="kds-header">
+            <span>#${o.order_number.split('-').pop()} ${o.table_number ? '· Mesa ' + o.table_number : ''}</span>
+            <span class="kds-timer" style="color:${mins >= 10 ? '#EF4444' : mins >= 5 ? '#F59E0B' : '#059669'};">${mins} min</span>
+          </div>
+          <div class="kds-items">
+            ${o.items.map(i => `
+              <div class="kds-item">
+                <span class="kds-item-qty">${Math.round(i.quantity)}x</span>
+                <span class="kds-item-name">${i.product_name}${i.notes ? '<br><span class="kds-item-notes">' + i.notes + '</span>' : ''}</span>
+              </div>
+            `).join('')}
+          </div>
+          ${o.notes ? '<div style="padding:4px 16px;font-size:12px;color:#F59E0B;background:#FFFBEB;"><strong>Nota:</strong> ' + o.notes + '</div>' : ''}
+          <div class="kds-footer">
+            ${o.status === 'confirmed' ? `<button class="btn-kds-ready" style="background:#3B82F6;" onclick="markInPrep('${o.id}')">PREPARAR</button>` : ''}
+            ${o.status === 'in_preparation' ? `<button class="btn-kds-ready" onclick="markReady('${o.id}')">LISTO #${o.order_number.split('-').pop()}</button>` : ''}
+            ${o.status === 'ready' ? '<div style="text-align:center;font-size:16px;font-weight:700;color:#059669;padding:8px;">LISTO PARA ENTREGAR</div>' : ''}
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { console.error('KDS error:', e); }
+}
+
+async function markInPrep(orderId) {
+  await fetch('/api/v1/orders/' + orderId + '/status', {
+    method: 'POST',
+    headers: {...headers, 'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'in_preparation'}),
+  });
+  loadKDS();
+}
+
+async function markReady(orderId) {
+  await fetch('/api/v1/orders/' + orderId + '/status', {
+    method: 'POST',
+    headers: {...headers, 'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'ready'}),
+  });
+  loadKDS();
+}
+
+// Auto-refresh every 5 seconds
+loadKDS();
+kdsInterval = setInterval(loadKDS, 5000);
+</script>
+{% endblock %}

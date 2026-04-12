@@ -62,6 +62,21 @@ class Tenant(db.Model):
     timezone = db.Column(db.String(50), nullable=False, default="America/Bogota")
     logo_url = db.Column(db.Text)
     favicon_url = db.Column(db.Text)
+    # Orders module config (JSONB)
+    orders_config = db.Column(
+        db.JSON,
+        nullable=False,
+        default=lambda: {
+            "enabled": False,
+            "vertical_type": None,
+            "kds_enabled": False,
+            "tables_enabled": False,
+            "delivery_address_required": False,
+            "max_open_orders": 50,
+            "trial_started_at": None,
+            "addon_active_until": None,
+        },
+    )
     # DIAN e-invoicing
     dian_resolution_number = db.Column(db.String(50))
     dian_resolution_prefix = db.Column(db.String(10), default="FE")

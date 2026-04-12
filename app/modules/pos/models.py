@@ -86,6 +86,7 @@ class Sale(db.Model):
     void_reason = db.Column(db.String(255))
 
     idempotency_key = db.Column(UUID(as_uuid=True), unique=True)
+    source_order_id = db.Column(UUID(as_uuid=True), nullable=True)
 
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
     version = db.Column(db.Integer, nullable=False, default=1)

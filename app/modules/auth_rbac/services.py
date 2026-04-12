@@ -629,6 +629,11 @@ def seed_roles_and_permissions() -> None:
         ("vouchers", "read", "vouchers"),
         ("vouchers", "manage", "vouchers"),
         ("vouchers", "redeem", "vouchers"),
+        ("orders", "read", "orders"),
+        ("orders", "create", "orders"),
+        ("orders", "update_status", "orders"),
+        ("orders", "close", "orders"),
+        ("orders", "cancel", "orders"),
     ]
 
     # Upsert permissions (create missing ones)
@@ -665,6 +670,10 @@ def seed_roles_and_permissions() -> None:
             perm_objects["cash_transfers:read"],
             perm_objects["vouchers:read"],
             perm_objects["vouchers:redeem"],
+            perm_objects["orders:read"],
+            perm_objects["orders:create"],
+            perm_objects["orders:update_status"],
+            perm_objects["orders:close"],
         ],
         "accountant": [
             perm_objects["journal_entries:create"],

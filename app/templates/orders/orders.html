@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% set active_page = 'orders' %}
+{% block title %}Pedidos — ROHU Contable{% endblock %}
+{% block header_title %}Pedidos{% endblock %}
+
+{% block head %}
+<script src="{{ url_for('static', filename='js/html5-qrcode.min.js') }}"></script>
+<style>
+  .order-card {
+    border-radius: 12px; overflow: hidden; background: white;
+    box-shadow: var(--shadow); transition: transform 0.2s; cursor: pointer;
+  }
+  .order-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .order-header { padding: 14px 18px; color: white; }
+  .order-body { padding: 12px 18px; }
+  .order-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .status-draft { background: #94A3B8; }
+  .status-confirmed { background: #3B82F6; }
+  .status-in_preparation { background: #F59E0B; }
+  .status-ready { background: #059669; }
+  .status-closed { background: #6B7280; }
+  .status-cancelled { background: #EF4444; }
+  .status-close_failed { background: #DC2626; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Pedidos</h1>
+  <div style="display:flex;gap:8px;">
+    <a href="/app/orders/kds" class="btn btn-outline" target="_blank">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Vista Cocina (KDS)
+    </a>
+    <button class="btn btn-primary" onclick="showNewOrderPopup()">+ Nuevo Pedido</button>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="kpi-grid">
+  <div class="card"><div class="card-title">Activos</div><div class="card-value" id="stat-active">0</div></div>
+  <div class="card"><div class="card-title">Hoy</div><div class="card-value" id="stat-today">0</div></div>
+  <div class="card"><div class="card-title">Cerrados</div><div class="card-value positive" id="stat-closed">0</div></div>
+  <div class="card"><div class="card-title">Cancelados</div><div class="card-value" id="stat-cancelled" style="color:var(--text-light);">0</div></div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs" style="margin-bottom:16px;">
+  <button class="tab active" data-tab="active" onclick="switchTab('active')">Activos</button>
+  <button class="tab" data-tab="all" onclick="switchTab('all')">Todos</button>
+</div>
+
+<!-- Active Orders -->
+<div id="tab-active" class="tab-content active">
+  <div id="active-orders" class="order-grid">
+    <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-light);">Cargando pedidos...</div>
+  </div>
+</div>
+
+<!-- All Orders -->
+<div id="tab-all" class="tab-content" style="display:none;">
+  <div style="display:flex;gap:12px;margin-bottom:16px;">
+    <select id="filter-status" onchange="loadAllOrders()" class="form-control" style="max-width:200px;">
+      <option value="">Todos</option>
+      <option value="draft">Borrador</option>
+      <option value="confirmed">Confirmado</option>
+      <option value="in_preparation">En preparacion</option>
+      <option value="ready">Listo</option>
+      <option value="closed">Cerrado</option>
+      <option value="cancelled">Cancelado</option>
+    </select>
+  </div>
+  <div id="all-orders" class="order-grid"></div>
+  <div id="orders-pagination" style="display:flex;gap:4px;justify-content:center;margin-top:16px;"></div>
+</div>
+
+<!-- Detail overlay -->
+<div id="order-detail-overlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:9998;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,0.25);animation:rohuSlideUp 0.25s ease;">
+    <div style="height:4px;background:linear-gradient(90deg,#1E3A8A,#10B981,#06B6D4);"></div>
+    <div style="padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 id="detail-title" style="font-size:16px;margin:0;">Detalle del Pedido</h3>
+        <button onclick="document.getElementById('order-detail-overlay').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-light);">&times;</button>
+      </div>
+      <div id="order-detail-content"></div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/orders-admin.js') }}"></script>
+{% endblock %}

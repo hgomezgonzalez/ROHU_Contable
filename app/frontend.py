@@ -139,6 +139,16 @@ def vouchers():
     return render_template("vouchers/vouchers.html")
 
 
+@frontend_bp.route("/orders")
+def orders():
+    return render_template("orders/orders.html")
+
+
+@frontend_bp.route("/orders/kds")
+def orders_kds():
+    return render_template("orders/kds.html")
+
+
 @frontend_bp.route("/vouchers/<voucher_id>/print")
 def voucher_print(voucher_id):
     """Render voucher ticket for printing (standalone page)."""

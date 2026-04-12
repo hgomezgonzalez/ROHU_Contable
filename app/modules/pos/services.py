@@ -100,7 +100,296 @@ def get_current_session(tenant_id: str) -> Optional[dict]:
     return _cash_session_to_dict(session) if session else None
 
 
-# ── Checkout (Critical ACID Transaction) ──────────────────────────
+# ── Core Sale Creation (used by both checkout and close_order) ────
+
+
+def create_sale_from_items(
+    tenant_id: str,
+    created_by: str,
+    items: list,
+    payments: list,
+    sale_type: str = "cash",
+    customer_id: str = None,
+    customer_name: str = None,
+    customer_tax_id: str = None,
+    credit_days: int = 0,
+    notes: str = None,
+    cash_session_id: str = None,
+    idempotency_key: str = None,
+    voucher_sale: dict = None,
+    voucher_redemption: dict = None,
+    source_order_id: str = None,
+    auto_commit: bool = True,
+) -> dict:
+    """
+    Core ACID sale creation. Handles: Sale + Stock + Accounting + Vouchers.
+
+    This is the single source of truth for creating sales. Used by:
+    - checkout() for direct POS sales
+    - close_order() for closing orders into sales
+
+    When auto_commit=False, the caller is responsible for committing.
+    This allows close_order() to update the order status in the same transaction.
+    """
+    from app.modules.auth_rbac.models import Tenant
+
+    tenant_obj = Tenant.query.get(tenant_id)
+    is_simplified = (tenant_obj.fiscal_regime == "simplified") if tenant_obj else True
+
+    # Validate credit requirements
+    is_credit = sale_type == "credit"
+    customer = None
+    if is_credit:
+        if not customer_id:
+            raise ValueError("Ventas a crédito requieren un cliente")
+        from app.modules.customers.models import Customer
+
+        customer = Customer.query.filter_by(id=customer_id, tenant_id=tenant_id).first()
+        if not customer:
+            raise ValueError("Cliente no encontrado")
+        customer_name = customer_name or customer.name
+        customer_tax_id = customer_tax_id or customer.tax_id
+        credit_days = credit_days or customer.credit_days or 30
+
+    # Build sale
+    sale = Sale(
+        tenant_id=tenant_id,
+        cashier_id=created_by,
+        cash_session_id=cash_session_id,
+        invoice_number=_next_invoice_number(tenant_id),
+        customer_id=customer_id,
+        customer_name=customer_name,
+        customer_tax_id=customer_tax_id,
+        sale_type=sale_type,
+        notes=notes,
+        idempotency_key=idempotency_key or uuid.uuid4(),
+        source_order_id=source_order_id,
+    )
+
+    total_subtotal = Decimal("0")
+    total_tax = Decimal("0")
+    total_discount = Decimal("0")
+    sale_items = []
+    stock_ops = []
+
+    for item_data in items:
+        product = Product.query.filter_by(id=item_data["product_id"], tenant_id=tenant_id).with_for_update().first()
+
+        if not product or not product.is_active:
+            raise ValueError(f"Producto no encontrado: {item_data['product_id']}")
+
+        qty = Decimal(str(item_data["quantity"]))
+        if qty <= 0:
+            raise ValueError(f"Cantidad inválida para {product.name}")
+
+        if product.stock_current < qty:
+            raise ValueError(
+                f"Stock insuficiente para {product.name}: "
+                f"disponible={float(product.stock_current)}, solicitado={float(qty)}"
+            )
+
+        discount_pct = Decimal(str(item_data.get("discount_pct", 0)))
+        unit_price = product.sale_price
+        unit_cost = product.cost_average
+
+        line_subtotal = (unit_price * qty).quantize(TWO_PLACES)
+        line_discount = (line_subtotal * discount_pct / 100).quantize(TWO_PLACES)
+        taxable_base = line_subtotal - line_discount
+        effective_tax_rate = Decimal("0") if is_simplified else product.tax_rate
+        line_tax = (taxable_base * effective_tax_rate / 100).quantize(TWO_PLACES)
+        line_total = (taxable_base + line_tax).quantize(TWO_PLACES)
+
+        sale_item = SaleItem(
+            product_id=product.id,
+            product_name=product.name,
+            product_sku=product.sku,
+            quantity=qty,
+            unit_price=unit_price,
+            unit_cost=unit_cost,
+            tax_rate=effective_tax_rate,
+            discount_pct=discount_pct,
+            subtotal=taxable_base,
+            tax_amount=line_tax,
+            total=line_total,
+        )
+        sale_items.append(sale_item)
+        total_subtotal += taxable_base
+        total_tax += line_tax
+        total_discount += line_discount
+        stock_ops.append({"product": product, "quantity": qty, "unit_cost": unit_cost})
+
+    sale.subtotal = total_subtotal
+    sale.tax_amount = total_tax
+    sale.discount_amount = total_discount
+    sale.total_amount = total_subtotal + total_tax
+    sale.items = sale_items
+
+    # Credit sale handling
+    if is_credit:
+        from datetime import timedelta
+
+        sale.credit_days = credit_days
+        sale.due_date = datetime.now(timezone.utc) + timedelta(days=credit_days)
+        sale.payment_status = "pending"
+        sale.amount_paid = Decimal("0")
+        sale.amount_due = sale.total_amount
+
+        if customer and hasattr(customer, "credit_limit") and customer.credit_limit > 0:
+            outstanding = (
+                db.session.query(func.coalesce(func.sum(Sale.amount_due), 0))
+                .filter(
+                    Sale.tenant_id == tenant_id,
+                    Sale.customer_id == customer_id,
+                    Sale.sale_type == "credit",
+                    Sale.payment_status.in_(["pending", "partial", "overdue"]),
+                )
+                .scalar()
+            )
+            if Decimal(str(outstanding)) + sale.total_amount > customer.credit_limit:
+                raise ValueError(
+                    f"Límite de crédito excedido para {customer.name}: "
+                    f"límite={float(customer.credit_limit)}, pendiente={float(outstanding)}, "
+                    f"nueva venta={float(sale.total_amount)}"
+                )
+        sale.payments = []
+    else:
+        sale.payment_status = "paid"
+        sale.amount_paid = sale.total_amount
+        sale.amount_due = Decimal("0")
+
+        total_paid = Decimal("0")
+        sale_payments = []
+        for pay_data in payments:
+            amount = Decimal(str(pay_data["amount"]))
+            received = Decimal(str(pay_data.get("received_amount", amount)))
+            change = (received - amount).quantize(TWO_PLACES) if received > amount else Decimal("0")
+            payment = Payment(
+                tenant_id=tenant_id,
+                method=pay_data["method"],
+                amount=amount,
+                reference=pay_data.get("reference"),
+                received_amount=received,
+                change_amount=change,
+            )
+            sale_payments.append(payment)
+            total_paid += amount
+
+        if total_paid < sale.total_amount:
+            raise ValueError(f"Pago insuficiente: total={float(sale.total_amount)}, pagado={float(total_paid)}")
+        sale.payments = sale_payments
+
+    # Persist sale (flush, not commit — caller may need to do more work)
+    db.session.add(sale)
+    db.session.flush()
+
+    # Stock movements
+    for op in stock_ops:
+        product = op["product"]
+        qty = op["quantity"]
+        stock_before = product.stock_current
+        product.stock_current -= qty
+
+        from app.modules.inventory.models import StockMovement
+
+        movement = StockMovement(
+            tenant_id=tenant_id,
+            product_id=product.id,
+            created_by=created_by,
+            movement_type="sale",
+            quantity=qty,
+            stock_before=stock_before,
+            stock_after=product.stock_current,
+            unit_cost=op["unit_cost"],
+            reference_type="sale",
+            reference_id=sale.id,
+        )
+        db.session.add(movement)
+
+    # Voucher operations
+    voucher_sale_result = None
+    if voucher_sale:
+        from app.modules.vouchers.services import sell_voucher
+
+        voucher_sale_result = sell_voucher(
+            tenant_id=tenant_id,
+            code=voucher_sale["code"],
+            sale_id=str(sale.id),
+            cashier_id=created_by,
+            idempotency_key=voucher_sale.get("idempotency_key", str(uuid.uuid4())),
+            buyer_name=voucher_sale.get("buyer_name"),
+            buyer_customer_id=voucher_sale.get("buyer_customer_id"),
+            buyer_id_document=voucher_sale.get("buyer_id_document"),
+        )
+
+    voucher_redemption_result = None
+    if voucher_redemption:
+        from app.modules.vouchers.services import redeem_voucher
+
+        voucher_redemption_result = redeem_voucher(
+            tenant_id=tenant_id,
+            code=voucher_redemption["code"],
+            sale_id=str(sale.id),
+            amount=voucher_redemption["amount"],
+            cashier_id=created_by,
+            idempotency_key=voucher_redemption.get("idempotency_key", str(uuid.uuid4())),
+        )
+
+    # Accounting entries
+    cost_total = sum(float(op["unit_cost"]) * float(op["quantity"]) for op in stock_ops)
+    payment_method = payments[0]["method"] if payments else "cash"
+
+    try:
+        from app.modules.accounting.services import post_sale_entry
+
+        fiscal = tenant_obj.fiscal_regime if tenant_obj else "simplified"
+        sp = db.session.begin_nested()
+        voucher_amt = float(voucher_redemption_result["accounting"]["amount"]) if voucher_redemption_result else 0
+        post_sale_entry(
+            tenant_id=tenant_id,
+            created_by=created_by,
+            sale_id=str(sale.id),
+            subtotal=float(sale.subtotal),
+            tax_amount=float(sale.tax_amount),
+            total_amount=float(sale.total_amount),
+            cost_total=cost_total,
+            payment_method="credit" if is_credit else payment_method,
+            fiscal_regime=fiscal,
+            voucher_amount=voucher_amt,
+        )
+
+        if voucher_sale_result:
+            from app.modules.accounting.services import post_voucher_sale_entry
+
+            post_voucher_sale_entry(
+                tenant_id=tenant_id,
+                created_by=created_by,
+                sale_id=str(sale.id),
+                voucher_id=voucher_sale_result["voucher_id"],
+                amount=voucher_sale_result["accounting"]["amount"],
+            )
+
+        sp.commit()
+    except Exception as e:
+        try:
+            sp.rollback()
+        except Exception:
+            pass
+        import logging
+
+        logging.getLogger(__name__).error("Accounting failed for sale %s: %s", sale.id, str(e), exc_info=True)
+
+    if auto_commit:
+        db.session.commit()
+
+    result = _sale_to_dict(sale)
+    if voucher_sale_result:
+        result["voucher_sale"] = voucher_sale_result
+    if voucher_redemption_result:
+        result["voucher_redemption"] = voucher_redemption_result
+    return result
+
+
+# ── Checkout (HTTP wrapper for create_sale_from_items) ────────────
 
 
 def checkout(
@@ -120,15 +409,10 @@ def checkout(
     voucher_redemption: dict = None,
 ) -> dict:
     """
-    Process a complete sale. ACID: Sale + StockMovements or nothing.
+    Process a complete sale from POS. Wrapper around create_sale_from_items.
 
     items: [{"product_id": str, "quantity": float, "discount_pct": float}]
     payments: [{"method": str, "amount": float, "reference": str, "received_amount": float}]
-    sale_type: "cash" (default) or "credit"
-    customer_id: required for credit sales
-    credit_days: payment terms for credit sales
-    voucher_sale: {"code": str, "buyer_name": str, ...} — selling a voucher
-    voucher_redemption: {"code": str, "amount": float} — redeeming a voucher as payment
     """
     # Idempotency check
     if idempotency_key:
@@ -136,297 +420,26 @@ def checkout(
         if existing:
             return _sale_to_dict(existing)
 
-    # Validate items
     if not items:
         raise ValueError("La venta debe tener al menos un producto")
 
-    # Validate credit sale requirements
-    is_credit = sale_type == "credit"
-    if is_credit:
-        if not customer_id:
-            raise ValueError("Ventas a crédito requieren un cliente")
-        from app.modules.customers.models import Customer
-
-        customer = Customer.query.filter_by(id=customer_id, tenant_id=tenant_id).first()
-        if not customer:
-            raise ValueError("Cliente no encontrado")
-        # Use customer info if not provided
-        customer_name = customer_name or customer.name
-        customer_tax_id = customer_tax_id or customer.tax_id
-        credit_days = credit_days or customer.credit_days or 30
-
-    # Build sale within a single transaction
-    sale = Sale(
+    return create_sale_from_items(
         tenant_id=tenant_id,
-        cashier_id=cashier_id,
-        cash_session_id=cash_session_id,
-        invoice_number=_next_invoice_number(tenant_id),
+        created_by=cashier_id,
+        items=items,
+        payments=payments,
+        sale_type=sale_type,
         customer_id=customer_id,
         customer_name=customer_name,
         customer_tax_id=customer_tax_id,
-        sale_type=sale_type,
+        credit_days=credit_days,
         notes=notes,
-        idempotency_key=idempotency_key or uuid.uuid4(),
+        cash_session_id=cash_session_id,
+        idempotency_key=idempotency_key,
+        voucher_sale=voucher_sale,
+        voucher_redemption=voucher_redemption,
+        auto_commit=True,
     )
-
-    total_subtotal = Decimal("0")
-    total_tax = Decimal("0")
-    total_discount = Decimal("0")
-
-    # Determine fiscal regime to handle IVA correctly
-    from app.modules.auth_rbac.models import Tenant
-
-    tenant_obj = Tenant.query.get(tenant_id)
-    is_simplified = (tenant_obj.fiscal_regime == "simplified") if tenant_obj else True
-
-    sale_items = []
-    stock_ops = []
-
-    for item_data in items:
-        product = Product.query.filter_by(id=item_data["product_id"], tenant_id=tenant_id).with_for_update().first()
-
-        if not product or not product.is_active:
-            raise ValueError(f"Producto no encontrado: {item_data['product_id']}")
-
-        qty = Decimal(str(item_data["quantity"]))
-        if qty <= 0:
-            raise ValueError(f"Cantidad inválida para {product.name}")
-
-        # Stock check
-        if product.stock_current < qty:
-            raise ValueError(
-                f"Stock insuficiente para {product.name}: "
-                f"disponible={float(product.stock_current)}, solicitado={float(qty)}"
-            )
-
-        discount_pct = Decimal(str(item_data.get("discount_pct", 0)))
-        unit_price = product.sale_price
-        unit_cost = product.cost_average
-
-        # Calculate line totals
-        line_subtotal = (unit_price * qty).quantize(TWO_PLACES)
-        line_discount = (line_subtotal * discount_pct / 100).quantize(TWO_PLACES)
-        taxable_base = line_subtotal - line_discount
-        # Simplified regime (No responsable de IVA): tax is always 0
-        effective_tax_rate = Decimal("0") if is_simplified else product.tax_rate
-        line_tax = (taxable_base * effective_tax_rate / 100).quantize(TWO_PLACES)
-        line_total = (taxable_base + line_tax).quantize(TWO_PLACES)
-
-        sale_item = SaleItem(
-            product_id=product.id,
-            product_name=product.name,
-            product_sku=product.sku,
-            quantity=qty,
-            unit_price=unit_price,
-            unit_cost=unit_cost,
-            tax_rate=effective_tax_rate,
-            discount_pct=discount_pct,
-            subtotal=taxable_base,
-            tax_amount=line_tax,
-            total=line_total,
-        )
-        sale_items.append(sale_item)
-
-        total_subtotal += taxable_base
-        total_tax += line_tax
-        total_discount += line_discount
-
-        # Queue stock movement
-        stock_ops.append(
-            {
-                "product": product,
-                "quantity": qty,
-                "unit_cost": unit_cost,
-            }
-        )
-
-    sale.subtotal = total_subtotal
-    sale.tax_amount = total_tax
-    sale.discount_amount = total_discount
-    sale.total_amount = total_subtotal + total_tax
-    sale.items = sale_items
-
-    # Credit sale: set due date and amount_due, skip payment validation
-    if is_credit:
-        from datetime import timedelta
-
-        sale.credit_days = credit_days
-        sale.due_date = datetime.now(timezone.utc) + timedelta(days=credit_days)
-        sale.payment_status = "pending"
-        sale.amount_paid = Decimal("0")
-        sale.amount_due = sale.total_amount
-
-        # Validate credit limit
-        if hasattr(customer, "credit_limit") and customer.credit_limit > 0:
-            outstanding = (
-                db.session.query(func.coalesce(func.sum(Sale.amount_due), 0))
-                .filter(
-                    Sale.tenant_id == tenant_id,
-                    Sale.customer_id == customer_id,
-                    Sale.sale_type == "credit",
-                    Sale.payment_status.in_(["pending", "partial", "overdue"]),
-                )
-                .scalar()
-            )
-            if Decimal(str(outstanding)) + sale.total_amount > customer.credit_limit:
-                raise ValueError(
-                    f"Límite de crédito excedido para {customer.name}: "
-                    f"límite={float(customer.credit_limit)}, pendiente={float(outstanding)}, "
-                    f"nueva venta={float(sale.total_amount)}"
-                )
-
-        # Credit sales don't require payment at checkout
-        sale.payments = []
-    else:
-        # Cash sale: validate payments cover total
-        sale.payment_status = "paid"
-        sale.amount_paid = sale.total_amount
-        sale.amount_due = Decimal("0")
-
-        total_paid = Decimal("0")
-        sale_payments = []
-        for pay_data in payments:
-            amount = Decimal(str(pay_data["amount"]))
-            received = Decimal(str(pay_data.get("received_amount", amount)))
-            change = (received - amount).quantize(TWO_PLACES) if received > amount else Decimal("0")
-
-            payment = Payment(
-                tenant_id=tenant_id,
-                method=pay_data["method"],
-                amount=amount,
-                reference=pay_data.get("reference"),
-                received_amount=received,
-                change_amount=change,
-            )
-            sale_payments.append(payment)
-            total_paid += amount
-
-        if total_paid < sale.total_amount:
-            raise ValueError(f"Pago insuficiente: total={float(sale.total_amount)}, " f"pagado={float(total_paid)}")
-
-        sale.payments = sale_payments
-
-    # Persist sale
-    db.session.add(sale)
-    db.session.flush()
-
-    # Execute stock movements (same transaction)
-    for op in stock_ops:
-        product = op["product"]
-        qty = op["quantity"]
-        stock_before = product.stock_current
-        product.stock_current -= qty
-
-        from app.modules.inventory.models import StockMovement
-
-        movement = StockMovement(
-            tenant_id=tenant_id,
-            product_id=product.id,
-            created_by=cashier_id,
-            movement_type="sale",
-            quantity=qty,
-            stock_before=stock_before,
-            stock_after=product.stock_current,
-            unit_cost=op["unit_cost"],
-            reference_type="sale",
-            reference_id=sale.id,
-        )
-        db.session.add(movement)
-
-    # ── Voucher Sale: activate a voucher as part of this sale ────────
-    voucher_sale_result = None
-    if voucher_sale:
-        from app.modules.vouchers.services import sell_voucher
-
-        voucher_sale_result = sell_voucher(
-            tenant_id=tenant_id,
-            code=voucher_sale["code"],
-            sale_id=str(sale.id),
-            cashier_id=cashier_id,
-            idempotency_key=voucher_sale.get("idempotency_key", str(uuid.uuid4())),
-            buyer_name=voucher_sale.get("buyer_name"),
-            buyer_customer_id=voucher_sale.get("buyer_customer_id"),
-            buyer_id_document=voucher_sale.get("buyer_id_document"),
-        )
-
-    # ── Voucher Redemption: apply a voucher as payment ────────────
-    voucher_redemption_result = None
-    if voucher_redemption:
-        from app.modules.vouchers.services import redeem_voucher
-
-        voucher_redemption_result = redeem_voucher(
-            tenant_id=tenant_id,
-            code=voucher_redemption["code"],
-            sale_id=str(sale.id),
-            amount=voucher_redemption["amount"],
-            cashier_id=cashier_id,
-            idempotency_key=voucher_redemption.get("idempotency_key", str(uuid.uuid4())),
-        )
-
-    # Auto-post accounting entries (same transaction)
-    cost_total = sum(float(op["unit_cost"]) * float(op["quantity"]) for op in stock_ops)
-    payment_method = payments[0]["method"] if payments else "cash"
-
-    try:
-        from app.modules.accounting.services import post_sale_entry
-
-        fiscal = tenant_obj.fiscal_regime if tenant_obj else "simplified"
-        sp = db.session.begin_nested()  # savepoint before accounting
-        voucher_amt = float(voucher_redemption_result["accounting"]["amount"]) if voucher_redemption_result else 0
-        post_sale_entry(
-            tenant_id=tenant_id,
-            created_by=cashier_id,
-            sale_id=str(sale.id),
-            subtotal=float(sale.subtotal),
-            tax_amount=float(sale.tax_amount),
-            total_amount=float(sale.total_amount),
-            cost_total=cost_total,
-            payment_method="credit" if is_credit else payment_method,
-            fiscal_regime=fiscal,
-            voucher_amount=voucher_amt,
-        )
-
-        # Voucher SALE accounting (selling a voucher = creates liability)
-        if voucher_sale_result:
-            from app.modules.accounting.services import post_voucher_sale_entry
-
-            post_voucher_sale_entry(
-                tenant_id=tenant_id,
-                created_by=cashier_id,
-                sale_id=str(sale.id),
-                voucher_id=voucher_sale_result["voucher_id"],
-                amount=voucher_sale_result["accounting"]["amount"],
-            )
-
-        # Voucher REDEMPTION accounting is handled by post_sale_entry via voucher_amount
-        # (debit splits between 291001 and cash account in a single balanced entry)
-
-        sp.commit()
-    except Exception as e:
-        # Rollback only the accounting savepoint — sale + stock remain intact
-        try:
-            sp.rollback()
-        except Exception:
-            pass
-
-        import logging
-
-        logging.getLogger(__name__).error(
-            "Accounting entry failed for sale %s: %s",
-            sale.id,
-            str(e),
-            exc_info=True,
-        )
-
-    # Commit everything atomically
-    db.session.commit()
-
-    result = _sale_to_dict(sale)
-    if voucher_sale_result:
-        result["voucher_sale"] = voucher_sale_result
-    if voucher_redemption_result:
-        result["voucher_redemption"] = voucher_redemption_result
-    return result
 
 
 # ── Sale Queries ──────────────────────────────────────────────────
