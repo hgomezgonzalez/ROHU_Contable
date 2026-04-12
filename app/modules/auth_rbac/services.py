@@ -255,6 +255,7 @@ def update_tenant(tenant_id: str, **kwargs) -> dict:
         "smtp_user",
         "smtp_password",
         "smtp_from_email",
+        "orders_config",
     }
 
     for key, value in kwargs.items():
@@ -771,6 +772,7 @@ def _tenant_to_dict(tenant: Tenant) -> dict:
         "plan_type": tenant.plan_type,
         "max_users": tenant.max_users,
         "is_active": tenant.is_active,
+        "orders_config": tenant.orders_config,
     }
 
 

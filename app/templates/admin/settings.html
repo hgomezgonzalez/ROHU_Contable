@@ -193,6 +193,69 @@
   </div>
 </form>
 
+<!-- Modules -->
+<div class="card" style="margin-top:24px;">
+  <div class="card-title">Modulos Opcionales</div>
+  <p style="font-size:12px; color:var(--text-light); margin-bottom:16px;">
+    Active modulos adicionales segun el tipo de negocio. Cada modulo tiene 21 dias de prueba gratis.
+  </p>
+
+  <div id="orders-module-card" style="border:2px solid var(--border);border-radius:12px;padding:20px;background:var(--bg);">
+    <div style="display:flex;justify-content:space-between;align-items:start;gap:16px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#1E3A8A,#10B981);display:flex;align-items:center;justify-content:center;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="width:22px;height:22px;"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:15px;">Modulo de Pedidos</div>
+            <div style="font-size:11px;color:var(--text-light);">Restaurantes, cafeterias, droguerias, catering</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-light);line-height:1.6;">
+          Gestione pedidos antes de facturar: comandas de cocina, alistamiento de domicilios, agenda de eventos.
+          El pedido se convierte en venta al cerrar — sin tocar contabilidad hasta que usted decida.
+        </div>
+      </div>
+
+      <div id="orders-module-actions" style="text-align:right;min-width:180px;">
+        <!-- Populated by JS based on orders_config -->
+      </div>
+    </div>
+
+    <!-- Activation wizard (hidden by default) -->
+    <div id="orders-wizard" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+      <div style="font-weight:600;font-size:13px;margin-bottom:10px;">Seleccione su tipo de negocio:</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:16px;">
+        <button class="btn btn-outline vertical-btn" data-vertical="restaurant" onclick="selectVertical(this,'restaurant')" style="flex-direction:column;padding:14px;height:auto;">
+          <span style="font-size:20px;">🍽</span>
+          <span style="font-size:12px;font-weight:600;">Restaurante</span>
+          <span style="font-size:10px;color:var(--text-light);">Mesas + KDS cocina</span>
+        </button>
+        <button class="btn btn-outline vertical-btn" data-vertical="cafe" onclick="selectVertical(this,'cafe')" style="flex-direction:column;padding:14px;height:auto;">
+          <span style="font-size:20px;">☕</span>
+          <span style="font-size:12px;font-weight:600;">Cafeteria</span>
+          <span style="font-size:10px;color:var(--text-light);">Cola de pedidos</span>
+        </button>
+        <button class="btn btn-outline vertical-btn" data-vertical="drugstore" onclick="selectVertical(this,'drugstore')" style="flex-direction:column;padding:14px;height:auto;">
+          <span style="font-size:20px;">💊</span>
+          <span style="font-size:12px;font-weight:600;">Drogueria</span>
+          <span style="font-size:10px;color:var(--text-light);">Domicilios</span>
+        </button>
+        <button class="btn btn-outline vertical-btn" data-vertical="catering" onclick="selectVertical(this,'catering')" style="flex-direction:column;padding:14px;height:auto;">
+          <span style="font-size:20px;">🎂</span>
+          <span style="font-size:12px;font-weight:600;">Catering</span>
+          <span style="font-size:10px;color:var(--text-light);">Eventos</span>
+        </button>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="document.getElementById('orders-wizard').style.display='none'">Cancelar</button>
+        <button class="btn btn-primary" id="btn-activate-orders" onclick="activateOrdersModule()" disabled>Activar (21 dias gratis)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Health Check Visual -->
 <div class="card" style="margin-top:24px;">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:8px;">
@@ -518,7 +581,93 @@
     btn.disabled = false; btn.textContent = 'Verificar Conectividad';
   }
 
+  // ── Orders Module Management ──────────────────────────────────
+  let selectedVertical = null;
+
+  function selectVertical(btn, vertical) {
+    selectedVertical = vertical;
+    document.querySelectorAll('.vertical-btn').forEach(b => {
+      b.style.borderColor = 'var(--border)';
+      b.style.background = 'white';
+    });
+    btn.style.borderColor = 'var(--primary)';
+    btn.style.background = '#EFF6FF';
+    document.getElementById('btn-activate-orders').disabled = false;
+  }
+
+  async function loadOrdersModuleStatus() {
+    try {
+      const resp = await fetch('/api/v1/auth/tenant', {headers});
+      const {data} = await resp.json();
+      const config = data.orders_config || {};
+      const actionsEl = document.getElementById('orders-module-actions');
+
+      if (config.enabled) {
+        const vertLabels = {restaurant:'Restaurante',cafe:'Cafeteria',drugstore:'Drogueria',catering:'Catering'};
+        let trialInfo = '';
+        if (config.trial_started_at && !config.addon_active_until) {
+          const trialEnd = new Date(new Date(config.trial_started_at).getTime() + 21*24*60*60*1000);
+          const daysLeft = Math.max(0, Math.ceil((trialEnd - new Date()) / (24*60*60*1000)));
+          trialInfo = daysLeft > 0
+            ? `<div style="font-size:11px;color:#F59E0B;margin-top:4px;">Prueba: ${daysLeft} dias restantes</div>`
+            : '<div style="font-size:11px;color:#EF4444;margin-top:4px;">Prueba expirada</div>';
+        }
+
+        actionsEl.innerHTML = `
+          <span class="badge badge-success" style="font-size:11px;">Activo</span>
+          <div style="font-size:12px;color:var(--text-light);margin-top:4px;">${vertLabels[config.vertical_type] || config.vertical_type}</div>
+          ${trialInfo}
+          <div style="margin-top:8px;">
+            <button class="btn btn-sm btn-outline" style="color:#EF4444;" onclick="deactivateOrdersModule()">Desactivar</button>
+          </div>
+        `;
+        document.getElementById('orders-module-card').style.borderColor = '#059669';
+      } else {
+        actionsEl.innerHTML = `
+          <button class="btn btn-sm btn-primary" onclick="document.getElementById('orders-wizard').style.display='block'">Activar modulo</button>
+          <div style="font-size:11px;color:var(--text-light);margin-top:4px;">21 dias gratis</div>
+        `;
+        document.getElementById('orders-module-card').style.borderColor = 'var(--border)';
+      }
+    } catch(e) { console.error(e); }
+  }
+
+  async function activateOrdersModule() {
+    if (!selectedVertical) return;
+    try {
+      const resp = await fetch('/api/v1/auth/tenant/orders-module', {
+        method: 'POST', headers,
+        body: JSON.stringify({action: 'activate', vertical_type: selectedVertical}),
+      });
+      const r = await resp.json();
+      if (r.success) {
+        document.getElementById('orders-wizard').style.display = 'none';
+        loadOrdersModuleStatus();
+        await rohuAlert('Modulo de Pedidos activado.<br>Ya puede acceder desde el menu lateral.', 'success');
+      } else {
+        await rohuAlert(r.error?.message || 'Error al activar', 'error');
+      }
+    } catch(e) { await rohuAlert('Error de conexion', 'error'); }
+  }
+
+  async function deactivateOrdersModule() {
+    const ok = await rohuConfirm('¿Desactivar el modulo de Pedidos?<br><span style="font-size:12px;color:#64748B;">Los pedidos existentes se conservan pero no podra crear nuevos.</span>', 'Desactivar', 'warning');
+    if (!ok) return;
+    try {
+      const resp = await fetch('/api/v1/auth/tenant/orders-module', {
+        method: 'POST', headers,
+        body: JSON.stringify({action: 'deactivate'}),
+      });
+      const r = await resp.json();
+      if (r.success) {
+        loadOrdersModuleStatus();
+        await rohuAlert('Modulo desactivado', 'info');
+      } else { await rohuAlert(r.error?.message || 'Error', 'error'); }
+    } catch(e) { await rohuAlert('Error de conexion', 'error'); }
+  }
+
   loadTenant();
+  loadOrdersModuleStatus();
   // After loading, update previews and DIAN status
   setTimeout(() => {
     updateLogoPreview(); updateFaviconPreview();

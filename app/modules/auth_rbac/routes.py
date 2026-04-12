@@ -196,6 +196,82 @@ def update_tenant_info():
         return jsonify(success=False, error={"code": "TENANT_UPDATE_ERROR", "message": str(e)}), 400
 
 
+@auth_bp.route("/tenant/orders-module", methods=["POST"])
+@require_permission("tenants", "manage")
+def toggle_orders_module():
+    """Activate or deactivate the Orders module for this tenant."""
+    from flask import g
+
+    from app.extensions import db
+    from app.modules.auth_rbac.models import Tenant
+
+    data = request.get_json() or {}
+    action = data.get("action")  # "activate" or "deactivate"
+    vertical_type = data.get("vertical_type", "restaurant")
+
+    tenant = Tenant.query.get(g.tenant_id)
+    if not tenant:
+        return jsonify(success=False, error={"code": "NOT_FOUND", "message": "Tenant no encontrado"}), 404
+
+    config = dict(tenant.orders_config or {})
+
+    if action == "activate":
+        from app.modules.orders.constants import ELIGIBLE_VERTICALS, VERTICAL_PRESETS
+
+        if vertical_type not in ELIGIBLE_VERTICALS:
+            return (
+                jsonify(success=False, error={"code": "INVALID_VERTICAL", "message": "Tipo de negocio no soportado"}),
+                400,
+            )
+
+        preset = VERTICAL_PRESETS.get(vertical_type, {})
+        config.update(
+            {
+                "enabled": True,
+                "vertical_type": vertical_type,
+                **preset,
+            }
+        )
+        if not config.get("trial_started_at"):
+            from datetime import datetime, timezone
+
+            config["trial_started_at"] = datetime.now(timezone.utc).isoformat()
+
+        tenant.orders_config = config
+        db.session.commit()
+        return jsonify(success=True, data={"orders_config": config, "message": "Modulo Pedidos activado"})
+
+    elif action == "deactivate":
+        # Check for active orders
+        from app.modules.orders.constants import OrderStatus
+        from app.modules.orders.models import Order
+
+        active_count = Order.query.filter(
+            Order.tenant_id == g.tenant_id, Order.status.in_(list(OrderStatus.ACTIVE))
+        ).count()
+        if active_count > 0:
+            return (
+                jsonify(
+                    success=False,
+                    error={
+                        "code": "HAS_ACTIVE_ORDERS",
+                        "message": f"Cierre o cancele los {active_count} pedidos abiertos antes de desactivar",
+                    },
+                ),
+                409,
+            )
+
+        config["enabled"] = False
+        tenant.orders_config = config
+        db.session.commit()
+        return jsonify(success=True, data={"orders_config": config, "message": "Modulo Pedidos desactivado"})
+
+    return (
+        jsonify(success=False, error={"code": "INVALID_ACTION", "message": "action debe ser activate o deactivate"}),
+        400,
+    )
+
+
 @auth_bp.route("/tenant/logo", methods=["POST"])
 @require_permission("tenants", "manage")
 def upload_logo():
