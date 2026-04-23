@@ -215,3 +215,59 @@ def sample_product(db_session, tenant, admin_user):
     db_session.add(product)
     db_session.flush()
     return product
+
+
+@pytest.fixture
+def wholesale_product(db_session, tenant, admin_user):
+    """Create a product with wholesale pricing configured."""
+    from decimal import Decimal
+
+    from app.modules.inventory.models import Product
+
+    product = Product(
+        tenant_id=tenant.id,
+        created_by=admin_user.id,
+        name="Cemento Argos x50kg",
+        sku="CEM-50KG",
+        qr_code=f"QR-WHL-{uuid.uuid4().hex[:8]}",
+        sale_price=Decimal("35000"),
+        wholesale_price=Decimal("28000"),
+        wholesale_min_qty=Decimal("10"),
+        purchase_price=Decimal("22000"),
+        cost_average=Decimal("22000"),
+        stock_current=Decimal("200"),
+        stock_minimum=Decimal("5"),
+        tax_type="iva_19",
+        tax_rate=Decimal("19.0"),
+    )
+    db_session.add(product)
+    db_session.flush()
+    return product
+
+
+@pytest.fixture
+def retail_only_product(db_session, tenant, admin_user):
+    """Create a product WITHOUT wholesale pricing — for fallback tests."""
+    from decimal import Decimal
+
+    from app.modules.inventory.models import Product
+
+    product = Product(
+        tenant_id=tenant.id,
+        created_by=admin_user.id,
+        name="Puntilla 2 pulgadas",
+        sku="PNT-2IN",
+        qr_code=f"QR-RTL-{uuid.uuid4().hex[:8]}",
+        sale_price=Decimal("500"),
+        wholesale_price=None,
+        wholesale_min_qty=None,
+        purchase_price=Decimal("250"),
+        cost_average=Decimal("250"),
+        stock_current=Decimal("1000"),
+        stock_minimum=Decimal("10"),
+        tax_type="iva_19",
+        tax_rate=Decimal("19.0"),
+    )
+    db_session.add(product)
+    db_session.flush()
+    return product

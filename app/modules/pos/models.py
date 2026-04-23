@@ -85,6 +85,8 @@ class Sale(db.Model):
     voided_by = db.Column(UUID(as_uuid=True), db.ForeignKey("users.id"))
     void_reason = db.Column(db.String(255))
 
+    is_wholesale = db.Column(db.Boolean, nullable=False, default=False)
+
     idempotency_key = db.Column(UUID(as_uuid=True), unique=True)
     source_order_id = db.Column(UUID(as_uuid=True), nullable=True)
 
@@ -100,6 +102,11 @@ class Sale(db.Model):
         Index("idx_sales_tenant_date", "tenant_id", "sale_date"),
         Index("idx_sales_tenant_status", "tenant_id", "status"),
         Index("idx_sales_cashier", "tenant_id", "cashier_id", "sale_date"),
+        Index(
+            "idx_sales_tenant_wholesale",
+            "tenant_id", "is_wholesale", "sale_date",
+            postgresql_where=db.text("is_wholesale = true"),
+        ),
         CheckConstraint("status IN ('completed', 'voided')", name="ck_sales_status"),
         CheckConstraint("total_amount >= 0", name="ck_sales_total"),
         CheckConstraint("sale_type IN ('cash', 'credit')", name="ck_sales_sale_type"),
@@ -126,6 +133,7 @@ class SaleItem(db.Model):
     unit_cost = db.Column(db.Numeric(18, 6), nullable=False)
     tax_rate = db.Column(db.Numeric(8, 4), nullable=False, default=0)
     discount_pct = db.Column(db.Numeric(8, 4), nullable=False, default=0)
+    price_tier = db.Column(db.String(10), nullable=False, default="retail")
 
     subtotal = db.Column(db.Numeric(18, 2), nullable=False)
     tax_amount = db.Column(db.Numeric(18, 2), nullable=False)
@@ -136,6 +144,7 @@ class SaleItem(db.Model):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_sale_items_qty"),
         CheckConstraint("unit_price >= 0", name="ck_sale_items_price"),
+        CheckConstraint("price_tier IN ('retail', 'wholesale')", name="ck_sale_items_price_tier"),
     )
 
     def __repr__(self):

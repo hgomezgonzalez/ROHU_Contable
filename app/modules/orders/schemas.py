@@ -21,6 +21,7 @@ class CreateOrderSchema(Schema):
     delivery_address = fields.String(load_default=None)
     notes = fields.String(load_default=None)
     assigned_to = fields.UUID(load_default=None)
+    is_wholesale = fields.Boolean(load_default=False)
 
 
 class UpdateOrderStateSchema(Schema):

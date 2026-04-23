@@ -42,7 +42,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Producto</th><th>SKU</th><th>QR/Barras</th><th>Precio Vta</th><th>Costo</th><th>Stock</th><th>Mín</th><th>IVA</th><th>Estado</th><th>Acciones</th></tr>
+        <tr><th>Producto</th><th>SKU</th><th>QR/Barras</th><th>Precio Vta</th><th>P. Mayor</th><th>Costo</th><th>Stock</th><th>Mín</th><th>IVA</th><th>Estado</th><th>Acciones</th></tr>
       </thead>
       <tbody id="products-table"><tr><td colspan="10">Cargando...</td></tr></tbody>
     </table>
@@ -115,6 +115,18 @@
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
         <div class="form-group"><label>Precio venta</label><input type="number" id="e-sale_price" class="form-control" min="0"></div>
         <div class="form-group"><label>Precio compra</label><input type="number" id="e-purchase_price" class="form-control" min="0"></div>
+      </div>
+      <!-- Wholesale pricing -->
+      <div style="margin:8px 0; padding:10px; background:#FFFBEB; border:1px solid #FDE68A; border-radius:8px;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; font-weight:600; color:#D97706; margin-bottom:8px;">
+          <input type="checkbox" id="e-has-wholesale" onchange="toggleEditWholesale()"> Habilitar precio por mayor
+        </label>
+        <div id="e-wholesale-fields" style="display:none;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div class="form-group" style="margin:0;"><label style="font-size:12px;">Precio por mayor</label><input type="number" id="e-wholesale_price" class="form-control" min="0" placeholder="Debe ser menor al precio venta"></div>
+            <div class="form-group" style="margin:0;"><label style="font-size:12px;">Cantidad mínima</label><input type="number" id="e-wholesale_min_qty" class="form-control" min="1" value="1" placeholder="Unidades"></div>
+          </div>
+        </div>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
         <div class="form-group"><label>QR / Barras</label><input type="text" id="e-qr_code" class="form-control" placeholder="Escanee con pistola"></div>
@@ -190,13 +202,14 @@
     let data = json.data;
     if (noQR) data = data.filter(p => !p.qr_code);
     const tbody = document.getElementById('products-table');
-    if (!data.length) { tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-light)">Sin productos que coincidan con los filtros</td></tr>'; return; }
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="11" style="color:var(--text-light)">Sin productos que coincidan con los filtros</td></tr>'; return; }
     tbody.innerHTML = data.map(p => `
       <tr>
         <td><strong>${p.name}</strong></td>
         <td style="font-size:12px;">${p.sku||'—'}</td>
         <td style="font-size:12px;">${p.qr_code?'<span class="badge badge-info">'+p.qr_code+'</span>':'<span style="color:#94A3B8">Sin QR</span>'}</td>
         <td>${COP(p.sale_price)}</td>
+        <td>${p.wholesale_price ? '<span style="color:#D97706;font-weight:600;">'+COP(p.wholesale_price)+'</span>' : '<span style="color:#94A3B8">—</span>'}</td>
         <td style="color:var(--text-light)">${COP(p.cost_average)}</td>
         <td><strong>${p.stock_current}</strong></td>
         <td>${p.stock_minimum}</td>
@@ -263,8 +276,19 @@
     document.getElementById('e-stock_minimum').value = p.stock_minimum;
     document.getElementById('e-tax_type').value = p.tax_type;
     document.getElementById('e-stock-display').textContent = p.stock_current;
+    // Wholesale fields
+    const hasWholesale = p.wholesale_price != null;
+    document.getElementById('e-has-wholesale').checked = hasWholesale;
+    document.getElementById('e-wholesale-fields').style.display = hasWholesale ? '' : 'none';
+    document.getElementById('e-wholesale_price').value = p.wholesale_price || '';
+    document.getElementById('e-wholesale_min_qty').value = p.wholesale_min_qty || 1;
     document.getElementById('edit-error').style.display = 'none';
     document.getElementById('edit-modal').style.display = 'flex';
+  }
+
+  function toggleEditWholesale() {
+    document.getElementById('e-wholesale-fields').style.display =
+      document.getElementById('e-has-wholesale').checked ? '' : 'none';
   }
 
   document.getElementById('edit-form').addEventListener('submit', async e => {
@@ -279,6 +303,8 @@
       sku: document.getElementById('e-sku').value||null,
       stock_minimum: parseFloat(document.getElementById('e-stock_minimum').value) || 0,
       tax_type: document.getElementById('e-tax_type').value,
+      wholesale_price: document.getElementById('e-has-wholesale').checked ? parseFloat(document.getElementById('e-wholesale_price').value) || null : null,
+      wholesale_min_qty: document.getElementById('e-has-wholesale').checked ? parseFloat(document.getElementById('e-wholesale_min_qty').value) || null : null,
     };
     const resp = await fetch(`/api/v1/inventory/products/${id}`, {method:'PATCH', headers, body:JSON.stringify(data)});
     const r = await resp.json();

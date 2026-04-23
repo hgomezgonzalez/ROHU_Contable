@@ -36,6 +36,7 @@ def sales_report():
         date_from=date_from,
         date_to=date_to,
         group_by=request.args.get("group_by", "day"),
+        sale_mode=request.args.get("sale_mode"),
     )
     return jsonify(success=True, data=data)
 

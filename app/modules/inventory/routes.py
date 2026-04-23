@@ -105,6 +105,8 @@ def create_product():
             stock_minimum=data.get("stock_minimum", 0),
             initial_stock=data.get("initial_stock", 0),
             description=data.get("description", ""),
+            wholesale_price=data.get("wholesale_price"),
+            wholesale_min_qty=data.get("wholesale_min_qty"),
         )
         return jsonify(success=True, data=product), 201
     except Exception as e:

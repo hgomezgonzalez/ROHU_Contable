@@ -586,6 +586,7 @@ def seed_roles_and_permissions() -> None:
         ("sales", "read", "pos"),
         ("sales", "void", "pos"),
         ("sales", "report", "pos"),
+        ("sales", "apply_wholesale", "pos"),
         ("cash_sessions", "manage", "pos"),
         ("credit_sales", "create", "pos"),
         ("inventory", "read", "inventory"),

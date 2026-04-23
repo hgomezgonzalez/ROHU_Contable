@@ -89,6 +89,7 @@ def checkout():
             credit_days=data.get("credit_days", 0),
             voucher_sale=data.get("voucher_sale"),
             voucher_redemption=data.get("voucher_redemption"),
+            is_wholesale=data.get("is_wholesale", False),
         )
         return jsonify(success=True, data=sale), 201
     except ValueError as e:
@@ -110,6 +111,7 @@ def list_sales():
         cashier_id=request.args.get("cashier_id"),
         date_from=request.args.get("date_from"),
         date_to=request.args.get("date_to"),
+        sale_mode=request.args.get("sale_mode"),
     )
     return jsonify(success=True, **result)
 

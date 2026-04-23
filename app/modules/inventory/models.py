@@ -68,6 +68,10 @@ class Product(db.Model):
     sale_price = db.Column(db.Numeric(18, 2), nullable=False, default=0)
     cost_average = db.Column(db.Numeric(18, 6), nullable=False, default=0)
 
+    # Wholesale pricing (optional)
+    wholesale_price = db.Column(db.Numeric(18, 2), nullable=True)
+    wholesale_min_qty = db.Column(db.Numeric(12, 4), nullable=True)
+
     tax_type = db.Column(db.String(20), nullable=False, default="iva_19")
     tax_rate = db.Column(db.Numeric(8, 4), nullable=False, default=19.0)
 
@@ -92,13 +96,34 @@ class Product(db.Model):
         Index("idx_products_tenant_active", "tenant_id", "is_active"),
         CheckConstraint("sale_price >= 0", name="ck_products_sale_price"),
         CheckConstraint("purchase_price >= 0", name="ck_products_purchase_price"),
+        CheckConstraint(
+            "(wholesale_price IS NULL AND wholesale_min_qty IS NULL) "
+            "OR (wholesale_price IS NOT NULL AND wholesale_min_qty IS NOT NULL "
+            "AND wholesale_price >= 0 AND wholesale_min_qty >= 1)",
+            name="ck_products_wholesale_consistency",
+        ),
+        Index(
+            "idx_products_has_wholesale",
+            "tenant_id",
+            postgresql_where=db.text("wholesale_price IS NOT NULL AND deleted_at IS NULL"),
+        ),
         CheckConstraint("tax_type IN ('iva_19', 'iva_5', 'exempt', 'excluded')", name="ck_products_tax_type"),
         CheckConstraint("unit IN ('unit', 'kg', 'g', 'lt', 'ml', 'box', 'pack', 'meter')", name="ck_products_unit"),
     )
 
     @property
+    def has_wholesale(self):
+        return self.wholesale_price is not None
+
+    @property
     def is_low_stock(self):
         return self.stock_current <= self.stock_minimum
+
+    def get_price_for_tier(self, is_wholesale=False):
+        """Return (price, tier) tuple based on sale mode."""
+        if is_wholesale and self.wholesale_price is not None:
+            return self.wholesale_price, "wholesale"
+        return self.sale_price, "retail"
 
     def __repr__(self):
         return f"<Product {self.name} ({self.sku})>"

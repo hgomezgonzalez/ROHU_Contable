@@ -134,6 +134,27 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
         .first()
     )
 
+    # Wholesale vs Retail breakdown
+    wholesale_kpi = (
+        db.session.query(
+            Sale.is_wholesale,
+            func.count(Sale.id).label("count"),
+            func.coalesce(func.sum(Sale.total_amount), 0).label("total"),
+            func.coalesce(func.sum(Sale.subtotal), 0).label("subtotal"),
+        )
+        .filter(_sale_date_filter())
+        .group_by(Sale.is_wholesale)
+        .all()
+    )
+    wholesale_breakdown = {}
+    for row in wholesale_kpi:
+        key = "wholesale" if row.is_wholesale else "retail"
+        wholesale_breakdown[key] = {
+            "count": row.count or 0,
+            "total": float(row.total or 0),
+            "subtotal": float(row.subtotal or 0),
+        }
+
     # Cost of goods sold (from SaleItems)
     cost_kpi = (
         db.session.query(
@@ -296,6 +317,7 @@ def get_dashboard(tenant_id: str, date: str = None, date_from: str = None, date_
             "margin_pct": margin_pct,
             "tax": total_tax if is_vat_responsible else 0,
             "avg_ticket": round(total_with_tax / max(sales_kpi.count or 1, 1), 2),
+            "by_type": wholesale_breakdown,
         },
         "purchases": {
             "count": purchases_kpi.count or 0,
@@ -334,6 +356,7 @@ def get_sales_report(
     date_from: str,
     date_to: str,
     group_by: str = "day",
+    sale_mode: str = None,
 ) -> dict:
     """Sales report grouped by day, week, or month."""
     if group_by == "day":
@@ -342,6 +365,17 @@ def get_sales_report(
         date_trunc = func.date_trunc("week", Sale.sale_date)
     else:
         date_trunc = func.date_trunc("month", Sale.sale_date)
+
+    base_filter = [
+        Sale.tenant_id == tenant_id,
+        Sale.status == "completed",
+        _date_in_bogota(Sale.sale_date) >= date_from,
+        _date_in_bogota(Sale.sale_date) <= date_to,
+    ]
+    if sale_mode == "wholesale":
+        base_filter.append(Sale.is_wholesale.is_(True))
+    elif sale_mode == "retail":
+        base_filter.append(Sale.is_wholesale.is_(False))
 
     rows = (
         db.session.query(
@@ -352,12 +386,7 @@ def get_sales_report(
             func.sum(Sale.total_amount).label("total"),
             func.avg(Sale.total_amount).label("avg_ticket"),
         )
-        .filter(
-            Sale.tenant_id == tenant_id,
-            Sale.status == "completed",
-            _date_in_bogota(Sale.sale_date) >= date_from,
-            _date_in_bogota(Sale.sale_date) <= date_to,
-        )
+        .filter(*base_filter)
         .group_by("period")
         .order_by("period")
         .all()

@@ -92,10 +92,20 @@ def create_product(
     stock_minimum: float = 0,
     initial_stock: float = 0,
     description: str = "",
+    wholesale_price: Optional[float] = None,
+    wholesale_min_qty: Optional[float] = None,
 ) -> dict:
     """Create a product and optionally set initial stock."""
     tax_type = _normalize_tax_type(tax_type)
     tax_rates = TAX_RATES
+
+    # Validate wholesale consistency
+    if wholesale_price is not None and wholesale_min_qty is None:
+        raise ValueError("wholesale_min_qty es requerido cuando wholesale_price está configurado")
+    if wholesale_min_qty is not None and wholesale_price is None:
+        raise ValueError("wholesale_price es requerido cuando wholesale_min_qty está configurado")
+    if wholesale_price is not None and wholesale_price >= sale_price:
+        raise ValueError("El precio por mayor debe ser menor al precio de venta")
 
     product = Product(
         tenant_id=tenant_id,
@@ -113,6 +123,8 @@ def create_product(
         tax_rate=tax_rates.get(tax_type, Decimal("19.0")),
         stock_minimum=Decimal(str(stock_minimum)),
         description=description,
+        wholesale_price=Decimal(str(wholesale_price)) if wholesale_price is not None else None,
+        wholesale_min_qty=Decimal(str(wholesale_min_qty)) if wholesale_min_qty is not None else None,
     )
     db.session.add(product)
     db.session.flush()
@@ -185,13 +197,27 @@ def update_product(tenant_id: str, product_id: str, **kwargs) -> dict:
         "stock_minimum",
         "description",
         "is_active",
+        "wholesale_price",
+        "wholesale_min_qty",
     }
 
     for key, value in kwargs.items():
-        if key in allowed and value is not None:
-            if key in ("sale_price", "purchase_price", "stock_minimum"):
-                value = Decimal(str(value))
-            setattr(product, key, value)
+        if key in allowed:
+            if key in ("wholesale_price", "wholesale_min_qty") and value is None:
+                setattr(product, key, None)
+            elif value is not None:
+                if key in ("sale_price", "purchase_price", "stock_minimum", "wholesale_price", "wholesale_min_qty"):
+                    value = Decimal(str(value))
+                setattr(product, key, value)
+
+    # Validate wholesale consistency
+    if product.wholesale_price is not None:
+        if product.wholesale_min_qty is None:
+            raise ValueError("wholesale_min_qty es requerido cuando wholesale_price está configurado")
+        if product.wholesale_price >= product.sale_price:
+            raise ValueError("El precio por mayor debe ser menor al precio de venta")
+    elif product.wholesale_min_qty is not None:
+        raise ValueError("wholesale_price es requerido cuando wholesale_min_qty está configurado")
 
     # Sync cost_average with purchase_price when manually edited
     if "purchase_price" in kwargs and kwargs["purchase_price"] is not None:
@@ -278,6 +304,18 @@ def search_products(
             "has_next": page * per_page < total,
         },
     }
+
+
+# ── Price Resolution ─────────────────────────────────────────────
+
+
+def resolve_item_price(product: Product, is_wholesale: bool = False) -> tuple:
+    """
+    Resolve the correct price and tier for a product.
+    Returns (price: Decimal, tier: str).
+    Falls back to retail if product has no wholesale_price.
+    """
+    return product.get_price_for_tier(is_wholesale)
 
 
 # ── Stock Services ────────────────────────────────────────────────
@@ -531,6 +569,9 @@ def _product_to_dict(product: Product) -> dict:
         "category_id": str(product.category_id) if product.category_id else None,
         "is_active": product.is_active,
         "is_draft": product.is_draft,
+        "wholesale_price": float(product.wholesale_price) if product.wholesale_price is not None else None,
+        "wholesale_min_qty": float(product.wholesale_min_qty) if product.wholesale_min_qty is not None else None,
+        "has_wholesale": product.has_wholesale,
     }
 
 

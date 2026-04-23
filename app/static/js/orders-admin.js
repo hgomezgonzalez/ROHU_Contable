@@ -81,6 +81,7 @@ function renderOrderCard(o) {
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="font-size:16px;font-weight:700;">${o.order_number}</span>
           <span style="font-size:11px;background:rgba(255,255,255,0.25);padding:2px 8px;border-radius:10px;">${o.status_label}</span>
+          ${o.is_wholesale ? '<span style="font-size:10px;background:#FEF3C7;color:#D97706;padding:2px 6px;border-radius:10px;font-weight:700;">MAYOR</span>' : ''}
         </div>
         ${o.table_number ? `<div style="font-size:12px;opacity:0.8;margin-top:2px;">Mesa ${o.table_number}</div>` : ""}
       </div>
@@ -112,6 +113,15 @@ async function showNewOrderPopup() {
       <div style="padding:24px;">
         <div style="text-align:center;margin-bottom:16px;">
           <div style="font-weight:700;font-size:16px;color:#1E3A8A;">Nuevo Pedido</div>
+        </div>
+        <!-- Wholesale toggle -->
+        <div style="display:flex;gap:12px;margin-bottom:12px;padding:8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600;">
+            <input type="radio" name="new-order-mode" value="retail" checked> Detal
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600;color:#D97706;">
+            <input type="radio" name="new-order-mode" value="wholesale"> Por Mayor
+          </label>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
           <div><label style="font-size:12px;font-weight:600;">Mesa (opcional)</label>
@@ -187,11 +197,15 @@ async function doCreateOrder(btn) {
   if (!window._newOrderItems.length) { await rohuAlert("Agregue al menos un producto", "warning"); return; }
   btn.disabled = true; btn.textContent = "Creando...";
 
+  const wholesaleRadio = document.querySelector('input[name="new-order-mode"]:checked');
+  const isWholesale = wholesaleRadio ? wholesaleRadio.value === "wholesale" : false;
+
   const data = {
     items: window._newOrderItems.map(i => ({ product_id: i.product_id, quantity: i.quantity, notes: i.notes || null })),
     table_number: document.getElementById("new-order-table").value.trim() || null,
     customer_name: document.getElementById("new-order-customer").value.trim() || null,
     notes: document.getElementById("new-order-notes").value.trim() || null,
+    is_wholesale: isWholesale,
   };
 
   try {

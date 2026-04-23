@@ -40,6 +40,9 @@ class Order(db.Model):
     delivery_address = db.Column(db.Text, nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
+    # Wholesale flag
+    is_wholesale = db.Column(db.Boolean, nullable=False, default=False)
+
     # Preview total (NOT contable — just for display)
     total_preview = db.Column(db.Numeric(18, 2), nullable=False, default=0)
 
@@ -73,6 +76,11 @@ class Order(db.Model):
         Index("idx_orders_tenant_status", "tenant_id", "status"),
         Index("idx_orders_tenant_date", "tenant_id", "created_at"),
         Index("idx_orders_tenant_table", "tenant_id", "table_number"),
+        Index(
+            "idx_orders_tenant_wholesale",
+            "tenant_id", "is_wholesale", "created_at",
+            postgresql_where=db.text("is_wholesale = true"),
+        ),
         CheckConstraint(
             "status IN ('draft', 'confirmed', 'in_preparation', 'ready', " "'closed', 'cancelled', 'close_failed')",
             name="ck_orders_status",
@@ -111,6 +119,7 @@ class OrderItem(db.Model):
     unit_price = db.Column(db.Numeric(18, 2), nullable=False)
     quantity = db.Column(db.Numeric(12, 4), nullable=False)
     subtotal = db.Column(db.Numeric(18, 2), nullable=False, default=0)
+    price_tier = db.Column(db.String(10), nullable=False, default="retail")
 
     notes = db.Column(db.String(255), nullable=True)
     added_after_confirmation = db.Column(db.Boolean, nullable=False, default=False)
@@ -123,6 +132,7 @@ class OrderItem(db.Model):
         Index("idx_order_items_product", "tenant_id", "product_id"),
         CheckConstraint("quantity > 0", name="ck_oi_qty"),
         CheckConstraint("unit_price >= 0", name="ck_oi_price"),
+        CheckConstraint("price_tier IN ('retail', 'wholesale')", name="ck_order_items_price_tier"),
     )
 
     def __repr__(self):

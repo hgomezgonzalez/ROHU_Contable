@@ -56,6 +56,7 @@ def create_order(
     notes: str = None,
     assigned_to: str = None,
     branch_id: str = None,
+    is_wholesale: bool = False,
 ) -> dict:
     """
     Create a new order in DRAFT status.
@@ -90,6 +91,7 @@ def create_order(
         created_by=created_by,
         assigned_to=assigned_to,
         branch_id=branch_id,
+        is_wholesale=is_wholesale,
     )
 
     total_preview = Decimal("0")
@@ -104,16 +106,20 @@ def create_order(
         if qty <= 0:
             raise ValueError(f"Cantidad invalida para {product.name}")
 
-        subtotal = (product.sale_price * qty).quantize(TWO_PLACES)
+        from app.modules.inventory.services import resolve_item_price
+
+        unit_price, price_tier = resolve_item_price(product, is_wholesale)
+        subtotal = (unit_price * qty).quantize(TWO_PLACES)
 
         oi = OrderItem(
             tenant_id=tenant_id,
             product_id=product.id,
             product_name=product.name,
             product_sku=product.sku,
-            unit_price=product.sale_price,
+            unit_price=unit_price,
             quantity=qty,
             subtotal=subtotal,
+            price_tier=price_tier,
             notes=item_data.get("notes"),
         )
         order_items.append(oi)
@@ -191,7 +197,11 @@ def add_items_to_order(order_id: str, tenant_id: str, items: list, added_by: str
             raise ValueError(f"Producto no encontrado: {item_data['product_id']}")
 
         qty = Decimal(str(item_data["quantity"]))
-        subtotal = (product.sale_price * qty).quantize(TWO_PLACES)
+
+        from app.modules.inventory.services import resolve_item_price
+
+        unit_price, price_tier = resolve_item_price(product, order.is_wholesale)
+        subtotal = (unit_price * qty).quantize(TWO_PLACES)
 
         oi = OrderItem(
             order_id=order.id,
@@ -199,9 +209,10 @@ def add_items_to_order(order_id: str, tenant_id: str, items: list, added_by: str
             product_id=product.id,
             product_name=product.name,
             product_sku=product.sku,
-            unit_price=product.sale_price,
+            unit_price=unit_price,
             quantity=qty,
             subtotal=subtotal,
+            price_tier=price_tier,
             notes=item_data.get("notes"),
             added_after_confirmation=after_confirm,
         )
@@ -297,6 +308,7 @@ def close_order(
             voucher_redemption=voucher_redemption,
             source_order_id=str(order.id),
             auto_commit=False,
+            is_wholesale=order.is_wholesale,
         )
     except ValueError as e:
         # Stock insufficient or other validation error
@@ -489,6 +501,7 @@ def _order_to_dict(order: Order) -> dict:
         "order_number": order.order_number,
         "status": order.status,
         "status_label": STATUS_LABELS.get(order.status, order.status),
+        "is_wholesale": order.is_wholesale,
         "vertical_type": order.vertical_type,
         "table_number": order.table_number,
         "customer_name": order.customer_name,
@@ -519,6 +532,7 @@ def _order_item_to_dict(item: OrderItem) -> dict:
         "unit_price": float(item.unit_price),
         "quantity": float(item.quantity),
         "subtotal": float(item.subtotal),
+        "price_tier": item.price_tier,
         "notes": item.notes,
         "added_after_confirmation": item.added_after_confirmation,
         "added_at": item.added_at.isoformat(),

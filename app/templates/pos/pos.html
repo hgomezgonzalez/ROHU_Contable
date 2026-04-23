@@ -263,9 +263,15 @@
 
   <!-- Right: Cart -->
   <div class="pos-cart">
-    <div class="cart-header">
-      Carrito
-      <span id="cart-count" style="float:right; color:var(--text-light); font-weight:400; font-size:14px;">0 items</span>
+    <div class="cart-header" id="cart-header">
+      <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+        <span>Carrito <span id="cart-count" style="color:var(--text-light); font-weight:400; font-size:14px;">0 items</span></span>
+        <button type="button" id="btn-wholesale-toggle" onclick="toggleWholesale()"
+          style="padding:4px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; border:2px solid #D97706; background:white; color:#D97706; transition:all 0.2s;"
+          title="F3: Alternar modo mayorista">
+          DETAL
+        </button>
+      </div>
     </div>
     <div class="cart-items" id="cart-items">
       <div style="text-align:center; color:var(--text-light); padding:40px 20px;">
@@ -295,6 +301,7 @@
   <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">Enter</kbd> Agregar</span>
   <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">+−</kbd> Cantidad</span>
   <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">Ctrl+Enter</kbd> Cobrar</span>
+  <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">F3</kbd> Mayor/Detal</span>
   <span><kbd style="background:#1e293b;padding:1px 5px;border-radius:3px;color:#60a5fa;">Esc</kbd> Cancelar</span>
 </div>
 <style>@media(max-width:768px){ [id="kb-hints"] {display:none!important;} }</style>
@@ -318,6 +325,35 @@
   let tenantInfo = null;
   let lastSaleId = null;
   let lastBuyerData = {};
+  let isWholesaleMode = false;
+
+  function toggleWholesale() {
+    isWholesaleMode = !isWholesaleMode;
+    const btn = document.getElementById('btn-wholesale-toggle');
+    const header = document.getElementById('cart-header');
+    if (isWholesaleMode) {
+      btn.textContent = 'MAYOR';
+      btn.style.background = '#D97706';
+      btn.style.color = 'white';
+      header.style.background = '#FEF3C7';
+      header.style.borderBottom = '3px solid #D97706';
+    } else {
+      btn.textContent = 'DETAL';
+      btn.style.background = 'white';
+      btn.style.color = '#D97706';
+      header.style.background = '';
+      header.style.borderBottom = '';
+    }
+    // Recalculate cart prices
+    cart.forEach(item => {
+      if (isWholesaleMode && item.wholesale_price) {
+        item.unit_price = item.wholesale_price;
+      } else {
+        item.unit_price = item.retail_price;
+      }
+    });
+    renderCart();
+  }
 
   // Load tenant info for receipts
   fetch('/api/v1/auth/tenant', {headers}).then(r => r.json()).then(d => {
@@ -482,14 +518,18 @@
     dropdownProducts = products.slice(0, 8);
     dropdownIndex = 0;
     const dd = document.getElementById('search-dropdown');
-    dd.innerHTML = dropdownProducts.map((p, i) => `
+    dd.innerHTML = dropdownProducts.map((p, i) => {
+      const priceDisplay = isWholesaleMode && p.wholesale_price
+        ? `<span style="color:#D97706;font-weight:600;white-space:nowrap;">${COP(p.wholesale_price)}</span><span style="font-size:11px;text-decoration:line-through;color:#9CA3AF;margin-left:4px;">${COP(p.sale_price)}</span>`
+        : `<span style="color:var(--primary);font-weight:600;white-space:nowrap;">${COP(p.sale_price)}</span>${p.has_wholesale ? '<span style="font-size:10px;color:#D97706;margin-left:4px;">May:'+COP(p.wholesale_price)+'</span>' : ''}`;
+      return `
       <div class="dd-item" data-idx="${i}" style="padding:10px 14px; cursor:pointer; display:flex;
            align-items:center; gap:10px; border-bottom:1px solid var(--border); transition:background 0.1s;">
         <span style="flex:1;font-weight:500;">${p.name}</span>
-        <span style="color:var(--primary);font-weight:600;white-space:nowrap;">${COP(p.sale_price)}</span>
+        ${priceDisplay}
         <span style="font-size:12px;color:${p.is_low_stock?'var(--danger)':'var(--text-light)'};">${p.stock_current} ${p.unit||'uds'}</span>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
     dd.style.display = 'block';
     updateDropdownSelection();
     dd.querySelectorAll('.dd-item').forEach(el => {
@@ -609,21 +649,33 @@
   function renderGrid(products) {
     const grid = document.getElementById('product-grid');
     if (products.length === 0) { grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-light); padding:40px;">No se encontraron productos</div>'; return; }
-    grid.innerHTML = products.map(p => `
-      <div class="product-card" onclick='addToCart(${JSON.stringify(p).replace(/'/g,"&#39;")})'>
+    grid.innerHTML = products.map(p => {
+      const wholesaleTag = p.has_wholesale && isWholesaleMode
+        ? `<div style="font-size:11px;color:#D97706;font-weight:600;">Mayor: ${COP(p.wholesale_price)}</div>`
+        : (p.has_wholesale ? `<div style="font-size:10px;color:#9CA3AF;">Mayor: ${COP(p.wholesale_price)}</div>` : '');
+      return `
+      <div class="product-card" onclick='addToCart(${JSON.stringify(p).replace(/'/g,"&#39;")})' ${p.has_wholesale && isWholesaleMode ? 'style="border-color:#D97706;border-width:2px;"' : ''}>
         <div class="product-card-name">${p.name}</div>
-        <div class="product-card-price">${COP(p.sale_price)}</div>
+        <div class="product-card-price">${isWholesaleMode && p.wholesale_price ? COP(p.wholesale_price) : COP(p.sale_price)}</div>
+        ${wholesaleTag}
         <div class="product-card-stock ${p.is_low_stock?'low':''}">Stock: ${p.stock_current} ${p.unit}</div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   }
 
   // ── Cart ─────────────────────────────────────────────────
   function addToCart(product) {
     const ex = cart.find(i => i.product_id === product.id);
     if (ex) { ex.quantity += 1; } else {
-      cart.push({ product_id:product.id, name:product.name, unit_price:product.sale_price,
-        tax_rate:product.tax_rate, quantity:1, stock:product.stock_current });
+      const useWholesale = isWholesaleMode && product.wholesale_price;
+      cart.push({
+        product_id: product.id, name: product.name,
+        retail_price: product.sale_price,
+        wholesale_price: product.wholesale_price,
+        unit_price: useWholesale ? product.wholesale_price : product.sale_price,
+        tax_rate: product.tax_rate, quantity: 1, stock: product.stock_current,
+        has_wholesale: product.has_wholesale,
+      });
     }
     renderCart();
   }
@@ -641,8 +693,9 @@
     el.innerHTML = cart.map((item,idx) => {
       const sub = item.unit_price * item.quantity;
       const tax = sub * item.tax_rate / 100;
+      const tierBadge = isWholesaleMode && item.has_wholesale ? '<span style="font-size:10px;background:#FEF3C7;color:#D97706;padding:1px 4px;border-radius:3px;margin-left:4px;">MAYOR</span>' : '';
       return `<div class="cart-item">
-        <div class="cart-item-info"><div class="cart-item-name">${item.name}</div><div class="cart-item-price">${COP(item.unit_price)} x ${item.quantity}</div></div>
+        <div class="cart-item-info"><div class="cart-item-name">${item.name}${tierBadge}</div><div class="cart-item-price">${COP(item.unit_price)} x ${item.quantity}</div></div>
         <div class="cart-item-qty"><button onclick="updateQty(${idx},-1)">−</button>
           <input type="number" value="${item.quantity}" min="1" onchange="cart[${idx}].quantity=parseInt(this.value)||1;renderCart()">
           <button onclick="updateQty(${idx},1)">+</button></div>
@@ -937,6 +990,7 @@
       customer_name: buyerName,
       customer_tax_id: buyerTaxId,
       idempotency_key: crypto.randomUUID(),
+      is_wholesale: isWholesaleMode,
     };
 
     if (currentSaleType === 'credit') {
@@ -1020,6 +1074,7 @@
         </div>
         <div style="margin-bottom:8px;">
           <div><strong>${sale.invoice_number}</strong></div>
+          ${sale.is_wholesale ? '<div style="background:#FEF3C7;color:#D97706;font-weight:700;padding:2px 6px;border-radius:4px;display:inline-block;font-size:11px;">VENTA POR MAYOR</div>' : ''}
           <div>${date}</div>
           <div>Cajero: ${user.full_name || ''}</div>
         </div>
@@ -1129,6 +1184,8 @@
     const inInput = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
     // F2 or / = focus search
     if ((e.key === 'F2' || (e.key === '/' && !inInput)) && document.activeElement !== searchInput) { e.preventDefault(); searchInput.focus(); }
+    // F3 = toggle wholesale mode
+    if (e.key === 'F3') { e.preventDefault(); toggleWholesale(); }
     // Ctrl+Enter or F12 = open payment modal (COBRAR)
     if (e.key === 'F12' || (e.key === 'Enter' && e.ctrlKey)) { e.preventDefault(); openPaymentModal(); }
     // Escape = close modals (if dropdown not open)

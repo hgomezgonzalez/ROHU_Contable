@@ -120,6 +120,7 @@ def create_sale_from_items(
     voucher_redemption: dict = None,
     source_order_id: str = None,
     auto_commit: bool = True,
+    is_wholesale: bool = False,
 ) -> dict:
     """
     Core ACID sale creation. Handles: Sale + Stock + Accounting + Vouchers.
@@ -161,6 +162,7 @@ def create_sale_from_items(
         customer_name=customer_name,
         customer_tax_id=customer_tax_id,
         sale_type=sale_type,
+        is_wholesale=is_wholesale,
         notes=notes,
         idempotency_key=idempotency_key or uuid.uuid4(),
         source_order_id=source_order_id,
@@ -189,8 +191,12 @@ def create_sale_from_items(
             )
 
         discount_pct = Decimal(str(item_data.get("discount_pct", 0)))
-        unit_price = product.sale_price
         unit_cost = product.cost_average
+
+        # Resolve price based on wholesale mode
+        from app.modules.inventory.services import resolve_item_price
+
+        unit_price, price_tier = resolve_item_price(product, is_wholesale)
 
         line_subtotal = (unit_price * qty).quantize(TWO_PLACES)
         line_discount = (line_subtotal * discount_pct / 100).quantize(TWO_PLACES)
@@ -208,6 +214,7 @@ def create_sale_from_items(
             unit_cost=unit_cost,
             tax_rate=effective_tax_rate,
             discount_pct=discount_pct,
+            price_tier=price_tier,
             subtotal=taxable_base,
             tax_amount=line_tax,
             total=line_total,
@@ -407,6 +414,7 @@ def checkout(
     credit_days: int = 0,
     voucher_sale: dict = None,
     voucher_redemption: dict = None,
+    is_wholesale: bool = False,
 ) -> dict:
     """
     Process a complete sale from POS. Wrapper around create_sale_from_items.
@@ -439,6 +447,7 @@ def checkout(
         voucher_sale=voucher_sale,
         voucher_redemption=voucher_redemption,
         auto_commit=True,
+        is_wholesale=is_wholesale,
     )
 
 
@@ -465,6 +474,7 @@ def list_sales(
     cashier_id: str = None,
     date_from: str = None,
     date_to: str = None,
+    sale_mode: str = None,
 ) -> dict:
     """List sales with filters."""
     from sqlalchemy.orm import joinedload
@@ -479,6 +489,10 @@ def list_sales(
         q = q.filter(Sale.sale_date >= date_from)
     if date_to:
         q = q.filter(Sale.sale_date <= date_to)
+    if sale_mode == "wholesale":
+        q = q.filter(Sale.is_wholesale.is_(True))
+    elif sale_mode == "retail":
+        q = q.filter(Sale.is_wholesale.is_(False))
 
     total = q.count()
     # Eager load items + payments to avoid N+1 queries (42→3 queries per page)
@@ -793,6 +807,7 @@ def _sale_to_dict(sale: Sale) -> dict:
         "tax_amount": float(sale.tax_amount),
         "discount_amount": float(sale.discount_amount),
         "total_amount": float(sale.total_amount),
+        "is_wholesale": sale.is_wholesale,
         # Credit / payment tracking fields
         "sale_type": sale.sale_type,
         "payment_status": sale.payment_status,
@@ -820,6 +835,7 @@ def _sale_summary_to_dict(sale: Sale) -> dict:
         "sale_date": sale.sale_date.isoformat(),
         "status": sale.status,
         "total_amount": float(sale.total_amount),
+        "is_wholesale": sale.is_wholesale,
         "items_count": len(sale.items),
         "payment_method": sale.payments[0].method if sale.payments else None,
     }
@@ -834,6 +850,7 @@ def _sale_item_to_dict(item: SaleItem) -> dict:
         "unit_cost": float(item.unit_cost),
         "tax_rate": float(item.tax_rate),
         "discount_pct": float(item.discount_pct),
+        "price_tier": item.price_tier,
         "subtotal": float(item.subtotal),
         "tax_amount": float(item.tax_amount),
         "total": float(item.total),
