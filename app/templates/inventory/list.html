@@ -44,7 +44,7 @@
       <thead>
         <tr><th>Producto</th><th>SKU</th><th>QR/Barras</th><th>Precio Vta</th><th>P. Mayor</th><th>Costo</th><th>Stock</th><th>Mín</th><th>IVA</th><th>Estado</th><th>Acciones</th></tr>
       </thead>
-      <tbody id="products-table"><tr><td colspan="10">Cargando...</td></tr></tbody>
+      <tbody id="products-table"><tr><td colspan="11">Cargando...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -75,6 +75,18 @@
       <div class="row row-2" style="margin-bottom:4px;">
         <div class="form-group"><label>Precio venta *</label><input type="number" name="sale_price" id="c-sale" class="form-control" required min="0" placeholder="$"></div>
         <div class="form-group"><label>Precio compra</label><input type="number" name="purchase_price" id="c-purchase" class="form-control" min="0" value="0" placeholder="$"></div>
+      </div>
+      <!-- Wholesale pricing -->
+      <div style="margin-bottom:4px; padding:10px; background:#FFFBEB; border:1px solid #FDE68A; border-radius:8px;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; font-weight:600; color:#D97706; margin-bottom:6px;">
+          <input type="checkbox" id="c-has-wholesale" onchange="document.getElementById('c-wholesale-fields').style.display=this.checked?'':'none'"> Habilitar precio por mayor
+        </label>
+        <div id="c-wholesale-fields" style="display:none;">
+          <div class="row row-2">
+            <div class="form-group" style="margin:0;"><label style="font-size:12px;">Precio por mayor</label><input type="number" id="c-wholesale-price" class="form-control" min="0" placeholder="Menor al precio venta"></div>
+            <div class="form-group" style="margin:0;"><label style="font-size:12px;">Cantidad mínima</label><input type="number" id="c-wholesale-min-qty" class="form-control" min="1" value="1" placeholder="Uds"></div>
+          </div>
+        </div>
       </div>
       <!-- Row 4: Stock + IVA -->
       <div class="row" style="margin-bottom:4px;">
@@ -198,7 +210,7 @@
     const resp = await fetch(`/api/v1/inventory/products?q=${encodeURIComponent(q)}&per_page=50${low?'&low_stock=true':''}`, {headers, cache:'no-store'});
     if (resp.status === 401 || resp.status === 422) { localStorage.clear(); window.location.href = '/app/login'; return; }
     const json = await resp.json();
-    if (!json.success) { document.getElementById('products-table').innerHTML = `<tr><td colspan="10" style="color:var(--danger)">Error: ${esc(json.error?.message||'Respuesta inesperada del servidor (status '+resp.status+')')}</td></tr>`; return; }
+    if (!json.success) { document.getElementById('products-table').innerHTML = `<tr><td colspan="11" style="color:var(--danger)">Error: ${esc(json.error?.message||'Respuesta inesperada del servidor (status '+resp.status+')')}</td></tr>`; return; }
     let data = json.data;
     if (noQR) data = data.filter(p => !p.qr_code);
     const tbody = document.getElementById('products-table');
@@ -222,7 +234,7 @@
         </td>
       </tr>
     `).join('');
-    } catch(err) { document.getElementById('products-table').innerHTML = `<tr><td colspan="10" style="color:var(--danger)">Error de conexión: ${esc(err.message)}</td></tr>`; }
+    } catch(err) { document.getElementById('products-table').innerHTML = `<tr><td colspan="11" style="color:var(--danger)">Error de conexión: ${esc(err.message)}</td></tr>`; }
   }
 
   // Create product (continuous mode)
@@ -237,6 +249,14 @@
     if (!data.qr_code) delete data.qr_code;
     if (!data.barcode) delete data.barcode;
     if (!data.sku) delete data.sku;
+
+    // Wholesale pricing
+    if (document.getElementById('c-has-wholesale').checked) {
+      const wp = parseFloat(document.getElementById('c-wholesale-price').value);
+      const wmq = parseFloat(document.getElementById('c-wholesale-min-qty').value);
+      if (wp > 0) data.wholesale_price = wp;
+      if (wmq > 0) data.wholesale_min_qty = wmq;
+    }
 
     const resp = await fetch('/api/v1/inventory/products', {method:'POST', headers, body:JSON.stringify(data)});
     const r = await resp.json();
@@ -254,6 +274,10 @@
         document.getElementById('c-stock').value = '0';
         document.getElementById('c-sku').value = '';
         document.getElementById('c-barcode').value = '';
+        document.getElementById('c-has-wholesale').checked = false;
+        document.getElementById('c-wholesale-fields').style.display = 'none';
+        document.getElementById('c-wholesale-price').value = '';
+        document.getElementById('c-wholesale-min-qty').value = '1';
         document.getElementById('c-qr').focus();
       } else {
         closeModal('create-modal'); e.target.reset();
